@@ -330,7 +330,7 @@ int main(int argc, char *argv[])
 		}
 
 		pfi->dname = malloc(128);
-		sprintf(pfi->dname, 127, "%s_dat.%d", dev, i);
+		snprintf(pfi->dname, 127, "%s_dat.%d", dev, i);
 		pfi->dfd = open(pfi->dname, O_RDONLY);
 		if (pfi->dfd < 0) {
 			perror(pfi->dname);
