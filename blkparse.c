@@ -330,7 +330,7 @@ int main(int argc, char *argv[])
 		}
 
 		pfi->dname = malloc(128);
-		sprintf(pfi->dname, "%s_dat.%d", dev, i);
+		sprintf(pfi->dname, 127, "%s_dat.%d", dev, i);
 		pfi->dfd = open(pfi->dname, O_RDONLY);
 		if (pfi->dfd < 0) {
 			perror(pfi->dname);
@@ -338,7 +338,7 @@ int main(int argc, char *argv[])
 		}
 
 		pfi->ofname = malloc(128);
-		sprintf(pfi->ofname, "%s_log.%d", dev, i);
+		snprintf(pfi->ofname, 127, "%s_log.%d", dev, i);
 		pfi->ofp = fopen(pfi->ofname, "w");
 		if (pfi->ofp == NULL) {
 			perror(pfi->ofname);
