@@ -1,0 +1,19 @@
+Block IO Tracing
+----------------
+
+Written by Jens Axboe <axboe@suse.de> (initial version and kernel support) and
+Alan D. Brunelle (threading and splitup into two seperate programs).
+
+
+To run:
+	% blktrace <dev>
+	--- run task to generate load to be traced ---
+	<SIGINT to kill>
+	--- Generates:
+		<dev>_dat.[0..ncpus] : Contains binary pdu data
+		<dev>_out.[0..ncpus] : Contains binary trace data
+
+	% blkparse <dev> <ncpus> 
+	--- Generates:
+		<dev>_log.[0..ncpus] : Contains formatted trace data
+		Merged formatted trace data to stdout
