@@ -33,7 +33,7 @@ To run:
 		<dev>_dat.[0..ncpus] : Contains binary pdu data
 		<dev>_out.[0..ncpus] : Contains binary trace data
 
-	% blkparse <dev> <ncpus> 
+	% blkparse <dev>
 	--- Generates:
 		<dev>_log.[0..ncpus] : Contains formatted trace data
 		Merged formatted trace data to stdout
