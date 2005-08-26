@@ -5,6 +5,23 @@ Written by Jens Axboe <axboe@suse.de> (initial version and kernel support) and
 Alan D. Brunelle (threading and splitup into two seperate programs).
 
 
+Requirements
+------------
+
+Currently, the kernel support patch isn't merged yet. The last posted patch
+is:
+
+http://marc.theaimsgroup.com/?l=linux-kernel&m=112487579802074&w=2
+
+and applies against 2.6.13-rc6-mm2. The patch is also included in the git
+repository you pulled to get this file:
+
+rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
+
+
+Usage
+-----
+
 To run:
 	% blktrace <dev>
 	--- run task to generate load to be traced ---
@@ -17,3 +34,7 @@ To run:
 	--- Generates:
 		<dev>_log.[0..ncpus] : Contains formatted trace data
 		Merged formatted trace data to stdout
+
+
+20050826, Jens Axboe <axboe@suse.de>
+
