@@ -9,7 +9,7 @@
 
 #define NELEMS(pfi) ((pfi)->stat.st_size / sizeof(struct blk_io_trace))
 
-#define MAX_CPUS	(1 << 8)	/* only 8 bits for now */
+#define MAX_CPUS	(512)
 
 struct per_file_info {
 	int cpu;
@@ -363,7 +363,12 @@ int main(int argc, char *argv[])
 	printf("\n\n");
 
 	for (i = 0, tip = traces; i < nelems; i++, tip++) {
-		int cpu = tip->magic & 0xff;
+		int cpu = tip->magic;
+
+		if (cpu >= MAX_CPUS) {
+			fprintf(stderr, "CPU number too large (%d)\n", cpu);
+			return 1;
+		}
 
 		current = &per_file_info[cpu];
 

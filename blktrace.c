@@ -194,7 +194,7 @@ void *extract(void *arg)
 		}
 
 		/* version is verified, stuff with CPU number now */
-		t.magic = (t.magic & ~0xff) | tip->cpu;
+		t.magic = tip->cpu;
 		ret = write(ofd, &t, sizeof(t));
 		if (ret < 0) {
 			perror(op);
