@@ -18,6 +18,9 @@ repository you pulled to get this file:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
 
+Additionally, you need to apply the relayfs-read update patch also located
+in the kernel/ directory.
+
 
 Usage
 -----
