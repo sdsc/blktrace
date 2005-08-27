@@ -39,7 +39,7 @@ static int devfd, ncpus;
 static struct thread_information *thread_information;
 static char *buts_name_p;
 
-int start_trace(char *dev)
+static int start_trace(char *dev)
 {
 	struct blk_user_trace_setup buts;
 
@@ -63,7 +63,7 @@ int start_trace(char *dev)
 	return 0;
 }
 
-void stop_trace(void)
+static void stop_trace(void)
 {
 	if (ioctl(devfd, BLKSTOPTRACE) < 0)
 		perror("BLKSTOPTRACE");
@@ -71,7 +71,7 @@ void stop_trace(void)
 	close(devfd);
 }
 
-inline int verify_trace(struct blk_io_trace *t)
+static inline int verify_trace(struct blk_io_trace *t)
 {
 	if (!CHECK_MAGIC(t)) {
 		fprintf(stderr, "bad trace magic %x\n", t->magic);
@@ -86,7 +86,8 @@ inline int verify_trace(struct blk_io_trace *t)
 	return 0;
 }
 
-void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd, int nb)
+static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
+			 int nb)
 {
 	int ret, bytes_left;
 	unsigned char buf[nb], *p;
@@ -95,14 +96,14 @@ void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd, int nb)
 	bytes_left = nb;
 	while (bytes_left > 0) {
 		ret = read(ifd, p, bytes_left);
-		if (ret < 0) {
+		if (!ret)
+			usleep(1000);
+		else if (ret < 0) {
 			perror(ifn);
 			fprintf(stderr, "Thread %d extract_data %s failed\n",
 				cpu, ifn);
 			exit(1);
-		} else if (ret == 0)
-			usleep(1000);
-		else {
+		} else {
 			p += ret;
 			bytes_left -= ret;
 		}
@@ -116,7 +117,7 @@ void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd, int nb)
 	}
 }
 
-void *extract(void *arg)
+static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
 	int tracefd, ret, ofd, dfd;
@@ -209,7 +210,7 @@ void *extract(void *arg)
 	return NULL;
 }
 
-int start_threads(void)
+static int start_threads(void)
 {
 	struct thread_information *tip;
 	int i;
@@ -235,6 +236,19 @@ int start_threads(void)
 	return ncpus;
 }
 
+static void stop_threads(void)
+{
+	struct thread_information *tip = thread_information;
+	int i;
+
+	for (i = 0; i < ncpus; i++, tip++) {
+		int ret;
+
+		if (pthread_join(tip->thread, (void *) &ret))
+			perror("thread_join");
+	}
+}
+
 void show_stats(void)
 {
 	int i;
@@ -258,7 +272,6 @@ void handle_sigint(int sig)
 
 int main(int argc, char *argv[])
 {
-	struct thread_information *tip;
 	struct stat st;
 	int i;
 
@@ -297,13 +310,7 @@ int main(int argc, char *argv[])
 	while (!is_done())
 		sleep(1);
 
-	for (i = 0, tip = thread_information; i < ncpus; i++, tip++) {
-		int ret;
-
-		if (pthread_join(tip->thread, (void *) &ret))
-			perror("thread_join");
-	}
-
+	stop_threads();
 	stop_trace();
 	close(devfd);
 	show_stats();

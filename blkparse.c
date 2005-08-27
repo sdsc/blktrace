@@ -9,8 +9,6 @@
 #include "blktrace.h"
 #include "rbtree.h"
 
-#define NELEMS(pfi) ((pfi)->stat.st_size / sizeof(struct blk_io_trace))
-
 #define MAX_CPUS	(512)
 
 struct per_file_info {
@@ -38,7 +36,7 @@ struct trace {
 };
 
 struct per_file_info per_file_info[MAX_CPUS];
-struct per_file_info *current;
+struct per_file_info *cur_file;
 
 static unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
 static unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
@@ -77,16 +75,16 @@ static inline void account_c(int rw, unsigned int bytes)
 	}
 }
 
-void output(char *s)
+static void output(char *s)
 {
 	printf("%s", s);
-	fprintf(current->ofp,"%s",s);
+	fprintf(cur_file->ofp,"%s",s);
 }
 
-char hstring[256];
-char tstring[256];
+static char hstring[256];
+static char tstring[256];
 
-inline char *setup_header(struct blk_io_trace *t, char act)
+static inline char *setup_header(struct blk_io_trace *t, char act)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
@@ -105,49 +103,49 @@ inline char *setup_header(struct blk_io_trace *t, char act)
 
 	rwbs[i] = '\0';
 
-	sprintf(hstring, "%3d %15ld %12Lu %5u %c %3s", current->cpu,
+	sprintf(hstring, "%3d %15ld %12Lu %5u %c %3s", cur_file->cpu,
 		(unsigned long)t->sequence, (unsigned long long)t->time, t->pid,
 		act, rwbs);
 
 	return hstring;
 }
 
-void log_complete(struct blk_io_trace *t, char act)
+static void log_complete(struct blk_io_trace *t, char act)
 {
 	sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->error);
 	output(tstring);
 }
 
-void log_queue(struct blk_io_trace *t, char act)
+static void log_queue(struct blk_io_trace *t, char act)
 {
 	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
 	output(tstring);
 }
 
-void log_issue(struct blk_io_trace *t, char act)
+static void log_issue(struct blk_io_trace *t, char act)
 {
 	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
 	output(tstring);
 }
 
-void log_merge(struct blk_io_trace *t, char act)
+static void log_merge(struct blk_io_trace *t, char act)
 {
 	sprintf(tstring,"%s   %Lu + %u\n", setup_header(t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
 	output(tstring);
 }
 
-void log_generic(struct blk_io_trace *t, char act)
+static void log_generic(struct blk_io_trace *t, char act)
 {
 	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
 	output(tstring);
 }
 
-void log_pc(struct blk_io_trace *t, char act)
+static void log_pc(struct blk_io_trace *t, char act)
 {
 	int i, ret;
 	unsigned char buf[64];
@@ -160,10 +158,10 @@ void log_pc(struct blk_io_trace *t, char act)
 		return;
 	}
 
-	ret = read(current->dfd, buf, t->pdu_len);
+	ret = read(cur_file->dfd, buf, t->pdu_len);
 	if (ret != t->pdu_len) {
 		fprintf(stderr,"read(%d) failed on %s - %d\n", t->pdu_len, 
-			current->dname, ret);
+			cur_file->dname, ret);
 		exit(1);
 	}
 
@@ -180,7 +178,7 @@ void log_pc(struct blk_io_trace *t, char act)
 	printf("\n");
 }
 
-void dump_trace_pc(struct blk_io_trace *t)
+static void dump_trace_pc(struct blk_io_trace *t)
 {
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
@@ -209,7 +207,7 @@ void dump_trace_pc(struct blk_io_trace *t)
 	events++;
 }
 
-void dump_trace_fs(struct blk_io_trace *t)
+static void dump_trace_fs(struct blk_io_trace *t)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 
@@ -250,7 +248,7 @@ void dump_trace_fs(struct blk_io_trace *t)
 	events++;
 }
 
-void dump_trace(struct blk_io_trace *t)
+static void dump_trace(struct blk_io_trace *t)
 {
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
 		dump_trace_pc(t);
@@ -258,7 +256,7 @@ void dump_trace(struct blk_io_trace *t)
 		dump_trace_fs(t);
 }
 
-void show_stats(void)
+static void show_stats(void)
 {
 	printf("\nReads:");
 	printf("\tQueued:    %'8lu, %'8LuKiB\n", qreads, qread_kb);
@@ -274,15 +272,7 @@ void show_stats(void)
 	printf("Missed events: %'Lu\n", missed_events);
 }
 
-int compar(const void *t1, const void *t2)
-{
-	long v1 = (long)(((struct blk_io_trace *)t1)->sequence);
-	long v2 = (long)(((struct blk_io_trace *)t2)->sequence);
-
-	return v1 - v2;
-}
-
-inline int trace_rb_insert(struct trace *t)
+static inline int trace_rb_insert(struct trace *t)
 {
 	struct rb_node **p = &rb_root.rb_node;
 	struct rb_node *parent = NULL;
@@ -307,7 +297,7 @@ inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
-int sort_entries(void *traces, unsigned long offset)
+static int sort_entries(void *traces, unsigned long offset)
 {
 	struct blk_io_trace *bit;
 	struct trace *t;
@@ -332,17 +322,18 @@ int sort_entries(void *traces, unsigned long offset)
 	return nelems;
 }
 
-void show_entries(void)
+static void show_entries(void)
 {
-	struct rb_node *n = rb_first(&rb_root);
 	struct blk_io_trace *bit;
+	struct rb_node *n;
 	struct trace *t;
 	int cpu;
 
-	do {
-		if (!n)
-			break;
+	n = rb_first(&rb_root);
+	if (!n)
+		return;
 
+	do {
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
@@ -352,7 +343,7 @@ void show_entries(void)
 			return;
 		}
 
-		current = &per_file_info[cpu];
+		cur_file = &per_file_info[cpu];
 
 		/*
 		 * offset time by first trace event.
@@ -360,10 +351,10 @@ void show_entries(void)
 		 * NOTE: This is *cpu* relative, thus you can not
 		 * compare times ACROSS cpus.
 		 */
-		if (current->start_time == 0)
-			current->start_time = bit->time;
+		if (cur_file->start_time == 0)
+			cur_file->start_time = bit->time;
 
-		bit->time -= current->start_time;
+		bit->time -= cur_file->start_time;
 
 		dump_trace(bit);
 	} while ((n = rb_next(n)) != NULL);
@@ -371,9 +362,9 @@ void show_entries(void)
 
 int main(int argc, char *argv[])
 {
-	char *dev;
-	int i, nfiles, nelems, ret;
 	struct per_file_info *pfi;
+	int i, nfiles, ret;
+	char *dev;
 
 	if (argc != 2) {
 		fprintf(stderr, "Usage %s <dev>\n", argv[0]);
@@ -382,7 +373,7 @@ int main(int argc, char *argv[])
 
 	dev = argv[1];
 
-	nfiles = nelems = 0;
+	nfiles = 0;
 	for (i = 0, pfi = &per_file_info[0]; i < MAX_CPUS; i++, pfi++) {
 		pfi->cpu = i;
 		pfi->start_time = 0;
@@ -397,7 +388,7 @@ int main(int argc, char *argv[])
 		pfi->dfd = open(pfi->dname, O_RDONLY);
 		if (pfi->dfd < 0) {
 			perror(pfi->dname);
-			return 1;
+			break;
 		}
 
 		pfi->ofname = malloc(128);
@@ -405,7 +396,7 @@ int main(int argc, char *argv[])
 		pfi->ofp = fopen(pfi->ofname, "w");
 		if (pfi->ofp == NULL) {
 			perror(pfi->ofname);
-			return 1;
+			break;
 		}
 
 		printf("Processing %s\n", pfi->fname);
@@ -415,29 +406,30 @@ int main(int argc, char *argv[])
 		pfi->fd = open(pfi->fname, O_RDONLY);
 		if (pfi->fd < 0) {
 			perror(pfi->fname);
-			return 1;
+			break;
 		}
 		if (read(pfi->fd, pfi->trace_buf, pfi->stat.st_size) != pfi->stat.st_size) {
 			fprintf(stderr, "error reading\n");
-			return 1;
+			break;
 		}
 
 		ret = sort_entries(pfi->trace_buf, pfi->stat.st_size);
 		if (ret == -1)
-			return 1;
+			break;
 
 		close(pfi->fd);
 		nfiles++;
 		pfi->nelems = ret;
-		nelems += pfi->nelems;
 		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
 
 	}
 
-	show_entries();
+	if (nfiles) {
+		show_entries();
+		show_stats();
+		return 0;
+	}
 
-	show_stats();
-	return 0;
+	fprintf(stderr, "No files found\n");
+	return 1;
 }
-
-
