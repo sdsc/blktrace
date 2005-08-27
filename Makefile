@@ -5,7 +5,7 @@ TRACE_LIBS = -lpthread
 
 all: $(PROG)
 
-blkparse: blkparse.o
+blkparse: blkparse.o rbtree.o
 blktrace: blktrace.o $(TRACE_LIBS)
 
 clean:

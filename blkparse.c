@@ -4,8 +4,10 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 
-#include "blktrace.h" 
+#include "blktrace.h"
+#include "rbtree.h"
 
 #define NELEMS(pfi) ((pfi)->stat.st_size / sizeof(struct blk_io_trace))
 
@@ -23,7 +25,16 @@ struct per_file_info {
 	int dfd;
 	char *dname;
 
+	void *trace_buf;
+
 	unsigned long long start_time;
+};
+
+static struct rb_root rb_root;
+
+struct trace {
+	struct blk_io_trace *bit;
+	struct rb_node rb_node;
 };
 
 struct per_file_info per_file_info[MAX_CPUS];
@@ -271,12 +282,98 @@ int compar(const void *t1, const void *t2)
 	return v1 - v2;
 }
 
+inline int trace_rb_insert(struct trace *t)
+{
+	struct rb_node **p = &rb_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct trace *__t;
+
+	while (*p) {
+		parent = *p;
+		__t = rb_entry(parent, struct trace, rb_node);
+
+		if (t->bit->sequence < __t->bit->sequence)
+			p = &(*p)->rb_left;
+		else if (t->bit->sequence > __t->bit->sequence)
+			p = &(*p)->rb_right;
+		else {
+			fprintf(stderr, "sequence alias %u!\n", t->bit->sequence);
+			return 1;
+		}
+	}
+
+	rb_link_node(&t->rb_node, parent, p);
+	rb_insert_color(&t->rb_node, &rb_root);
+	return 0;
+}
+
+int sort_entries(void *traces, unsigned long offset)
+{
+	struct blk_io_trace *bit;
+	struct trace *t;
+	void *start = traces;
+	int nelems = 0;
+
+	memset(&rb_root, 0, sizeof(rb_root));
+
+	do {
+		bit = traces;
+		t = malloc(sizeof(*t));
+		t->bit = bit;
+		memset(&t->rb_node, 0, sizeof(t->rb_node));
+
+		if (trace_rb_insert(t))
+			return -1;
+
+		traces += sizeof(*bit) + bit->pdu_len;
+		nelems++;
+	} while (traces < start + offset);
+
+	return nelems;
+}
+
+void show_entries(void)
+{
+	struct rb_node *n = rb_first(&rb_root);
+	struct blk_io_trace *bit;
+	struct trace *t;
+	int cpu;
+
+	do {
+		if (!n)
+			break;
+
+		t = rb_entry(n, struct trace, rb_node);
+		bit = t->bit;
+
+		cpu = bit->magic;
+		if (cpu >= MAX_CPUS) {
+			fprintf(stderr, "CPU number too large (%d)\n", cpu);
+			return;
+		}
+
+		current = &per_file_info[cpu];
+
+		/*
+		 * offset time by first trace event.
+		 *
+		 * NOTE: This is *cpu* relative, thus you can not
+		 * compare times ACROSS cpus.
+		 */
+		if (current->start_time == 0)
+			current->start_time = bit->time;
+
+		bit->time -= current->start_time;
+
+		dump_trace(bit);
+	} while ((n = rb_next(n)) != NULL);
+}
+
 int main(int argc, char *argv[])
 {
-	char *p, *dev;
-	int i, nfiles, nelems, nb, ret;
+	char *dev;
+	int i, nfiles, nelems, ret;
 	struct per_file_info *pfi;
-	struct blk_io_trace *traces, *tip;
 
 	if (argc != 2) {
 		fprintf(stderr, "Usage %s <dev>\n", argv[0]);
@@ -285,7 +382,6 @@ int main(int argc, char *argv[])
 
 	dev = argv[1];
 
-	printf("First pass:\n");
 	nfiles = nelems = 0;
 	for (i = 0, pfi = &per_file_info[0]; i < MAX_CPUS; i++, pfi++) {
 		pfi->cpu = i;
@@ -295,39 +391,6 @@ int main(int argc, char *argv[])
 		sprintf(pfi->fname, "%s_out.%d", dev, i);
 		if (stat(pfi->fname, &pfi->stat) < 0)
 			break;
-		if (!S_ISREG(pfi->stat.st_mode)) {
-			fprintf(stderr, "Bad file type %s\n", pfi->fname);
-			return 1;
-		}
-
-		nfiles++;
-		pfi->nelems = NELEMS(pfi);
-		nelems += pfi->nelems;
-		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
-
-	}
-	printf("\t              %15d\n", nelems);
-
-	if (!i) {
-		fprintf(stderr, "No files found\n");
-		return 1;
-	}
-
-	traces = malloc(nelems * sizeof(struct blk_io_trace));
-	if (traces == NULL) {
-		fprintf(stderr, "Can not allocate %d\n",
-			nelems * (int) sizeof(struct blk_io_trace));
-		return 1;
-	}
-
-	printf("Second pass:\n");
-	p = (char *)traces;
-	for (i = 0, pfi = per_file_info; i < nfiles; i++, pfi++) {
-		pfi->fd = open(pfi->fname, O_RDONLY);
-		if (pfi->fd < 0) {
-			perror(pfi->fname);
-			return 1;
-		}
 
 		pfi->dname = malloc(128);
 		snprintf(pfi->dname, 127, "%s_dat.%d", dev, i);
@@ -345,46 +408,33 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 
-		printf("\tProcessing %s...", pfi->fname); fflush(stdout);
-		nb = pfi->stat.st_size;
-		ret = read(pfi->fd, p, nb);
-		if (ret != nb) {
+		printf("Processing %s\n", pfi->fname);
+
+		pfi->trace_buf = malloc(pfi->stat.st_size);
+
+		pfi->fd = open(pfi->fname, O_RDONLY);
+		if (pfi->fd < 0) {
 			perror(pfi->fname);
-			fprintf(stderr,"\nFATAL: read(%d) -> %d\n", nb, ret);
 			return 1;
 		}
-		printf("\n"); fflush(stdout);
-		p += nb;
+		if (read(pfi->fd, pfi->trace_buf, pfi->stat.st_size) != pfi->stat.st_size) {
+			fprintf(stderr, "error reading\n");
+			return 1;
+		}
+
+		ret = sort_entries(pfi->trace_buf, pfi->stat.st_size);
+		if (ret == -1)
+			return 1;
+
 		close(pfi->fd);
+		nfiles++;
+		pfi->nelems = ret;
+		nelems += pfi->nelems;
+		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
+
 	}
 
-	printf("Sorting..."); fflush(stdout);
-	qsort(traces, nelems, sizeof(struct blk_io_trace), compar);
-	printf("\n\n");
-
-	for (i = 0, tip = traces; i < nelems; i++, tip++) {
-		int cpu = tip->magic;
-
-		if (cpu >= MAX_CPUS) {
-			fprintf(stderr, "CPU number too large (%d)\n", cpu);
-			return 1;
-		}
-
-		current = &per_file_info[cpu];
-
-		/*
-		 * offset time by first trace event. 
-		 *
-		 * NOTE: This is *cpu* relative, thus you can not 
-		 * compare times ACROSS cpus.
-		 */
-		if (current->start_time == 0)
-			current->start_time = tip->time;
-
-		tip->time -= current->start_time;
-
-		dump_trace(tip);
-	}
+	show_entries();
 
 	show_stats();
 	return 0;

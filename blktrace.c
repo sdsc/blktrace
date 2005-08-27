@@ -166,8 +166,8 @@ void *extract(void *arg)
 					tip->cpu, ip);
 				exit(1);
 			} else if (ret > 0) {
-				fprintf(stderr,"Thread %d misread %s %d,%ld\n",
-					tip->cpu, ip, ret, sizeof(t));
+				fprintf(stderr,"Thread %d misread %s %d,%d\n",
+					tip->cpu, ip, ret, (int)sizeof(t));
 				exit(1);
 			} else {
 				usleep(10000);
