@@ -1,3 +1,8 @@
+20050828:
+	- Improved error handling
+	- Remove _dat files, include the payload in _out
+	- Support for payload > 64 bytes
+	- Add install target
 20050827:
 	- Various cleanups and killing unused variables
 20050826:

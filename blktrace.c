@@ -90,8 +90,9 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 			 int nb)
 {
 	int ret, bytes_left;
-	unsigned char buf[nb], *p;
+	unsigned char *buf, *p;
 
+	buf = malloc(nb);
 	p = buf;
 	bytes_left = nb;
 	while (bytes_left > 0) {
@@ -102,6 +103,7 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 			perror(ifn);
 			fprintf(stderr, "Thread %d extract_data %s failed\n",
 				cpu, ifn);
+			free(buf);
 			exit(1);
 		} else {
 			p += ret;
@@ -113,14 +115,17 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 	if (ret != nb) {
 		perror(ofn);
 		fprintf(stderr,"Thread %d extract_data %s failed\n", cpu, ofn);
+		free(buf);
 		exit(1);
 	}
+
+	free(buf);
 }
 
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
-	int tracefd, ret, ofd, dfd;
+	int tracefd, ret, ofd;
 	char ip[64], op[64], dp[64];
 	struct blk_io_trace t;
 	pid_t pid = getpid();
@@ -139,14 +144,6 @@ static void *extract(void *arg)
 	if (ofd < 0) {
 		perror(op);
 		fprintf(stderr,"Thread %d failed creat of %s\n", tip->cpu, op);
-		exit(1);
-	}
-
-	sprintf(dp, "%s_dat.%d", buts_name_p, tip->cpu);
-	dfd = open(dp, O_CREAT|O_TRUNC|O_WRONLY, 0644);
-	if (dfd < 0) {
-		perror(dp);
-		fprintf(stderr,"Thread %d failed creat of %s\n", tip->cpu, dp);
 		exit(1);
 	}
 
@@ -179,21 +176,6 @@ static void *extract(void *arg)
 		if (verify_trace(&t))
 			exit(1);
 
-		switch (t.action & 0xffff) {
-		case __BLK_TA_ISSUE:
-		case __BLK_TA_COMPLETE:
-			if (!t.pdu_len)
-				break;
-			else if (t.pdu_len > 64) {
-				fprintf(stderr, 
-					"Thread %d Payload too large %d\n", 
-					tip->cpu, t.pdu_len);
-				exit(1);
-			}
-			extract_data(tip->cpu, ip, tracefd, dp, dfd, t.pdu_len);
-			break;
-		}
-
 		/* version is verified, stuff with CPU number now */
 		t.magic = tip->cpu;
 		ret = write(ofd, &t, sizeof(t));
@@ -203,6 +185,9 @@ static void *extract(void *arg)
 				tip->cpu, op);
 			exit(1);
 		}
+
+		if (t.pdu_len)
+			extract_data(tip->cpu, ip, tracefd, dp, ofd, t.pdu_len);
 
 		tip->events_processed++;
 	}

@@ -14,16 +14,12 @@
 struct per_file_info {
 	int cpu;
 	int nelems;
-	struct stat stat;
 
 	int fd;
-	char *fname;
-	FILE *ofp;
-	char *ofname;
-	int dfd;
-	char *dname;
+	char fname[128];
 
-	void *trace_buf;
+	FILE *ofp;
+	char ofname[128];
 
 	unsigned long long start_time;
 };
@@ -35,12 +31,14 @@ struct trace {
 	struct rb_node rb_node;
 };
 
-struct per_file_info per_file_info[MAX_CPUS];
-struct per_file_info *cur_file;
+static struct per_file_info per_file_info[MAX_CPUS];
+static struct per_file_info *cur_file;
 
 static unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
 static unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
-static unsigned long long events, missed_events;
+static unsigned long long events;
+
+static int max_cpus;
 
 static inline void account_m(int rw, unsigned int bytes)
 {
@@ -145,26 +143,15 @@ static void log_generic(struct blk_io_trace *t, char act)
 	output(tstring);
 }
 
-static void log_pc(struct blk_io_trace *t, char act)
+static int log_pc(struct blk_io_trace *t, char act)
 {
-	int i, ret;
-	unsigned char buf[64];
+	unsigned char *buf;
+	int i;
 
-	sprintf(tstring,"%s\n", setup_header(t, act));
+	sprintf(tstring,"%s ", setup_header(t, act));
 	output(tstring);
 
-	if (t->pdu_len > sizeof(buf)) {
-		fprintf(stderr, "Payload too large %d\n", t->pdu_len);
-		return;
-	}
-
-	ret = read(cur_file->dfd, buf, t->pdu_len);
-	if (ret != t->pdu_len) {
-		fprintf(stderr,"read(%d) failed on %s - %d\n", t->pdu_len, 
-			cur_file->dname, ret);
-		exit(1);
-	}
-
+	buf = (unsigned char *) t + sizeof(*t);
 	for (i = 0; i < t->pdu_len; i++) {
 		sprintf(tstring,"%02x ", buf[i]);
 		output(tstring);
@@ -176,10 +163,13 @@ static void log_pc(struct blk_io_trace *t, char act)
 	}
 
 	printf("\n");
+	return 0;
 }
 
-static void dump_trace_pc(struct blk_io_trace *t)
+static int dump_trace_pc(struct blk_io_trace *t)
 {
+	int ret = 0;
+
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
 			log_generic(t, 'Q');
@@ -194,17 +184,18 @@ static void dump_trace_pc(struct blk_io_trace *t)
 			log_generic(t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
-			log_pc(t, 'D');
+			ret = log_pc(t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
 			log_pc(t, 'C');
 			break;
 		default:
 			fprintf(stderr, "Bad pc action %x\n", t->action);
-			return;
+			ret = 1;
+			break;
 	}
 	
-	events++;
+	return ret;
 }
 
 static void dump_trace_fs(struct blk_io_trace *t)
@@ -244,16 +235,19 @@ static void dump_trace_fs(struct blk_io_trace *t)
 			fprintf(stderr, "Bad fs action %x\n", t->action);
 			return;
 	}
-	
-	events++;
 }
 
-static void dump_trace(struct blk_io_trace *t)
+static int dump_trace(struct blk_io_trace *t)
 {
+	int ret = 0;
+
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
-		dump_trace_pc(t);
+		ret = dump_trace_pc(t);
 	else
 		dump_trace_fs(t);
+
+	events++;
+	return ret;
 }
 
 static void show_stats(void)
@@ -269,7 +263,6 @@ static void show_stats(void)
 	printf("\tMerges:    %'8lu\n", mwrites);
 
 	printf("Events: %'Lu\n", events);
-	printf("Missed events: %'Lu\n", missed_events);
 }
 
 static inline int trace_rb_insert(struct trace *t)
@@ -287,7 +280,7 @@ static inline int trace_rb_insert(struct trace *t)
 		else if (t->bit->sequence > __t->bit->sequence)
 			p = &(*p)->rb_right;
 		else {
-			fprintf(stderr, "sequence alias %u!\n", t->bit->sequence);
+			fprintf(stderr, "sequence alias!\n");
 			return 1;
 		}
 	}
@@ -317,7 +310,7 @@ static int sort_entries(void *traces, unsigned long offset)
 
 		traces += sizeof(*bit) + bit->pdu_len;
 		nelems++;
-	} while (traces < start + offset);
+	} while (traces < start + offset + sizeof(*bit));
 
 	return nelems;
 }
@@ -338,9 +331,9 @@ static void show_entries(void)
 		bit = t->bit;
 
 		cpu = bit->magic;
-		if (cpu >= MAX_CPUS) {
+		if (cpu > max_cpus) {
 			fprintf(stderr, "CPU number too large (%d)\n", cpu);
-			return;
+			break;
 		}
 
 		cur_file = &per_file_info[cpu];
@@ -356,43 +349,37 @@ static void show_entries(void)
 
 		bit->time -= cur_file->start_time;
 
-		dump_trace(bit);
+		if (dump_trace(bit))
+			break;
+
 	} while ((n = rb_next(n)) != NULL);
 }
 
 int main(int argc, char *argv[])
 {
-	struct per_file_info *pfi;
 	int i, nfiles, ret;
 	char *dev;
 
 	if (argc != 2) {
-		fprintf(stderr, "Usage %s <dev>\n", argv[0]);
+		fprintf(stderr, "Usage: %s <dev>\n", argv[0]);
 		return 1;
 	}
 
 	dev = argv[1];
 
-	nfiles = 0;
-	for (i = 0, pfi = &per_file_info[0]; i < MAX_CPUS; i++, pfi++) {
+	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++) {
+		struct per_file_info *pfi = &per_file_info[i];
+		struct stat st;
+		void *tb;
+
 		pfi->cpu = i;
 		pfi->start_time = 0;
 
-		pfi->fname = malloc(128);
-		sprintf(pfi->fname, "%s_out.%d", dev, i);
-		if (stat(pfi->fname, &pfi->stat) < 0)
+		snprintf(pfi->fname, sizeof(pfi->fname)-1,"%s_out.%d", dev, i);
+		if (stat(pfi->fname, &st) < 0)
 			break;
 
-		pfi->dname = malloc(128);
-		snprintf(pfi->dname, 127, "%s_dat.%d", dev, i);
-		pfi->dfd = open(pfi->dname, O_RDONLY);
-		if (pfi->dfd < 0) {
-			perror(pfi->dname);
-			break;
-		}
-
-		pfi->ofname = malloc(128);
-		snprintf(pfi->ofname, 127, "%s_log.%d", dev, i);
+		snprintf(pfi->ofname, sizeof(pfi->ofname)-1, "%s_log.%d", dev, i);
 		pfi->ofp = fopen(pfi->ofname, "w");
 		if (pfi->ofp == NULL) {
 			perror(pfi->ofname);
@@ -401,24 +388,25 @@ int main(int argc, char *argv[])
 
 		printf("Processing %s\n", pfi->fname);
 
-		pfi->trace_buf = malloc(pfi->stat.st_size);
+		tb = malloc(st.st_size);
 
 		pfi->fd = open(pfi->fname, O_RDONLY);
 		if (pfi->fd < 0) {
 			perror(pfi->fname);
 			break;
 		}
-		if (read(pfi->fd, pfi->trace_buf, pfi->stat.st_size) != pfi->stat.st_size) {
+		if (read(pfi->fd, tb, st.st_size) != st.st_size) {
 			fprintf(stderr, "error reading\n");
 			break;
 		}
 
-		ret = sort_entries(pfi->trace_buf, pfi->stat.st_size);
+		ret = sort_entries(tb, st.st_size);
 		if (ret == -1)
 			break;
 
 		close(pfi->fd);
 		nfiles++;
+		max_cpus++;
 		pfi->nelems = ret;
 		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
 

@@ -7,7 +7,7 @@ diff -urpN -X linux-2.6.13-rc6-mm2/Documentation/dontdiff /opt/kernel/linux-2.6.
  
 +config BLK_DEV_IO_TRACE
 +	bool "Support for tracing block io actions"
-+	select RELAYFS
++	select RELAYFS_FS
 +	help
 +	  Say Y here, if you want to be able to trace the block layer actions
 +	  on a given queue.
