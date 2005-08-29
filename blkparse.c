@@ -22,6 +22,9 @@ struct per_file_info {
 	char ofname[128];
 
 	unsigned long long start_time;
+
+	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
+	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
 };
 
 static struct rb_root rb_root;
@@ -35,42 +38,43 @@ struct trace {
 static struct per_file_info per_file_info[MAX_CPUS];
 static struct per_file_info *cur_file;
 
-static unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
-static unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
 static unsigned long long events;
 
 static int max_cpus;
 
-static inline void account_m(int rw, unsigned int bytes)
+static inline void account_m(struct per_file_info *pfi, int rw,
+			     unsigned int bytes)
 {
 	if (rw) {
-		mwrites++;
-		qwrite_kb += bytes >> 10;
+		pfi->mwrites++;
+		pfi->qwrite_kb += bytes >> 10;
 	} else {
-		mreads++;
-		qread_kb += bytes >> 10;
+		pfi->mreads++;
+		pfi->qread_kb += bytes >> 10;
 	}
 }
 
-static inline void account_q(int rw, unsigned int bytes)
+static inline void account_q(struct per_file_info *pfi, int rw,
+			     unsigned int bytes)
 {
 	if (rw) {
-		qwrites++;
-		qwrite_kb += bytes >> 10;
+		pfi->qwrites++;
+		pfi->qwrite_kb += bytes >> 10;
 	} else {
-		qreads++;
-		qread_kb += bytes >> 10;
+		pfi->qreads++;
+		pfi->qread_kb += bytes >> 10;
 	}
 }
 
-static inline void account_c(int rw, unsigned int bytes)
+static inline void account_c(struct per_file_info *pfi, int rw,
+			     unsigned int bytes)
 {
 	if (rw) {
-		cwrites++;
-		cwrite_kb += bytes >> 10;
+		pfi->cwrites++;
+		pfi->cwrite_kb += bytes >> 10;
 	} else {
-		creads++;
-		cread_kb += bytes >> 10;
+		pfi->creads++;
+		pfi->cread_kb += bytes >> 10;
 	}
 }
 
@@ -167,7 +171,7 @@ static int log_pc(struct blk_io_trace *t, char act)
 	return 0;
 }
 
-static int dump_trace_pc(struct blk_io_trace *t)
+static int dump_trace_pc(struct blk_io_trace *t, struct per_file_info *pfi)
 {
 	int ret = 0;
 
@@ -199,21 +203,21 @@ static int dump_trace_pc(struct blk_io_trace *t)
 	return ret;
 }
 
-static void dump_trace_fs(struct blk_io_trace *t)
+static void dump_trace_fs(struct blk_io_trace *t, struct per_file_info *pfi)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
-			account_q(w, t->bytes);
+			account_q(pfi, w, t->bytes);
 			log_queue(t, 'Q');
 			break;
 		case __BLK_TA_BACKMERGE:
-			account_m(w, t->bytes);
+			account_m(pfi, w, t->bytes);
 			log_merge(t, 'M');
 			break;
 		case __BLK_TA_FRONTMERGE:
-			account_m(w, t->bytes);
+			account_m(pfi, w, t->bytes);
 			log_merge(t, 'F');
 			break;
 		case __BLK_TA_GETRQ:
@@ -223,13 +227,14 @@ static void dump_trace_fs(struct blk_io_trace *t)
 			log_generic(t, 'S');
 			break;
 		case __BLK_TA_REQUEUE:
+			account_c(pfi, w, -t->bytes);
 			log_queue(t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
 			log_issue(t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
-			account_c(w, t->bytes);
+			account_c(pfi, w, t->bytes);
 			log_complete(t, 'C');
 			break;
 		default:
@@ -238,30 +243,61 @@ static void dump_trace_fs(struct blk_io_trace *t)
 	}
 }
 
-static int dump_trace(struct blk_io_trace *t)
+static int dump_trace(struct blk_io_trace *t, struct per_file_info *pfi)
 {
 	int ret = 0;
 
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
-		ret = dump_trace_pc(t);
+		ret = dump_trace_pc(t, pfi);
 	else
-		dump_trace_fs(t);
+		dump_trace_fs(t, pfi);
 
 	events++;
 	return ret;
 }
 
-static void show_stats(void)
+static void dump_pfi_stats(struct per_file_info *pfi)
 {
-	printf("\nReads:");
-	printf("\tQueued:    %'8lu, %'8LuKiB\n", qreads, qread_kb);
-	printf("\tCompleted: %'8lu, %'8LuKiB\n", creads, cread_kb);
-	printf("\tMerges:    %'8lu\n", mreads);
+	printf("\tReads:\n");
+	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qreads, pfi->qread_kb);
+	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->creads, pfi->cread_kb);
+	printf("\t\tMerges:    %'8lu\n", pfi->mreads);
 
-	printf("Writes:");
-	printf("\tQueued:    %'8lu, %'8LuKiB\n", qwrites, qwrite_kb);
-	printf("\tCompleted: %'8lu, %'8LuKiB\n", cwrites, cwrite_kb);
-	printf("\tMerges:    %'8lu\n", mwrites);
+	printf("\tWrites:\n");
+	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qwrites,pfi->qwrite_kb);
+	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->cwrites,pfi->cwrite_kb);
+	printf("\t\tMerges:    %'8lu\n", pfi->mwrites);
+}
+
+static void show_stats(int nfiles)
+{
+	struct per_file_info foo, *pfi;
+	int i;
+
+	memset(&foo, 0, sizeof(foo));
+
+	for (i = 0; i < nfiles; i++) {
+		pfi = &per_file_info[i];
+
+		foo.qreads += pfi->qreads;
+		foo.qwrites += pfi->qwrites;
+		foo.creads += pfi->creads;
+		foo.cwrites += pfi->cwrites;
+		foo.mreads += pfi->mreads;
+		foo.mwrites += pfi->mwrites;
+		foo.qread_kb += pfi->qread_kb;
+		foo.qwrite_kb += pfi->qwrite_kb;
+		foo.cread_kb += pfi->cread_kb;
+		foo.cwrite_kb += pfi->cwrite_kb;
+
+		printf("CPU%d:\n", i);
+		dump_pfi_stats(pfi);
+	}
+
+	if (nfiles > 1) {
+		printf("Total:\n");
+		dump_pfi_stats(&foo);
+	}
 
 	printf("Events: %'Lu\n", events);
 }
@@ -355,7 +391,7 @@ static void show_entries(void)
 
 		bit->time -= cur_file->start_time;
 
-		if (dump_trace(bit))
+		if (dump_trace(bit, cur_file))
 			break;
 
 	} while ((n = rb_next(n)) != NULL);
@@ -374,6 +410,7 @@ int main(int argc, char *argv[])
 	dev = argv[1];
 
 	memset(&rb_root, 0, sizeof(rb_root));
+	memset(per_file_info, 0, sizeof(per_file_info));
 
 	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++) {
 		struct per_file_info *pfi = &per_file_info[i];
@@ -422,7 +459,7 @@ int main(int argc, char *argv[])
 
 	if (nfiles) {
 		show_entries();
-		show_stats();
+		show_stats(nfiles);
 		return 0;
 	}
 

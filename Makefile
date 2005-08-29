@@ -1,5 +1,5 @@
 CC	= gcc
-CFLAGS	= -Wall -g -D_GNU_SOURCE
+CFLAGS	= -Wall -O2 -D_GNU_SOURCE
 PROG	= blkparse blktrace
 LIBS	= -lpthread
 
