@@ -176,8 +176,6 @@ static void *extract(void *arg)
 		if (verify_trace(&t))
 			exit(1);
 
-		/* version is verified, stuff with CPU number now */
-		t.magic = tip->cpu;
 		ret = write(ofd, &t, sizeof(t));
 		if (ret < 0) {
 			perror(op);

@@ -28,6 +28,7 @@ static struct rb_root rb_root;
 
 struct trace {
 	struct blk_io_trace *bit;
+	unsigned int cpu;
 	struct rb_node rb_node;
 };
 
@@ -290,7 +291,22 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
-static int sort_entries(void *traces, unsigned long offset)
+static inline int verify_trace(struct blk_io_trace *t)
+{
+	if (!CHECK_MAGIC(t)) {
+		fprintf(stderr, "bad trace magic %x\n", t->magic);
+		return 1;
+	}
+	if ((t->magic & 0xff) != SUPPORTED_VERSION) {
+		fprintf(stderr, "unsupported trace version %x\n", 
+			t->magic & 0xff);
+		return 1;
+	}
+
+	return 0;
+}
+
+static int sort_entries(void *traces, unsigned long offset, int cpu)
 {
 	struct blk_io_trace *bit;
 	struct trace *t;
@@ -303,7 +319,11 @@ static int sort_entries(void *traces, unsigned long offset)
 		bit = traces;
 		t = malloc(sizeof(*t));
 		t->bit = bit;
+		t->cpu = cpu;
 		memset(&t->rb_node, 0, sizeof(t->rb_node));
+
+		if (verify_trace(bit))
+			break;
 
 		if (trace_rb_insert(t))
 			return -1;
@@ -330,7 +350,7 @@ static void show_entries(void)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		cpu = bit->magic;
+		cpu = t->cpu;
 		if (cpu > max_cpus) {
 			fprintf(stderr, "CPU number too large (%d)\n", cpu);
 			break;
@@ -400,7 +420,7 @@ int main(int argc, char *argv[])
 			break;
 		}
 
-		ret = sort_entries(tb, st.st_size);
+		ret = sort_entries(tb, st.st_size, i);
 		if (ret == -1)
 			break;
 

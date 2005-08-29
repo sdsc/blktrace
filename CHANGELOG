@@ -1,8 +1,11 @@
-20050828:
+20050829:
 	- Improved error handling
 	- Remove _dat files, include the payload in _out
 	- Support for payload > 64 bytes
 	- Add install target
+	- Fix RELAYFS Kconfig selection (kernel patch)
+	- blktrace: Don't touch the stored trace, leave magic and version
+	  for blkparse to see as well.
 20050827:
 	- Various cleanups and killing unused variables
 20050826:
