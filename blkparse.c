@@ -24,7 +24,9 @@ struct per_file_info {
 	unsigned long long start_time;
 
 	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
+	unsigned long ireads, iwrites;
 	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
+	unsigned long long iread_kb, iwrite_kb;
 };
 
 static struct rb_root rb_root;
@@ -75,6 +77,18 @@ static inline void account_c(struct per_file_info *pfi, int rw,
 	} else {
 		pfi->creads++;
 		pfi->cread_kb += bytes >> 10;
+	}
+}
+
+static inline void account_i(struct per_file_info *pfi, int rw,
+			     unsigned int bytes)
+{
+	if (rw) {
+		pfi->iwrites++;
+		pfi->iwrite_kb += bytes >> 10;
+	} else {
+		pfi->ireads++;
+		pfi->iread_kb += bytes >> 10;
 	}
 }
 
@@ -231,6 +245,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_file_info *pfi)
 			log_queue(t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
+			account_i(pfi, w, t->bytes);
 			log_issue(t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
@@ -260,11 +275,13 @@ static void dump_pfi_stats(struct per_file_info *pfi)
 {
 	printf("\tReads:\n");
 	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qreads, pfi->qread_kb);
+	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pfi->ireads, pfi->iread_kb);
 	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->creads, pfi->cread_kb);
 	printf("\t\tMerges:    %'8lu\n", pfi->mreads);
 
 	printf("\tWrites:\n");
 	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qwrites,pfi->qwrite_kb);
+	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pfi->iwrites,pfi->iwrite_kb);
 	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->cwrites,pfi->cwrite_kb);
 	printf("\t\tMerges:    %'8lu\n", pfi->mwrites);
 }
@@ -278,6 +295,9 @@ static void show_stats(int nfiles)
 
 	for (i = 0; i < nfiles; i++) {
 		pfi = &per_file_info[i];
+
+		if (!pfi->nelems)
+			continue;
 
 		foo.qreads += pfi->qreads;
 		foo.qwrites += pfi->qwrites;
@@ -412,7 +432,7 @@ int main(int argc, char *argv[])
 	memset(&rb_root, 0, sizeof(rb_root));
 	memset(per_file_info, 0, sizeof(per_file_info));
 
-	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++) {
+	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
 		struct per_file_info *pfi = &per_file_info[i];
 		struct stat st;
 		void *tb;
@@ -423,6 +443,8 @@ int main(int argc, char *argv[])
 		snprintf(pfi->fname, sizeof(pfi->fname)-1,"%s_out.%d", dev, i);
 		if (stat(pfi->fname, &st) < 0)
 			break;
+		if (!st.st_size)
+			continue;
 
 		snprintf(pfi->ofname, sizeof(pfi->ofname)-1, "%s_log.%d", dev, i);
 		pfi->ofp = fopen(pfi->ofname, "w");
@@ -440,6 +462,7 @@ int main(int argc, char *argv[])
 			perror(pfi->fname);
 			break;
 		}
+
 		if (read(pfi->fd, tb, st.st_size) != st.st_size) {
 			fprintf(stderr, "error reading\n");
 			break;
@@ -450,8 +473,6 @@ int main(int argc, char *argv[])
 			break;
 
 		close(pfi->fd);
-		nfiles++;
-		max_cpus++;
 		pfi->nelems = ret;
 		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
 
