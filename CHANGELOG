@@ -9,6 +9,7 @@
 	- Always store trace data in big endian format
 	- Oops, don't clear rb_root in sort_entries()
 	- Account dispathces as well, split stats into per-cpu
+	- blktrace: fix payload logging
 20050827:
 	- Various cleanups and killing unused variables
 20050826:

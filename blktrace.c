@@ -110,7 +110,7 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
-	int tracefd, ret, ofd;
+	int tracefd, ret, ofd, pdu_len;
 	char ip[64], op[64], dp[64];
 	struct blk_io_trace t;
 	pid_t pid = getpid();
@@ -161,6 +161,8 @@ static void *extract(void *arg)
 		if (verify_trace(&t))
 			exit(1);
 
+		pdu_len = t.pdu_len;
+
 		trace_to_be(&t);
 
 		ret = write(ofd, &t, sizeof(t));
@@ -171,8 +173,8 @@ static void *extract(void *arg)
 			exit(1);
 		}
 
-		if (t.pdu_len)
-			extract_data(tip->cpu, ip, tracefd, dp, ofd, t.pdu_len);
+		if (pdu_len)
+			extract_data(tip->cpu, ip, tracefd, dp, ofd, pdu_len);
 
 		tip->events_processed++;
 	}
