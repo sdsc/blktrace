@@ -291,21 +291,6 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
-static inline int verify_trace(struct blk_io_trace *t)
-{
-	if (!CHECK_MAGIC(t)) {
-		fprintf(stderr, "bad trace magic %x\n", t->magic);
-		return 1;
-	}
-	if ((t->magic & 0xff) != SUPPORTED_VERSION) {
-		fprintf(stderr, "unsupported trace version %x\n", 
-			t->magic & 0xff);
-		return 1;
-	}
-
-	return 0;
-}
-
 static int sort_entries(void *traces, unsigned long offset, int cpu)
 {
 	struct blk_io_trace *bit;
@@ -315,12 +300,15 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 
 	memset(&rb_root, 0, sizeof(rb_root));
 
-	do {
+	while (traces - start <= offset - sizeof(*bit)) {
 		bit = traces;
+
 		t = malloc(sizeof(*t));
 		t->bit = bit;
 		t->cpu = cpu;
 		memset(&t->rb_node, 0, sizeof(t->rb_node));
+
+		trace_to_cpu(bit);
 
 		if (verify_trace(bit))
 			break;
@@ -330,7 +318,7 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 
 		traces += sizeof(*bit) + bit->pdu_len;
 		nelems++;
-	} while (traces < start + offset + sizeof(*bit));
+	}
 
 	return nelems;
 }

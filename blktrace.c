@@ -71,21 +71,6 @@ static void stop_trace(void)
 	close(devfd);
 }
 
-static inline int verify_trace(struct blk_io_trace *t)
-{
-	if (!CHECK_MAGIC(t)) {
-		fprintf(stderr, "bad trace magic %x\n", t->magic);
-		return 1;
-	}
-	if ((t->magic & 0xff) != SUPPORTED_VERSION) {
-		fprintf(stderr, "unsupported trace version %x\n", 
-			t->magic & 0xff);
-		return 1;
-	}
-
-	return 0;
-}
-
 static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 			 int nb)
 {
@@ -175,6 +160,8 @@ static void *extract(void *arg)
 
 		if (verify_trace(&t))
 			exit(1);
+
+		trace_to_be(&t);
 
 		ret = write(ofd, &t, sizeof(t));
 		if (ret < 0) {
