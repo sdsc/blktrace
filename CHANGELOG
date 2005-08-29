@@ -7,6 +7,7 @@
 	- blktrace: Don't touch the stored trace, leave magic and version
 	  for blkparse to see as well.
 	- Always store trace data in big endian format
+	- Oops, don't clear rb_root in sort_entries()
 20050827:
 	- Various cleanups and killing unused variables
 20050826:

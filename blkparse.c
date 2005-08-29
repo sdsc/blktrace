@@ -298,8 +298,6 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 	void *start = traces;
 	int nelems = 0;
 
-	memset(&rb_root, 0, sizeof(rb_root));
-
 	while (traces - start <= offset - sizeof(*bit)) {
 		bit = traces;
 
@@ -374,6 +372,8 @@ int main(int argc, char *argv[])
 	}
 
 	dev = argv[1];
+
+	memset(&rb_root, 0, sizeof(rb_root));
 
 	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++) {
 		struct per_file_info *pfi = &per_file_info[i];
