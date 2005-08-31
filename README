@@ -26,7 +26,18 @@ Usage
 -----
 
 To run:
-	% blktrace <dev>
+	% blktrace -d <dev> [-a <trace> [-a <trace>]]
+		-a <trace> is one of: (use multiple -a options to get more)
+			READ
+			WRITE
+			BARRIER
+			SYNC
+			QUEUE
+			REQUEUE
+			ISSUE
+			COMPLETE
+			FS
+			PC
 	--- run task to generate load to be traced ---
 	<SIGINT to kill>
 	--- Generates:

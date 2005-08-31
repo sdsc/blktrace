@@ -1,3 +1,6 @@
+20050830:
+	- Added argument parsing
+	- Added action mask set up
 20050829:
 	- Improved error handling
 	- Remove _dat files, include the payload in _out

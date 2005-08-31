@@ -2,7 +2,6 @@
  * block queue tracing application
  *
  * TODO (in no particular order):
- *	- Add ability to specify capture mask instead of logging all events
  *	- Add option for relayfs mount point
  *
  */
@@ -18,11 +17,67 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
+#include <ctype.h>
+#include <getopt.h>
 
 #include "blktrace.h"
 
 #define BUF_SIZE	(128 *1024)
 #define BUF_NR		(4)
+
+#define DECLARE_MASK_MAP(mask)          { BLK_TC_##mask, #mask, "BLK_TC_"#mask }
+#define COMPARE_MASK_MAP(mmp, str)                                      \
+        (!strcmp(mmp->short_form, toupper(str)) ||                      \
+         !strcmp(mmp->long_form, toupper(str)))
+
+#define VALID_SET(x)	((1 <= (x)) && ((x) < (1 << BLK_TC_SHIFT)))
+
+struct mask_map {
+	int mask;
+	char *short_form;
+	char *long_form;
+};
+
+struct mask_map mask_maps[] = {
+        DECLARE_MASK_MAP( READ     ),
+        DECLARE_MASK_MAP( WRITE    ),
+        DECLARE_MASK_MAP( BARRIER  ),
+        DECLARE_MASK_MAP( SYNC     ),
+        DECLARE_MASK_MAP( QUEUE    ),
+        DECLARE_MASK_MAP( REQUEUE  ),
+        DECLARE_MASK_MAP( ISSUE    ),
+        DECLARE_MASK_MAP( COMPLETE ),
+        DECLARE_MASK_MAP( FS       ),
+        DECLARE_MASK_MAP( PC       ),
+};
+
+#define S_OPTS	"d:a:A:"
+struct option l_opts[] = {
+	{ 
+		.name = "dev",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'd'
+	},
+	{ 
+		.name = "act-mask",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'a'
+	},
+	{ 
+		.name = "set-mask",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'A'
+	},
+	{
+		.name = NULL,
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 0
+	}
+};
 
 struct thread_information {
 	int cpu;
@@ -38,6 +93,30 @@ static volatile int done;
 static int devfd, ncpus;
 static struct thread_information *thread_information;
 static char *buts_name_p;
+static char *dev;
+static int act_mask = ~0;
+
+inline int compare_mask_map(struct mask_map *mmp, char *string)
+{
+        int i;
+        char *s, *ustring = strdup(string);
+
+        for (i = 0, s = ustring; i < strlen(ustring); i++, s++)
+                *s = toupper(*s);
+
+        return !strcmp(mmp->short_form, ustring) ||
+               !strcmp(mmp->long_form, ustring);
+}
+
+int find_mask_map(char *string)
+{
+        int i;
+
+        for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
+                if (compare_mask_map(&mask_maps[i], string))
+                        return mask_maps[i].mask;
+	return -1;
+}
 
 static int start_trace(char *dev)
 {
@@ -52,6 +131,7 @@ static int start_trace(char *dev)
 	memset(&buts, sizeof(buts), 0);
 	buts.buf_size = BUF_SIZE;
 	buts.buf_nr = BUF_NR;
+	buts.act_mask = act_mask;
 
 	printf("Starting trace on %s\n", dev);
 	if (ioctl(devfd, BLKSTARTTRACE, &buts) < 0) {
@@ -245,21 +325,65 @@ void handle_sigint(int sig)
 int main(int argc, char *argv[])
 {
 	struct stat st;
-	int i;
+	int i, c;
+	int act_mask_tmp = 0;
 
-	if (argc < 2) {
-		fprintf(stderr, "Usage: %s <dev>\n", argv[0]);
-		return 1;
+	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) >= 0) {
+		switch (c) {
+		case 'a':
+			i = find_mask_map(optarg);
+			if (i < 0) {
+				fprintf(stderr,"Invalid action mask %s\n", 
+					optarg);
+				return 4;
+			}
+			act_mask_tmp |= i;
+			break;
+
+		case 'A':
+			if ((sscanf(optarg, "%x", &i) != 1) || !VALID_SET(i)) {
+				fprintf(stderr,
+					"Invalid set action mask %s/0x%x\n", 
+					optarg, i);
+				return 4;
+			}
+			act_mask_tmp = i;
+			break;
+
+		case 'd':
+			dev = strdup(optarg);
+			break;
+
+		default:
+			fprintf(stderr,"Usage: %s -d <dev> "
+				       "[-a <trace> [-a <trace>]]\n", argv[0]);
+			return 4;
+		}
+	}
+
+	if ((dev == NULL) || (optind < argc)) {
+		fprintf(stderr,"Usage: %s -d <dev> "
+			       "[-a <trace> [-a <trace>]]\n", argv[0]);
+		return 4;
+	}
+
+	if (act_mask_tmp != 0) {
+		act_mask = act_mask_tmp;
+		printf("Tracing 0x%04x: ", act_mask);
+		for (i = 0; i < BLK_TC_SHIFT; i++)
+			if (act_mask & (1 << i))
+				printf("%s ", mask_maps[i].short_form);
+		printf("\n");
 	}
 
 	if (stat(relay_path, &st) < 0) {
-		fprintf(stderr,"%s does not appear to be mounted\n", 
+		fprintf(stderr,"%s does not appear to be mounted\n",
 			relay_path);
 		return 2;
 	}
 
-	if (start_trace(argv[1])) {
-		fprintf(stderr, "Failed to start trace\n");
+	if (start_trace(dev)) {
+		fprintf(stderr, "Failed to start trace on %s\n", dev);
 		stop_trace();
 		return 3;
 	}
