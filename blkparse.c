@@ -31,6 +31,11 @@
 
 #define MAX_CPUS	(512)
 
+#define SECONDS(x) 	((unsigned long long)(x) / 1000000000)
+#define NANO_SECONDS(x)	((unsigned long long)(x) % 1000000000)
+
+int backwards;
+unsigned long long genesis_time, last_reported_time;
 struct per_file_info {
 	int cpu;
 	int nelems;
@@ -40,8 +45,6 @@ struct per_file_info {
 
 	FILE *ofp;
 	char ofname[128];
-
-	unsigned long long start_time;
 
 	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
 	unsigned long ireads, iwrites;
@@ -63,6 +66,15 @@ static struct per_file_info *cur_file;
 static unsigned long long events;
 
 static int max_cpus;
+
+static inline void check_time(struct blk_io_trace *bit)
+{
+	unsigned long long this = bit->time;
+	unsigned long long last = last_reported_time;
+
+	backwards = (this < last) ? 'B' : ' ';
+	last_reported_time = this;
+}
 
 static inline void account_m(struct per_file_info *pfi, int rw,
 			     unsigned int bytes)
@@ -140,9 +152,10 @@ static inline char *setup_header(struct blk_io_trace *t, char act)
 
 	rwbs[i] = '\0';
 
-	sprintf(hstring, "%3d %15ld %12Lu %5u %c %3s", cur_file->cpu,
-		(unsigned long)t->sequence, (unsigned long long)t->time, t->pid,
-		act, rwbs);
+	sprintf(hstring, "%c %3d %15ld %5Lu.%09Lu %5u %c %3s", backwards,
+		cur_file->cpu,
+		(unsigned long)t->sequence, SECONDS(t->time), 
+		NANO_SECONDS(t->time), t->pid, act, rwbs);
 
 	return hstring;
 }
@@ -420,16 +433,11 @@ static void show_entries(void)
 
 		cur_file = &per_file_info[cpu];
 
-		/*
-		 * offset time by first trace event.
-		 *
-		 * NOTE: This is *cpu* relative, thus you can not
-		 * compare times ACROSS cpus.
-		 */
-		if (cur_file->start_time == 0)
-			cur_file->start_time = bit->time;
+		if (genesis_time == 0)
+			genesis_time = bit->time;
+		bit->time -= genesis_time;
 
-		bit->time -= cur_file->start_time;
+		check_time(bit);
 
 		if (dump_trace(bit, cur_file))
 			break;
@@ -458,7 +466,6 @@ int main(int argc, char *argv[])
 		void *tb;
 
 		pfi->cpu = i;
-		pfi->start_time = 0;
 
 		snprintf(pfi->fname, sizeof(pfi->fname)-1,"%s_out.%d", dev, i);
 		if (stat(pfi->fname, &st) < 0)

@@ -1,5 +1,7 @@
 20050901:
 	- Update kernel patch
+	- Added seconds.nanosecond output format for time 
+	- Converted to comply with time stamps comparable on each CPU
 20050830:
 	- Added argument parsing
 	- Added action mask set up
