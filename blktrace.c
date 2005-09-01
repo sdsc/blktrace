@@ -111,6 +111,7 @@ static struct thread_information *thread_information;
 static char *buts_name_p;
 static char *dev;
 static int act_mask = ~0;
+static int trace_started;
 
 inline int compare_mask_map(struct mask_map *mmp, char *string)
 {
@@ -155,6 +156,7 @@ static int start_trace(char *dev)
 		return 1;
 	}
 
+	trace_started = 1;
 	buts_name_p = strdup(buts.name);
 	return 0;
 }
@@ -338,6 +340,12 @@ void handle_sigint(int sig)
 	done = 1;
 }
 
+void stop_trace_on_exit(void)
+{
+	if (trace_started)
+		stop_trace();
+}
+
 int main(int argc, char *argv[])
 {
 	struct stat st;
@@ -400,7 +408,6 @@ int main(int argc, char *argv[])
 
 	if (start_trace(dev)) {
 		fprintf(stderr, "Failed to start trace on %s\n", dev);
-		stop_trace();
 		return 3;
 	}
 
@@ -418,6 +425,8 @@ int main(int argc, char *argv[])
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
+
+	atexit(stop_trace_on_exit);
 
 	while (!is_done())
 		sleep(1);

@@ -3,6 +3,7 @@
 	- Added seconds.nanosecond output format for time 
 	- Converted to comply with time stamps comparable on each CPU
 	- Fix oops on tracing dm/md and other stacked devices
+	- Always make sure we stop the trace properly
 20050830:
 	- Added argument parsing
 	- Added action mask set up
