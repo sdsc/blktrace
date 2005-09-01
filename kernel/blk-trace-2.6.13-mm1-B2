@@ -234,7 +234,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	depends on !UML
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c linux-2.6.13-mm1/drivers/block/ll_rw_blk.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 13:08:42.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 17:22:46.000000000 +0200
 @@ -29,6 +29,7 @@
  #include <linux/swap.h>
  #include <linux/writeback.h>
@@ -301,15 +301,15 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -2705,6 +2722,8 @@ static int __make_request(request_queue_
- 	}
+@@ -2745,6 +2762,8 @@ get_rq:
+ 	req->rq_disk = bio->bi_bdev->bd_disk;
+ 	req->start_time = jiffies;
  
- get_rq:
 +	blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
 +
- 	/*
- 	 * Grab a free request. This is might sleep but can not fail.
- 	 * Returns with the queue unlocked.
+ 	spin_lock_irq(q->queue_lock);
+ 	if (elv_queue_empty(q))
+ 		blk_plug_device(q);
 @@ -2981,6 +3000,10 @@ end_io:
  		blk_partition_remap(bio);
  

@@ -4,6 +4,7 @@
 	- Converted to comply with time stamps comparable on each CPU
 	- Fix oops on tracing dm/md and other stacked devices
 	- Always make sure we stop the trace properly
+	- Move BLK_TA_QUEUE trace
 20050830:
 	- Added argument parsing
 	- Added action mask set up
