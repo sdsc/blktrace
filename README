@@ -8,18 +8,10 @@ Alan D. Brunelle (threading and splitup into two seperate programs).
 Requirements
 ------------
 
-Currently, the kernel support patch isn't merged yet. The last posted patch
-is:
-
-http://marc.theaimsgroup.com/?l=linux-kernel&m=112487579802074&w=2
-
-and applies against 2.6.13-rc6-mm2. The patch is also included in the git
-repository you pulled to get this file:
+You need to be running a 2.6.13-mm1 kernel with the blk-trace patch
+included in this repository. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
-
-Additionally, you need to apply the relayfs-read update patch also located
-in the kernel/ directory.
 
 
 Usage
