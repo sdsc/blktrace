@@ -1,7 +1,34 @@
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig linux-2.6.13-mm1/drivers/block/Kconfig
+--- /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-02 13:46:54.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-02 14:03:01.000000000 +0200
+@@ -419,6 +419,14 @@ config LBD
+ 	  your machine, or if you want to have a raid or loopback device
+ 	  bigger than 2TB.  Otherwise say N.
+ 
++config BLK_DEV_IO_TRACE
++	bool "Support for tracing block io actions"
++	select RELAYFS_FS
++	help
++	  Say Y here, if you want to be able to trace the block layer actions
++	  on a given queue.
++
++
+ config CDROM_PKTCDVD
+ 	tristate "Packet writing on CD/DVD media"
+ 	depends on !UML
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile linux-2.6.13-mm1/drivers/block/Makefile
+--- /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile	2005-09-02 13:46:54.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/Makefile	2005-09-02 14:03:01.000000000 +0200
+@@ -45,3 +45,5 @@ obj-$(CONFIG_VIODASD)		+= viodasd.o
+ obj-$(CONFIG_BLK_DEV_SX8)	+= sx8.o
+ obj-$(CONFIG_BLK_DEV_UB)	+= ub.o
+ 
++obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
++
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/blktrace.c linux-2.6.13-mm1/drivers/block/blktrace.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/blktrace.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.13-mm1/drivers/block/blktrace.c	2005-09-01 16:39:34.000000000 +0200
-@@ -0,0 +1,169 @@
++++ linux-2.6.13-mm1/drivers/block/blktrace.c	2005-09-02 16:03:25.000000000 +0200
+@@ -0,0 +1,223 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -57,6 +84,51 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +	local_irq_restore(flags);
 +}
 +
++static struct dentry *blk_tree_root;
++static DECLARE_MUTEX(blk_tree_mutex);
++
++static inline void blk_remove_root(void)
++{
++	if (relayfs_remove_dir(blk_tree_root) != -ENOTEMPTY)
++		blk_tree_root = NULL;
++}
++
++static void blk_remove_tree(struct dentry *dir)
++{
++	down(&blk_tree_mutex);
++	relayfs_remove_dir(dir);
++	blk_remove_root();
++	up(&blk_tree_mutex);
++}
++
++static struct dentry *blk_create_tree(const char *blk_name)
++{
++	struct dentry *dir = NULL;
++
++	down(&blk_tree_mutex);
++
++	if (!blk_tree_root) {
++		blk_tree_root = relayfs_create_dir("block", NULL);
++		if (!blk_tree_root)
++			goto err;
++	}
++
++	dir = relayfs_create_dir(blk_name, blk_tree_root);
++	if (!dir)
++		blk_remove_root();
++
++err:
++	up(&blk_tree_mutex);
++	return dir;
++}
++
++void blk_cleanup_trace(struct blk_trace *bt)
++{
++	relay_close(bt->rchan);
++	blk_remove_tree(bt->dir);
++	kfree(bt);
++}
++
 +int blk_stop_trace(struct block_device *bdev)
 +{
 +	request_queue_t *q = bdev_get_queue(bdev);
@@ -76,10 +148,8 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +
 +	up(&bdev->bd_sem);
 +
-+	if (bt) {
-+		relay_close(bt->rchan);
-+		kfree(bt);
-+	}
++	if (bt)
++		blk_cleanup_trace(bt);
 +
 +	return ret;
 +}
@@ -88,9 +158,10 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +{
 +	request_queue_t *q = bdev_get_queue(bdev);
 +	struct blk_user_trace_setup buts;
-+	struct blk_trace *bt;
++	struct blk_trace *bt = NULL;
++	struct dentry *dir = NULL;
 +	char b[BDEVNAME_SIZE];
-+	int ret = 0;
++	int ret;
 +
 +	if (!q)
 +		return -ENXIO;
@@ -116,11 +187,16 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +	if (!bt)
 +		goto err;
 +
++	ret = -ENOENT;
++	dir = blk_create_tree(bdevname(bdev, b));
++	if (!dir)
++		goto err;
++
++	bt->dir = dir;
 +	atomic_set(&bt->sequence, 0);
 +
-+	bt->rchan = relay_open(bdevname(bdev, b), NULL, buts.buf_size,
-+				buts.buf_nr, NULL);
 +	ret = -EIO;
++	bt->rchan = relay_open("trace", dir, buts.buf_size, buts.buf_nr, NULL);
 +	if (!bt->rchan)
 +		goto err;
 +
@@ -129,9 +205,14 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +		bt->act_mask = (u16) -1;
 +
 +	q->blk_trace = bt;
-+	ret = 0;
++	up(&bdev->bd_sem);
++	return 0;
 +err:
 +	up(&bdev->bd_sem);
++	if (dir)
++		blk_remove_tree(dir);
++	if (bt)
++		kfree(bt);
 +	return ret;
 +}
 +
@@ -172,8 +253,8 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +module_init(blk_trace_init);
 +
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c linux-2.6.13-mm1/drivers/block/elevator.c
---- /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-01 13:08:42.000000000 +0200
+--- /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-02 13:46:54.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-02 14:03:01.000000000 +0200
 @@ -34,6 +34,7 @@
  #include <linux/slab.h>
  #include <linux/init.h>
@@ -193,8 +274,8 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  		 * just mark as started even if we don't start it, a request
  		 * that has been delayed should not be passed by new incoming
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c linux-2.6.13-mm1/drivers/block/ioctl.c
---- /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-01 13:08:42.000000000 +0200
+--- /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-02 13:46:54.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-02 14:03:01.000000000 +0200
 @@ -4,6 +4,7 @@
  #include <linux/backing-dev.h>
  #include <linux/buffer_head.h>
@@ -214,27 +295,9 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	}
  	return -ENOIOCTLCMD;
  }
-diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig linux-2.6.13-mm1/drivers/block/Kconfig
---- /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-01 13:08:42.000000000 +0200
-@@ -419,6 +419,14 @@ config LBD
- 	  your machine, or if you want to have a raid or loopback device
- 	  bigger than 2TB.  Otherwise say N.
- 
-+config BLK_DEV_IO_TRACE
-+	bool "Support for tracing block io actions"
-+	select RELAYFS_FS
-+	help
-+	  Say Y here, if you want to be able to trace the block layer actions
-+	  on a given queue.
-+
-+
- config CDROM_PKTCDVD
- 	tristate "Packet writing on CD/DVD media"
- 	depends on !UML
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c linux-2.6.13-mm1/drivers/block/ll_rw_blk.c
---- /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 17:22:46.000000000 +0200
+--- /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-02 13:46:54.000000000 +0200
++++ linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-02 15:14:43.000000000 +0200
 @@ -29,6 +29,7 @@
  #include <linux/swap.h>
  #include <linux/writeback.h>
@@ -243,20 +306,19 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  
  /*
   * for max sense size
-@@ -1625,6 +1626,12 @@ void blk_cleanup_queue(request_queue_t *
+@@ -1625,6 +1626,11 @@ void blk_cleanup_queue(request_queue_t *
  	if (q->queue_tags)
  		__blk_queue_free_tags(q);
  
 +	if (q->blk_trace) {
-+		relay_close(q->blk_trace->rchan);
-+		kfree(q->blk_trace);
++		blk_cleanup_trace(q->blk_trace);
 +		q->blk_trace = NULL;
 +	}
 +
  	blk_queue_ordered(q, QUEUE_ORDERED_NONE);
  
  	kmem_cache_free(requestq_cachep, q);
-@@ -1971,6 +1978,8 @@ rq_starved:
+@@ -1971,6 +1977,8 @@ rq_starved:
  	
  	rq_init(q, rq);
  	rq->rl = rl;
@@ -265,7 +327,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  out:
  	return rq;
  }
-@@ -1999,6 +2008,8 @@ static struct request *get_request_wait(
+@@ -1999,6 +2007,8 @@ static struct request *get_request_wait(
  		if (!rq) {
  			struct io_context *ioc;
  
@@ -274,7 +336,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  			__generic_unplug_device(q);
  			spin_unlock_irq(q->queue_lock);
  			io_schedule();
-@@ -2052,6 +2063,8 @@ EXPORT_SYMBOL(blk_get_request);
+@@ -2052,6 +2062,8 @@ EXPORT_SYMBOL(blk_get_request);
   */
  void blk_requeue_request(request_queue_t *q, struct request *rq)
  {
@@ -283,7 +345,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	if (blk_rq_tagged(rq))
  		blk_queue_end_tag(q, rq);
  
-@@ -2665,6 +2678,8 @@ static int __make_request(request_queue_
+@@ -2665,6 +2677,8 @@ static int __make_request(request_queue_
  			if (!q->back_merge_fn(q, req, bio))
  				break;
  
@@ -292,7 +354,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  			req->biotail->bi_next = bio;
  			req->biotail = bio;
  			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2680,6 +2695,8 @@ static int __make_request(request_queue_
+@@ -2680,6 +2694,8 @@ static int __make_request(request_queue_
  			if (!q->front_merge_fn(q, req, bio))
  				break;
  
@@ -301,7 +363,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -2745,6 +2762,8 @@ get_rq:
+@@ -2745,6 +2761,8 @@ get_rq:
  	req->rq_disk = bio->bi_bdev->bd_disk;
  	req->start_time = jiffies;
  
@@ -310,7 +372,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	spin_lock_irq(q->queue_lock);
  	if (elv_queue_empty(q))
  		blk_plug_device(q);
-@@ -2981,6 +3000,10 @@ end_io:
+@@ -2981,6 +2999,10 @@ end_io:
  		blk_partition_remap(bio);
  
  		ret = q->make_request_fn(q, bio);
@@ -321,7 +383,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	} while (ret);
  }
  
-@@ -3099,6 +3122,8 @@ static int __end_that_request_first(stru
+@@ -3099,6 +3121,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -330,18 +392,9 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
-diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile linux-2.6.13-mm1/drivers/block/Makefile
---- /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile	2005-09-01 13:07:30.000000000 +0200
-+++ linux-2.6.13-mm1/drivers/block/Makefile	2005-09-01 13:08:42.000000000 +0200
-@@ -45,3 +45,5 @@ obj-$(CONFIG_VIODASD)		+= viodasd.o
- obj-$(CONFIG_BLK_DEV_SX8)	+= sx8.o
- obj-$(CONFIG_BLK_DEV_UB)	+= ub.o
- 
-+obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
-+
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h linux-2.6.13-mm1/include/linux/blkdev.h
---- /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-01 13:07:53.000000000 +0200
-+++ linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-01 13:08:42.000000000 +0200
+--- /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-02 13:47:02.000000000 +0200
++++ linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-02 14:03:01.000000000 +0200
 @@ -22,6 +22,7 @@ typedef struct request_queue request_que
  struct elevator_queue;
  typedef struct elevator_queue elevator_t;
@@ -361,8 +414,8 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  enum {
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/blktrace.h linux-2.6.13-mm1/include/linux/blktrace.h
 --- /opt/kernel/linux-2.6.13-mm1/include/linux/blktrace.h	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.13-mm1/include/linux/blktrace.h	2005-09-01 13:08:42.000000000 +0200
-@@ -0,0 +1,145 @@
++++ linux-2.6.13-mm1/include/linux/blktrace.h	2005-09-02 15:14:43.000000000 +0200
+@@ -0,0 +1,148 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -436,6 +489,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +};
 +
 +struct blk_trace {
++	struct dentry *dir;
 +	struct rchan *rchan;
 +	atomic_t sequence;
 +	u16 act_mask;
@@ -454,6 +508,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +#if defined(CONFIG_BLK_DEV_IO_TRACE)
 +extern int blk_start_trace(struct block_device *, char __user *);
 +extern int blk_stop_trace(struct block_device *);
++extern void blk_cleanup_trace(struct blk_trace *);
 +extern void __blk_add_trace(struct blk_trace *, sector_t, int, int, u32, int, int, char *);
 +
 +static inline void blk_add_trace_rq(struct request_queue *q, struct request *rq,
@@ -502,6 +557,7 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +#else /* !CONFIG_BLK_DEV_IO_TRACE */
 +#define blk_start_trace(bdev, arg)		(-EINVAL)
 +#define blk_stop_trace(bdev)			(-EINVAL)
++#define blk_cleanup_trace(bt)			do { } while (0)
 +#define blk_add_trace_rq(q, rq, what)		do { } while (0)
 +#define blk_add_trace_bio(q, rq, what)		do { } while (0)
 +#define blk_add_trace_generic(q, rq, rw, what)	do { } while (0)
@@ -509,8 +565,8 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
 +
 +#endif
 diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h linux-2.6.13-mm1/include/linux/fs.h
---- /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h	2005-09-01 13:07:53.000000000 +0200
-+++ linux-2.6.13-mm1/include/linux/fs.h	2005-09-01 13:08:42.000000000 +0200
+--- /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h	2005-09-02 13:47:02.000000000 +0200
++++ linux-2.6.13-mm1/include/linux/fs.h	2005-09-02 14:03:01.000000000 +0200
 @@ -196,6 +196,8 @@ extern int dir_notify_enable;
  #define BLKBSZGET  _IOR(0x12,112,size_t)
  #define BLKBSZSET  _IOW(0x12,113,size_t)
@@ -520,15 +576,3 @@ diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-m
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
-diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/libata.h linux-2.6.13-mm1/include/linux/libata.h
---- /opt/kernel/linux-2.6.13-mm1/include/linux/libata.h	2005-09-01 13:07:53.000000000 +0200
-+++ linux-2.6.13-mm1/include/linux/libata.h	2005-09-01 13:53:16.000000000 +0200
-@@ -40,7 +40,7 @@
- #undef ATA_VERBOSE_DEBUG	/* yet more debugging output */
- #undef ATA_IRQ_TRAP		/* define to ack screaming irqs */
- #undef ATA_NDEBUG		/* define to disable quick runtime checks */
--#undef ATA_ENABLE_ATAPI		/* define to enable ATAPI support */
-+#define ATA_ENABLE_ATAPI		/* define to enable ATAPI support */
- #undef ATA_ENABLE_PATA		/* define to enable PATA support in some
- 				 * low-level drivers */
- #undef ATAPI_ENABLE_DMADIR	/* enables ATAPI DMADIR bridge support */
