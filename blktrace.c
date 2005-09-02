@@ -118,14 +118,16 @@ static int trace_started;
 
 inline int compare_mask_map(struct mask_map *mmp, char *string)
 {
-        int i;
-        char *s, *ustring = strdup(string);
+	int i, result;
+	char *s, *ustring = strdup(string);
 
-        for (i = 0, s = ustring; i < strlen(ustring); i++, s++)
-                *s = toupper(*s);
+	for (i = 0, s = ustring; i < strlen(ustring); i++, s++)
+		*s = toupper(*s);
 
-        return !strcmp(mmp->short_form, ustring) ||
-               !strcmp(mmp->long_form, ustring);
+	result = !strcmp(mmp->short_form, ustring) ||
+                 !strcmp(mmp->long_form, ustring);
+	free(ustring);
+	return result;
 }
 
 int find_mask_map(char *string)
@@ -212,7 +214,7 @@ static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
 	int tracefd, ret, ofd, pdu_len;
-	char ip[64], op[64], dp[64];
+	char ip[64], op[64];
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
@@ -275,7 +277,7 @@ static void *extract(void *arg)
 		}
 
 		if (pdu_len)
-			extract_data(tip->cpu, ip, tracefd, dp, ofd, pdu_len);
+			extract_data(tip->cpu, ip, tracefd, op, ofd, pdu_len);
 
 		tip->events_processed++;
 	}
@@ -445,7 +447,6 @@ int main(int argc, char *argv[])
 
 	stop_threads();
 	stop_trace();
-	close(devfd);
 	show_stats();
 
 	return 0;
