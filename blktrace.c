@@ -173,10 +173,13 @@ static int start_trace(char *dev)
 
 static void stop_trace(void)
 {
-	if (ioctl(devfd, BLKSTOPTRACE) < 0)
-		perror("BLKSTOPTRACE");
+	if (trace_started) {
+		if (ioctl(devfd, BLKSTOPTRACE) < 0)
+			perror("BLKSTOPTRACE");
 
-	close(devfd);
+		close(devfd);
+		trace_started = 0;
+	}
 }
 
 static void extract_data(struct thread_information *tip,
@@ -352,12 +355,6 @@ void handle_sigint(int sig)
 	done = 1;
 }
 
-void stop_trace_on_exit(void)
-{
-	if (trace_started)
-		stop_trace();
-}
-
 int main(int argc, char *argv[])
 {
 	static char default_relay_path[] = "/relay";
@@ -447,7 +444,7 @@ int main(int argc, char *argv[])
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
 
-	atexit(stop_trace_on_exit);
+	atexit(stop_trace);
 
 	while (!is_done())
 		sleep(1);
