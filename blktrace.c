@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/param.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
@@ -101,6 +102,10 @@ struct option l_opts[] = {
 struct thread_information {
 	int cpu;
 	pthread_t thread;
+
+	int fd;
+	char fn[MAXPATHLEN + 64];
+
 	unsigned long events_processed;
 };
 
@@ -174,8 +179,8 @@ static void stop_trace(void)
 	close(devfd);
 }
 
-static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
-			 int nb)
+static void extract_data(struct thread_information *tip,
+			 char *ofn, int ofd, int nb)
 {
 	int ret, bytes_left;
 	unsigned char *buf, *p;
@@ -184,13 +189,13 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 	p = buf;
 	bytes_left = nb;
 	while (bytes_left > 0) {
-		ret = read(ifd, p, bytes_left);
+		ret = read(tip->fd, p, bytes_left);
 		if (!ret)
 			usleep(1000);
 		else if (ret < 0) {
-			perror(ifn);
+			perror(tip->fn);
 			fprintf(stderr, "Thread %d extract_data %s failed\n",
-				cpu, ifn);
+				tip->cpu, tip->fn);
 			free(buf);
 			exit(1);
 		} else {
@@ -202,7 +207,7 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 	ret = write(ofd, buf, nb);
 	if (ret != nb) {
 		perror(ofn);
-		fprintf(stderr,"Thread %d extract_data %s failed\n", cpu, ofn);
+		fprintf(stderr,"Thread %d extract_data %s failed\n", tip->cpu, ofn);
 		free(buf);
 		exit(1);
 	}
@@ -213,14 +218,14 @@ static void extract_data(int cpu, char *ifn, int ifd, char *ofn, int ofd,
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
-	int tracefd, ret, ofd, pdu_len;
-	char ip[64], op[64];
+	int ret, ofd, pdu_len;
+	char op[64], dp[64];
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
 
 	CPU_ZERO(&cpu_mask);
-	CPU_SET(tip->cpu, &cpu_mask);
+	CPU_SET((tip->cpu), &cpu_mask);
 
 	if (sched_setaffinity(pid, sizeof(cpu_mask), &cpu_mask) == -1) {
 		perror("sched_setaffinity");
@@ -235,25 +240,26 @@ static void *extract(void *arg)
 		exit(1);
 	}
 
-	sprintf(ip, "%s%s%d", relay_path, buts_name_p, tip->cpu);
-	tracefd = open(ip, O_RDONLY);
-	if (tracefd < 0) {
-		perror(ip);
-		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu, ip);
+	snprintf(tip->fn, sizeof(tip->fn),
+		 "%s/block/%s/trace%d", relay_path, buts_name_p, tip->cpu);
+	tip->fd = open(tip->fn, O_RDONLY);
+	if (tip->fd < 0) {
+		perror(tip->fn);
+		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu, tip->fn);
 		exit(1);
 	}
 
 	while (!is_done()) {
-		ret = read(tracefd, &t, sizeof(t));
+		ret = read(tip->fd, &t, sizeof(t));
 		if (ret != sizeof(t)) {
 			if (ret < 0) {
-				perror(ip);
+				perror(tip->fn);
 				fprintf(stderr,"Thread %d failed read of %s\n",
-					tip->cpu, ip);
+					tip->cpu, tip->fn);
 				exit(1);
 			} else if (ret > 0) {
 				fprintf(stderr,"Thread %d misread %s %d,%d\n",
-					tip->cpu, ip, ret, (int)sizeof(t));
+					tip->cpu, tip->fn, ret, (int)sizeof(t));
 				exit(1);
 			} else {
 				usleep(10000);
@@ -277,7 +283,7 @@ static void *extract(void *arg)
 		}
 
 		if (pdu_len)
-			extract_data(tip->cpu, ip, tracefd, op, ofd, pdu_len);
+			extract_data(tip, dp, ofd, pdu_len);
 
 		tip->events_processed++;
 	}
@@ -321,6 +327,7 @@ static void stop_threads(void)
 
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
+		close(tip->fd);
 	}
 }
 
@@ -445,8 +452,8 @@ int main(int argc, char *argv[])
 	while (!is_done())
 		sleep(1);
 
-	stop_threads();
 	stop_trace();
+	stop_threads();
 	show_stats();
 
 	return 0;
