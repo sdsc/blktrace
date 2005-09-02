@@ -1,9 +1,6 @@
 /*
  * block queue tracing application
  *
- * TODO (in no particular order):
- *	- Add option for relayfs mount point
- *
  * Copyright (C) 2005 Jens Axboe <axboe@suse.de>
  *
  *  This program is free software; you can redistribute it and/or modify
@@ -67,7 +64,7 @@ struct mask_map mask_maps[] = {
         DECLARE_MASK_MAP( PC       ),
 };
 
-#define S_OPTS	"d:a:A:"
+#define S_OPTS	"d:a:A:r:"
 struct option l_opts[] = {
 	{ 
 		.name = "dev",
@@ -87,6 +84,12 @@ struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'A'
 	},
+	{ 
+		.name = "relay",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'r'
+	},
 	{
 		.name = NULL,
 		.has_arg = 0,
@@ -101,7 +104,7 @@ struct thread_information {
 	unsigned long events_processed;
 };
 
-static char relay_path[] = "/relay/";
+static char *relay_path;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -348,6 +351,7 @@ void stop_trace_on_exit(void)
 
 int main(int argc, char *argv[])
 {
+	static char default_relay_path[] = "/relay";
 	struct stat st;
 	int i, c;
 	int act_mask_tmp = 0;
@@ -378,6 +382,10 @@ int main(int argc, char *argv[])
 			dev = strdup(optarg);
 			break;
 
+		case 'r':
+			relay_path = optarg;
+			break;
+
 		default:
 			fprintf(stderr,"Usage: %s -d <dev> "
 				       "[-a <trace> [-a <trace>]]\n", argv[0]);
@@ -390,6 +398,9 @@ int main(int argc, char *argv[])
 			       "[-a <trace> [-a <trace>]]\n", argv[0]);
 		return 4;
 	}
+
+	if (!relay_path)
+		relay_path = default_relay_path;
 
 	if (act_mask_tmp != 0) {
 		act_mask = act_mask_tmp;
@@ -407,6 +418,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (start_trace(dev)) {
+		close(devfd);
 		fprintf(stderr, "Failed to start trace on %s\n", dev);
 		return 3;
 	}
