@@ -53,39 +53,39 @@ struct mask_map {
 };
 
 struct mask_map mask_maps[] = {
-        DECLARE_MASK_MAP( READ     ),
-        DECLARE_MASK_MAP( WRITE    ),
-        DECLARE_MASK_MAP( BARRIER  ),
-        DECLARE_MASK_MAP( SYNC     ),
-        DECLARE_MASK_MAP( QUEUE    ),
-        DECLARE_MASK_MAP( REQUEUE  ),
-        DECLARE_MASK_MAP( ISSUE    ),
-        DECLARE_MASK_MAP( COMPLETE ),
-        DECLARE_MASK_MAP( FS       ),
-        DECLARE_MASK_MAP( PC       ),
+	DECLARE_MASK_MAP(READ),
+	DECLARE_MASK_MAP(WRITE),
+	DECLARE_MASK_MAP(BARRIER),
+	DECLARE_MASK_MAP(SYNC),
+	DECLARE_MASK_MAP(QUEUE),
+	DECLARE_MASK_MAP(REQUEUE),
+	DECLARE_MASK_MAP(ISSUE),
+	DECLARE_MASK_MAP(COMPLETE),
+	DECLARE_MASK_MAP(FS),
+	DECLARE_MASK_MAP(PC),
 };
 
 #define S_OPTS	"d:a:A:r:"
 struct option l_opts[] = {
-	{ 
+	{
 		.name = "dev",
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'd'
 	},
-	{ 
+	{
 		.name = "act-mask",
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'a'
 	},
-	{ 
+	{
 		.name = "set-mask",
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'A'
 	},
-	{ 
+	{
 		.name = "relay",
 		.has_arg = 1,
 		.flag = NULL,
@@ -118,7 +118,7 @@ static int devfd, ncpus;
 static struct thread_information *thread_information;
 static char *buts_name_p;
 static char *dev;
-static int act_mask = ~0;
+static int act_mask = ~0U;
 static int trace_started;
 
 inline int compare_mask_map(struct mask_map *mmp, char *string)
@@ -130,18 +130,19 @@ inline int compare_mask_map(struct mask_map *mmp, char *string)
 		*s = toupper(*s);
 
 	result = !strcmp(mmp->short_form, ustring) ||
-                 !strcmp(mmp->long_form, ustring);
+		 !strcmp(mmp->long_form, ustring);
 	free(ustring);
 	return result;
 }
 
 int find_mask_map(char *string)
 {
-        int i;
+	int i;
 
-        for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
-                if (compare_mask_map(&mask_maps[i], string))
-                        return mask_maps[i].mask;
+	for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
+		if (compare_mask_map(&mask_maps[i], string))
+			return mask_maps[i].mask;
+
 	return -1;
 }
 
@@ -248,7 +249,8 @@ static void *extract(void *arg)
 	tip->fd = open(tip->fn, O_RDONLY);
 	if (tip->fd < 0) {
 		perror(tip->fn);
-		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu, tip->fn);
+		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu,
+			tip->fn);
 		exit(1);
 	}
 
