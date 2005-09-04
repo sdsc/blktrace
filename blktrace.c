@@ -449,8 +449,8 @@ int main(int argc, char *argv[])
 	while (!is_done())
 		sleep(1);
 
-	stop_trace();
 	stop_threads();
+	stop_trace();
 	show_stats();
 
 	return 0;
