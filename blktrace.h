@@ -7,7 +7,7 @@
 #include "blktrace_api.h"
 
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
-#define SUPPORTED_VERSION	(0x02)
+#define SUPPORTED_VERSION	(0x03)
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 #define be16_to_cpu(x)		__bswap_16(x)

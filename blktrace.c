@@ -65,8 +65,8 @@ struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:"
-struct option l_opts[] = {
+#define S_OPTS	"d:a:A:r:o:"
+static struct option l_opts[] = {
 	{
 		.name = "dev",
 		.has_arg = 1,
@@ -92,6 +92,12 @@ struct option l_opts[] = {
 		.val = 'r'
 	},
 	{
+		.name = "output",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'o'
+	},
+	{
 		.name = NULL,
 		.has_arg = 0,
 		.flag = NULL,
@@ -106,6 +112,9 @@ struct thread_information {
 	int fd;
 	char fn[MAXPATHLEN + 64];
 
+	pthread_mutex_t *fd_lock;
+	int ofd;
+
 	unsigned long events_processed;
 };
 
@@ -118,8 +127,11 @@ static int devfd, ncpus;
 static struct thread_information *thread_information;
 static char *buts_name_p;
 static char *dev;
+static char *output_name;
 static int act_mask = ~0U;
 static int trace_started;
+
+static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 inline int compare_mask_map(struct mask_map *mmp, char *string)
 {
@@ -161,7 +173,6 @@ static int start_trace(char *dev)
 	buts.buf_nr = BUF_NR;
 	buts.act_mask = act_mask;
 
-	printf("Starting trace on %s\n", dev);
 	if (ioctl(devfd, BLKSTARTTRACE, &buts) < 0) {
 		perror("BLKSTARTTRACE");
 		return 1;
@@ -183,8 +194,7 @@ static void stop_trace(void)
 	}
 }
 
-static void extract_data(struct thread_information *tip,
-			 char *ofn, int ofd, int nb)
+static void extract_data(struct thread_information *tip, char *ofn, int nb)
 {
 	int ret, bytes_left;
 	unsigned char *buf, *p;
@@ -208,7 +218,7 @@ static void extract_data(struct thread_information *tip,
 		}
 	}
 
-	ret = write(ofd, buf, nb);
+	ret = write(tip->ofd, buf, nb);
 	if (ret != nb) {
 		perror(ofn);
 		fprintf(stderr,"Thread %d extract_data %s failed\n", tip->cpu, ofn);
@@ -219,11 +229,23 @@ static void extract_data(struct thread_information *tip,
 	free(buf);
 }
 
+static inline void tip_fd_unlock(struct thread_information *tip)
+{
+	if (tip->fd_lock)
+		pthread_mutex_unlock(tip->fd_lock);
+}
+
+static inline void tip_fd_lock(struct thread_information *tip)
+{
+	if (tip->fd_lock)
+		pthread_mutex_lock(tip->fd_lock);
+}
+
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
-	int ret, ofd, pdu_len;
-	char op[64], dp[64];
+	int ret, pdu_len;
+	char dp[64];
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
@@ -233,14 +255,6 @@ static void *extract(void *arg)
 
 	if (sched_setaffinity(pid, sizeof(cpu_mask), &cpu_mask) == -1) {
 		perror("sched_setaffinity");
-		exit(1);
-	}
-
-	sprintf(op, "%s_out.%d", buts_name_p, tip->cpu);
-	ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
-	if (ofd < 0) {
-		perror(op);
-		fprintf(stderr,"Thread %d failed creat of %s\n", tip->cpu, op);
 		exit(1);
 	}
 
@@ -279,16 +293,19 @@ static void *extract(void *arg)
 
 		trace_to_be(&t);
 
-		ret = write(ofd, &t, sizeof(t));
+		tip_fd_lock(tip);
+
+		ret = write(tip->ofd, &t, sizeof(t));
 		if (ret < 0) {
-			perror(op);
-			fprintf(stderr,"Thread %d failed write of %s\n", 
-				tip->cpu, op);
+			fprintf(stderr,"Thread %d failed write\n", tip->cpu);
+			tip_fd_unlock(tip);
 			exit(1);
 		}
 
 		if (pdu_len)
-			extract_data(tip, dp, ofd, pdu_len);
+			extract_data(tip, dp, pdu_len);
+
+		tip_fd_unlock(tip);
 
 		tip->events_processed++;
 	}
@@ -299,6 +316,7 @@ static void *extract(void *arg)
 static int start_threads(void)
 {
 	struct thread_information *tip;
+	char op[64];
 	int i;
 
 	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
@@ -306,12 +324,25 @@ static int start_threads(void)
 		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
 		return 1;
 	}
-	printf("Processors online: %d\n", ncpus);
 
 	thread_information = malloc(ncpus * sizeof(struct thread_information));
 	for (i = 0, tip = thread_information; i < ncpus; i++, tip++) {
+		tip->fd_lock = NULL;
 		tip->cpu = i;
 		tip->events_processed = 0;
+
+		if (!strcmp(output_name, "-")) {
+			tip->ofd = dup(1);
+			tip->fd_lock = &stdout_mutex;
+		} else {
+			sprintf(op, "%s_out.%d", output_name, tip->cpu);
+			tip->ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
+		}
+
+		if (tip->ofd < 0) {
+			perror(op);
+			return 1;
+		}
 
 		if (pthread_create(&tip->thread, NULL, extract, tip)) {
 			perror( "pthread_create");
@@ -332,7 +363,9 @@ static void stop_threads(void)
 
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
+
 		close(tip->fd);
+		close(tip->ofd);
 	}
 }
 
@@ -341,6 +374,9 @@ void show_stats(void)
 	int i;
 	struct thread_information *tip;
 	unsigned long events_processed = 0;
+
+	if (!strcmp(output_name, "-"))
+		return;
 
 	for (i = 0, tip = thread_information; i < ncpus; i++, tip++) {
 		printf("CPU%3d: %20ld events\n",
@@ -353,7 +389,6 @@ void show_stats(void)
 
 void handle_sigint(int sig)
 {
-	printf("exiting on signal %d\n", sig);
 	done = 1;
 }
 
@@ -394,6 +429,10 @@ int main(int argc, char *argv[])
 			relay_path = optarg;
 			break;
 
+		case 'o':
+			output_name = strdup(optarg);
+			break;
+
 		default:
 			fprintf(stderr,"Usage: %s -d <dev> "
 				       "[-a <trace> [-a <trace>]]\n", argv[0]);
@@ -410,14 +449,8 @@ int main(int argc, char *argv[])
 	if (!relay_path)
 		relay_path = default_relay_path;
 
-	if (act_mask_tmp != 0) {
+	if (act_mask_tmp != 0)
 		act_mask = act_mask_tmp;
-		printf("Tracing 0x%04x: ", act_mask);
-		for (i = 0; i < BLK_TC_SHIFT; i++)
-			if (act_mask & (1 << i))
-				printf("%s ", mask_maps[i].short_form);
-		printf("\n");
-	}
 
 	if (stat(relay_path, &st) < 0) {
 		fprintf(stderr,"%s does not appear to be mounted\n",
@@ -433,14 +466,15 @@ int main(int argc, char *argv[])
 
 	setlocale(LC_NUMERIC, "en_US");
 
+	if (!output_name)
+		output_name = strdup(buts_name_p);
+
 	i = start_threads();
 	if (!i) {
 		fprintf(stderr, "Failed to start worker threads\n");
 		stop_trace();
 		return 4;
 	}
-
-	printf("Threads started  : %d\n", i);
 
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);

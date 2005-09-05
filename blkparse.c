@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <getopt.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -34,9 +35,10 @@
 #define SECONDS(x) 	((unsigned long long)(x) / 1000000000)
 #define NANO_SECONDS(x)	((unsigned long long)(x) % 1000000000)
 
-int backwards;
-unsigned long long genesis_time, last_reported_time;
-struct per_file_info {
+static int backwards;
+static unsigned long long genesis_time, last_reported_time;
+
+struct per_cpu_info {
 	int cpu;
 	int nelems;
 
@@ -52,20 +54,43 @@ struct per_file_info {
 	unsigned long long iread_kb, iwrite_kb;
 };
 
+#define S_OPTS	"i:o:"
+static struct option l_opts[] = {
+	{
+		.name = "input",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'i'
+	},
+	{
+		.name = "output",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'o'
+	},
+	{
+		.name = NULL,
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 0
+	}
+};
+
 static struct rb_root rb_root;
 
 struct trace {
 	struct blk_io_trace *bit;
-	unsigned int cpu;
 	struct rb_node rb_node;
 };
 
-static struct per_file_info per_file_info[MAX_CPUS];
-static struct per_file_info *cur_file;
+static struct per_cpu_info per_cpu_info[MAX_CPUS];
 
 static unsigned long long events;
 
 static int max_cpus;
+static int nfiles;
+
+static char *dev, *output_name;
 
 static inline void check_time(struct blk_io_trace *bit)
 {
@@ -76,64 +101,67 @@ static inline void check_time(struct blk_io_trace *bit)
 	last_reported_time = this;
 }
 
-static inline void account_m(struct per_file_info *pfi, int rw,
+static inline void account_m(struct per_cpu_info *pci, int rw,
 			     unsigned int bytes)
 {
 	if (rw) {
-		pfi->mwrites++;
-		pfi->qwrite_kb += bytes >> 10;
+		pci->mwrites++;
+		pci->qwrite_kb += bytes >> 10;
 	} else {
-		pfi->mreads++;
-		pfi->qread_kb += bytes >> 10;
+		pci->mreads++;
+		pci->qread_kb += bytes >> 10;
 	}
 }
 
-static inline void account_q(struct per_file_info *pfi, int rw,
+static inline void account_q(struct per_cpu_info *pci, int rw,
 			     unsigned int bytes)
 {
 	if (rw) {
-		pfi->qwrites++;
-		pfi->qwrite_kb += bytes >> 10;
+		pci->qwrites++;
+		pci->qwrite_kb += bytes >> 10;
 	} else {
-		pfi->qreads++;
-		pfi->qread_kb += bytes >> 10;
+		pci->qreads++;
+		pci->qread_kb += bytes >> 10;
 	}
 }
 
-static inline void account_c(struct per_file_info *pfi, int rw,
+static inline void account_c(struct per_cpu_info *pci, int rw,
 			     unsigned int bytes)
 {
 	if (rw) {
-		pfi->cwrites++;
-		pfi->cwrite_kb += bytes >> 10;
+		pci->cwrites++;
+		pci->cwrite_kb += bytes >> 10;
 	} else {
-		pfi->creads++;
-		pfi->cread_kb += bytes >> 10;
+		pci->creads++;
+		pci->cread_kb += bytes >> 10;
 	}
 }
 
-static inline void account_i(struct per_file_info *pfi, int rw,
+static inline void account_i(struct per_cpu_info *pci, int rw,
 			     unsigned int bytes)
 {
 	if (rw) {
-		pfi->iwrites++;
-		pfi->iwrite_kb += bytes >> 10;
+		pci->iwrites++;
+		pci->iwrite_kb += bytes >> 10;
 	} else {
-		pfi->ireads++;
-		pfi->iread_kb += bytes >> 10;
+		pci->ireads++;
+		pci->iread_kb += bytes >> 10;
 	}
 }
 
-static void output(char *s)
+static void output(struct per_cpu_info *pci, char *s)
 {
 	printf("%s", s);
-	fprintf(cur_file->ofp,"%s",s);
+
+	if (pci->ofp)
+		fprintf(pci->ofp,"%s",s);
 }
 
 static char hstring[256];
 static char tstring[256];
 
-static inline char *setup_header(struct blk_io_trace *t, char act)
+static inline char *setup_header(struct per_cpu_info *pci,
+				 struct blk_io_trace *t, char act)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
@@ -153,93 +181,98 @@ static inline char *setup_header(struct blk_io_trace *t, char act)
 	rwbs[i] = '\0';
 
 	sprintf(hstring, "%c %3d %15ld %5Lu.%09Lu %5u %c %3s", backwards,
-		cur_file->cpu,
+		pci->cpu,
 		(unsigned long)t->sequence, SECONDS(t->time), 
 		NANO_SECONDS(t->time), t->pid, act, rwbs);
 
 	return hstring;
 }
 
-static void log_complete(struct blk_io_trace *t, char act)
+static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
+			 char act)
 {
-	sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(t, act),
+	sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->error);
-	output(tstring);
+	output(pci, tstring);
 }
 
-static void log_queue(struct blk_io_trace *t, char act)
+static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
+	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
-	output(tstring);
+	output(pci, tstring);
 }
 
-static void log_issue(struct blk_io_trace *t, char act)
+static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
+	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
-	output(tstring);
+	output(pci, tstring);
 }
 
-static void log_merge(struct blk_io_trace *t, char act)
+static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char act)
 {
-	sprintf(tstring,"%s   %Lu + %u\n", setup_header(t, act),
+	sprintf(tstring,"%s   %Lu + %u\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
-	output(tstring);
+	output(pci, tstring);
 }
 
-static void log_generic(struct blk_io_trace *t, char act)
+static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
+			char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(t, act),
+	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9);
-	output(tstring);
+	output(pci, tstring);
 }
 
-static int log_pc(struct blk_io_trace *t, char act)
+static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char act)
 {
 	unsigned char *buf;
 	int i;
 
-	sprintf(tstring,"%s ", setup_header(t, act));
-	output(tstring);
+	sprintf(tstring,"%s ", setup_header(pci, t, act));
+	output(pci, tstring);
 
 	buf = (unsigned char *) t + sizeof(*t);
 	for (i = 0; i < t->pdu_len; i++) {
 		sprintf(tstring,"%02x ", buf[i]);
-		output(tstring);
+		output(pci, tstring);
 	}
 
 	if (act == 'C') {
 		sprintf(tstring,"[%d]", t->error);
-		output(tstring);
+		output(pci, tstring);
 	}
 
 	printf("\n");
 	return 0;
 }
 
-static int dump_trace_pc(struct blk_io_trace *t, struct per_file_info *pfi)
+static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int ret = 0;
 
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
-			log_generic(t, 'Q');
+			log_generic(pci, t, 'Q');
 			break;
 		case __BLK_TA_GETRQ:
-			log_generic(t, 'G');
+			log_generic(pci, t, 'G');
 			break;
 		case __BLK_TA_SLEEPRQ:
-			log_generic(t, 'S');
+			log_generic(pci, t, 'S');
 			break;
 		case __BLK_TA_REQUEUE:
-			log_generic(t, 'R');
+			log_generic(pci, t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
-			ret = log_pc(t, 'D');
+			ret = log_pc(pci, t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
-			log_pc(t, 'C');
+			log_pc(pci, t, 'C');
 			break;
 		default:
 			fprintf(stderr, "Bad pc action %x\n", t->action);
@@ -250,40 +283,40 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_file_info *pfi)
 	return ret;
 }
 
-static void dump_trace_fs(struct blk_io_trace *t, struct per_file_info *pfi)
+static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
-			account_q(pfi, w, t->bytes);
-			log_queue(t, 'Q');
+			account_q(pci, w, t->bytes);
+			log_queue(pci, t, 'Q');
 			break;
 		case __BLK_TA_BACKMERGE:
-			account_m(pfi, w, t->bytes);
-			log_merge(t, 'M');
+			account_m(pci, w, t->bytes);
+			log_merge(pci, t, 'M');
 			break;
 		case __BLK_TA_FRONTMERGE:
-			account_m(pfi, w, t->bytes);
-			log_merge(t, 'F');
+			account_m(pci, w, t->bytes);
+			log_merge(pci, t, 'F');
 			break;
 		case __BLK_TA_GETRQ:
-			log_generic(t, 'G');
+			log_generic(pci, t, 'G');
 			break;
 		case __BLK_TA_SLEEPRQ:
-			log_generic(t, 'S');
+			log_generic(pci, t, 'S');
 			break;
 		case __BLK_TA_REQUEUE:
-			account_c(pfi, w, -t->bytes);
-			log_queue(t, 'R');
+			account_c(pci, w, -t->bytes);
+			log_queue(pci, t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
-			account_i(pfi, w, t->bytes);
-			log_issue(t, 'D');
+			account_i(pci, w, t->bytes);
+			log_issue(pci, t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
-			account_c(pfi, w, t->bytes);
-			log_complete(t, 'C');
+			account_c(pci, w, t->bytes);
+			log_complete(pci, t, 'C');
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
@@ -291,65 +324,65 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_file_info *pfi)
 	}
 }
 
-static int dump_trace(struct blk_io_trace *t, struct per_file_info *pfi)
+static int dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int ret = 0;
 
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
-		ret = dump_trace_pc(t, pfi);
+		ret = dump_trace_pc(t, pci);
 	else
-		dump_trace_fs(t, pfi);
+		dump_trace_fs(t, pci);
 
 	events++;
 	return ret;
 }
 
-static void dump_pfi_stats(struct per_file_info *pfi)
+static void dump_pci_stats(struct per_cpu_info *pci)
 {
 	printf("\tReads:\n");
-	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qreads, pfi->qread_kb);
-	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pfi->ireads, pfi->iread_kb);
-	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->creads, pfi->cread_kb);
-	printf("\t\tMerges:    %'8lu\n", pfi->mreads);
+	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pci->qreads, pci->qread_kb);
+	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pci->ireads, pci->iread_kb);
+	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pci->creads, pci->cread_kb);
+	printf("\t\tMerges:    %'8lu\n", pci->mreads);
 
 	printf("\tWrites:\n");
-	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pfi->qwrites,pfi->qwrite_kb);
-	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pfi->iwrites,pfi->iwrite_kb);
-	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pfi->cwrites,pfi->cwrite_kb);
-	printf("\t\tMerges:    %'8lu\n", pfi->mwrites);
+	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pci->qwrites,pci->qwrite_kb);
+	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pci->iwrites,pci->iwrite_kb);
+	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pci->cwrites,pci->cwrite_kb);
+	printf("\t\tMerges:    %'8lu\n", pci->mwrites);
 }
 
-static void show_stats(int nfiles)
+static void show_stats(void)
 {
-	struct per_file_info foo, *pfi;
+	struct per_cpu_info foo, *pci;
 	int i;
 
 	memset(&foo, 0, sizeof(foo));
 
 	for (i = 0; i < nfiles; i++) {
-		pfi = &per_file_info[i];
+		pci = &per_cpu_info[i];
 
-		if (!pfi->nelems)
+		if (!pci->nelems)
 			continue;
 
-		foo.qreads += pfi->qreads;
-		foo.qwrites += pfi->qwrites;
-		foo.creads += pfi->creads;
-		foo.cwrites += pfi->cwrites;
-		foo.mreads += pfi->mreads;
-		foo.mwrites += pfi->mwrites;
-		foo.qread_kb += pfi->qread_kb;
-		foo.qwrite_kb += pfi->qwrite_kb;
-		foo.cread_kb += pfi->cread_kb;
-		foo.cwrite_kb += pfi->cwrite_kb;
+		foo.qreads += pci->qreads;
+		foo.qwrites += pci->qwrites;
+		foo.creads += pci->creads;
+		foo.cwrites += pci->cwrites;
+		foo.mreads += pci->mreads;
+		foo.mwrites += pci->mwrites;
+		foo.qread_kb += pci->qread_kb;
+		foo.qwrite_kb += pci->qwrite_kb;
+		foo.cread_kb += pci->cread_kb;
+		foo.cwrite_kb += pci->cwrite_kb;
 
 		printf("CPU%d:\n", i);
-		dump_pfi_stats(pfi);
+		dump_pci_stats(pci);
 	}
 
 	if (nfiles > 1) {
 		printf("Total:\n");
-		dump_pfi_stats(&foo);
+		dump_pci_stats(&foo);
 	}
 
 	printf("Events: %'Lu\n", events);
@@ -392,7 +425,6 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 
 		t = malloc(sizeof(*t));
 		t->bit = bit;
-		t->cpu = cpu;
 		memset(&t->rb_node, 0, sizeof(t->rb_node));
 
 		trace_to_cpu(bit);
@@ -410,7 +442,7 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 	return nelems;
 }
 
-static void show_entries(void)
+static void show_entries_rb(void)
 {
 	struct blk_io_trace *bit;
 	struct rb_node *n;
@@ -425,13 +457,11 @@ static void show_entries(void)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		cpu = t->cpu;
+		cpu = bit->cpu;
 		if (cpu > max_cpus) {
 			fprintf(stderr, "CPU number too large (%d)\n", cpu);
 			break;
 		}
-
-		cur_file = &per_file_info[cpu];
 
 		if (genesis_time == 0)
 			genesis_time = bit->time;
@@ -439,58 +469,54 @@ static void show_entries(void)
 
 		check_time(bit);
 
-		if (dump_trace(bit, cur_file))
+		if (dump_trace(bit, &per_cpu_info[cpu]))
 			break;
 
 	} while ((n = rb_next(n)) != NULL);
 }
 
-int main(int argc, char *argv[])
+static int do_file(void)
 {
-	int i, nfiles, ret;
-	char *dev;
-
-	if (argc != 2) {
-		fprintf(stderr, "Usage: %s <dev>\n", argv[0]);
-		return 1;
-	}
-
-	dev = argv[1];
+	int i, ret;
 
 	memset(&rb_root, 0, sizeof(rb_root));
-	memset(per_file_info, 0, sizeof(per_file_info));
 
-	for (max_cpus = 0, i = 0, nfiles = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
-		struct per_file_info *pfi = &per_file_info[i];
+	for (max_cpus = 0, i = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
+		struct per_cpu_info *pci = &per_cpu_info[i];
 		struct stat st;
 		void *tb;
 
-		pfi->cpu = i;
+		pci->cpu = i;
+		pci->ofp = NULL;
 
-		snprintf(pfi->fname, sizeof(pfi->fname)-1,"%s_out.%d", dev, i);
-		if (stat(pfi->fname, &st) < 0)
+		snprintf(pci->fname, sizeof(pci->fname)-1,"%s_out.%d", dev, i);
+		if (stat(pci->fname, &st) < 0)
 			break;
 		if (!st.st_size)
 			continue;
 
-		snprintf(pfi->ofname, sizeof(pfi->ofname)-1, "%s_log.%d", dev, i);
-		pfi->ofp = fopen(pfi->ofname, "w");
-		if (pfi->ofp == NULL) {
-			perror(pfi->ofname);
-			break;
+		if (output_name) {
+			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
+					"%s_log.%d", output_name, i);
+
+			pci->ofp = fopen(pci->ofname, "w");
+			if (pci->ofp == NULL) {
+				perror(pci->ofname);
+				break;
+			}
 		}
 
-		printf("Processing %s\n", pfi->fname);
+		printf("Processing %s\n", pci->fname);
 
 		tb = malloc(st.st_size);
 
-		pfi->fd = open(pfi->fname, O_RDONLY);
-		if (pfi->fd < 0) {
-			perror(pfi->fname);
+		pci->fd = open(pci->fname, O_RDONLY);
+		if (pci->fd < 0) {
+			perror(pci->fname);
 			break;
 		}
 
-		if (read(pfi->fd, tb, st.st_size) != st.st_size) {
+		if (read(pci->fd, tb, st.st_size) != st.st_size) {
 			fprintf(stderr, "error reading\n");
 			break;
 		}
@@ -499,18 +525,161 @@ int main(int argc, char *argv[])
 		if (ret == -1)
 			break;
 
-		close(pfi->fd);
-		pfi->nelems = ret;
-		printf("\t%2d %10s %15d\n", i, pfi->fname, pfi->nelems);
+		close(pci->fd);
+		pci->nelems = ret;
+		printf("\t%2d %10s %15d\n", i, pci->fname, pci->nelems);
 
 	}
 
-	if (nfiles) {
-		show_entries();
-		show_stats(nfiles);
-		return 0;
+	if (!nfiles) {
+		fprintf(stderr, "No files found\n");
+		return 1;
 	}
 
-	fprintf(stderr, "No files found\n");
-	return 1;
+	show_entries_rb();
+	show_stats();
+	return 0;
+}
+
+static int read_data(int fd, void *buffer, int bytes)
+{
+	int ret, bytes_left;
+	void *p;
+
+	bytes_left = bytes;
+	p = buffer;
+	while (bytes_left > 0) {
+		ret = read(fd, p, bytes_left);
+		if (!ret)
+			return 1;
+		else if (ret < 0) {
+			perror("read");
+			return 1;
+		} else {
+			p += ret;
+			bytes_left -= ret;
+		}
+	}
+
+	return 0;
+}
+
+static int do_stdin(void)
+{
+	struct blk_io_trace *bit;
+	int ptr_len, fd;
+	void *ptr;
+
+	nfiles = 1;
+
+	fd = dup(0);
+	ptr_len = sizeof(*bit);
+	ptr = malloc(ptr_len);
+	bit = ptr;
+	do {
+		struct per_cpu_info *pci;
+		int cpu;
+
+		if (read_data(fd, bit, sizeof(*bit)))
+			break;
+
+		trace_to_cpu(bit);
+
+		if (bit->pdu_len) {
+			struct blk_io_trace t;
+
+			if (ptr_len < bit->pdu_len + sizeof(*bit)) {
+				memcpy(&t, bit, sizeof(t));
+				if (ptr)
+					free(ptr);
+
+				ptr_len = bit->pdu_len + sizeof(*bit);
+				ptr = malloc(ptr_len);
+				bit = ptr;
+				memcpy(ptr, &t, sizeof(t));
+			}
+			if (read_data(fd, ptr + sizeof(*bit), bit->pdu_len))
+				break;
+		}
+
+		if (verify_trace(bit))
+			break;
+
+		cpu = bit->cpu;
+		if (cpu > max_cpus) {
+			fprintf(stderr, "CPU number too large (%d)\n", cpu);
+			break;
+		}
+
+		pci = &per_cpu_info[cpu];
+		pci->nelems++;
+
+		if (output_name && !pci->ofp) {
+			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
+					"%s_log.%d", output_name, cpu);
+
+			pci->ofp = fopen(pci->ofname, "w");
+			if (pci->ofp == NULL) {
+				perror(pci->ofname);
+				break;
+			}
+		}
+
+		if (genesis_time == 0)
+			genesis_time = bit->time;
+		bit->time -= genesis_time;
+
+		check_time(bit);
+
+		if (dump_trace(bit, pci))
+			break;
+
+	} while (1);
+
+	close(fd);
+	free(ptr);
+	show_stats();
+	return 0;
+}
+
+int main(int argc, char *argv[])
+{
+	int c, ret, i;
+
+	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
+		switch (c) {
+		case 'i':
+			dev = strdup(optarg);
+			break;
+		case 'o':
+			output_name = strdup(optarg);
+			break;
+		default:
+			fprintf(stderr, "Usage: %s -i <dev>\n", argv[0]);
+			return 1;
+		}
+	}
+
+	if (!dev) {
+		fprintf(stderr, "Usage: %s -i <dev>\n", argv[0]);
+		return 1;
+	}
+
+	memset(per_cpu_info, 0, sizeof(per_cpu_info));
+
+	if (!strcmp(dev, "-"))
+		ret = do_stdin();
+	else
+		ret = do_file();
+
+	for (i = 0; i < MAX_CPUS; i++) {
+		struct per_cpu_info *pci = &per_cpu_info[i];
+
+		if (pci->ofp) {
+			fflush(pci->ofp);
+			fclose(pci->ofp);
+		}
+	}
+
+	return ret;
 }
