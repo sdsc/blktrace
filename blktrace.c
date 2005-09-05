@@ -65,7 +65,7 @@ struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:o:"
+#define S_OPTS	"d:a:A:r:o:k"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -96,6 +96,12 @@ static struct option l_opts[] = {
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'o'
+	},
+	{
+		.name = "kill",
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 'k'
 	},
 	{
 		.name = NULL,
@@ -130,6 +136,7 @@ static char *dev;
 static char *output_name;
 static int act_mask = ~0U;
 static int trace_started;
+static int kill_running_trace;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -148,12 +155,6 @@ static int start_trace(char *dev)
 {
 	struct blk_user_trace_setup buts;
 
-	devfd = open(dev, O_RDONLY);
-	if (devfd < 0) {
-		perror(dev);
-		return 1;
-	}
-
 	memset(&buts, sizeof(buts), 0);
 	buts.buf_size = BUF_SIZE;
 	buts.buf_nr = BUF_NR;
@@ -171,11 +172,10 @@ static int start_trace(char *dev)
 
 static void stop_trace(void)
 {
-	if (trace_started) {
+	if (trace_started || kill_running_trace) {
 		if (ioctl(devfd, BLKSTOPTRACE) < 0)
 			perror("BLKSTOPTRACE");
 
-		close(devfd);
 		trace_started = 0;
 	}
 }
@@ -418,6 +418,9 @@ int main(int argc, char *argv[])
 		case 'o':
 			output_name = strdup(optarg);
 			break;
+		case 'k':
+			kill_running_trace = 1;
+			break;
 
 		default:
 			fprintf(stderr,"Usage: %s -d <dev> "
@@ -444,10 +447,21 @@ int main(int argc, char *argv[])
 		return 2;
 	}
 
+	devfd = open(dev, O_RDONLY);
+	if (devfd < 0) {
+		perror(dev);
+		return 3;
+	}
+
+	if (kill_running_trace) {
+		stop_trace();
+		exit(0);
+	}
+
 	if (start_trace(dev)) {
 		close(devfd);
 		fprintf(stderr, "Failed to start trace on %s\n", dev);
-		return 3;
+		return 4;
 	}
 
 	setlocale(LC_NUMERIC, "en_US");
@@ -459,7 +473,7 @@ int main(int argc, char *argv[])
 	if (!i) {
 		fprintf(stderr, "Failed to start worker threads\n");
 		stop_trace();
-		return 4;
+		return 5;
 	}
 
 	signal(SIGINT, handle_sigint);
@@ -474,6 +488,7 @@ int main(int argc, char *argv[])
 	stop_threads();
 	stop_trace();
 	show_stats();
+	close(devfd);
 
 	return 0;
 }
