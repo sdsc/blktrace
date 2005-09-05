@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <errno.h>
+#include <signal.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -91,6 +93,9 @@ static int max_cpus;
 static int nfiles;
 
 static char *dev, *output_name;
+
+#define is_done()	(*(volatile int *)(&done))
+static volatile int done;
 
 static inline void check_time(struct blk_io_trace *bit)
 {
@@ -355,11 +360,11 @@ static void dump_pci_stats(struct per_cpu_info *pci)
 static void show_stats(void)
 {
 	struct per_cpu_info foo, *pci;
-	int i;
+	int i, pci_events = 0;
 
 	memset(&foo, 0, sizeof(foo));
 
-	for (i = 0; i < nfiles; i++) {
+	for (i = 0; i < MAX_CPUS; i++) {
 		pci = &per_cpu_info[i];
 
 		if (!pci->nelems)
@@ -378,9 +383,10 @@ static void show_stats(void)
 
 		printf("CPU%d:\n", i);
 		dump_pci_stats(pci);
+		pci_events++;
 	}
 
-	if (nfiles > 1) {
+	if (pci_events > 1) {
 		printf("Total:\n");
 		dump_pci_stats(&foo);
 	}
@@ -413,14 +419,18 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
-static int sort_entries(void *traces, unsigned long offset, int cpu)
+static int sort_entries(void *traces, unsigned long offset, int nr)
 {
+	struct per_cpu_info *pci;
 	struct blk_io_trace *bit;
 	struct trace *t;
 	void *start = traces;
 	int nelems = 0;
 
 	while (traces - start <= offset - sizeof(*bit)) {
+		if (!nr)
+			break;
+
 		bit = traces;
 
 		t = malloc(sizeof(*t));
@@ -432,14 +442,42 @@ static int sort_entries(void *traces, unsigned long offset, int cpu)
 		if (verify_trace(bit))
 			break;
 
+		pci = &per_cpu_info[bit->cpu];
+
+		if (output_name && !pci->ofp) {
+			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
+					"%s_log.%d", output_name, bit->cpu);
+
+			pci->ofp = fopen(pci->ofname, "w");
+			if (pci->ofp == NULL) {
+				perror(pci->ofname);
+				break;
+			}
+		}
+
+		pci->nelems++;
+
 		if (trace_rb_insert(t))
 			return -1;
 
 		traces += sizeof(*bit) + bit->pdu_len;
 		nelems++;
+		nr--;
 	}
 
 	return nelems;
+}
+
+static void free_entries_rb(void)
+{
+	struct rb_node *n;
+
+	while ((n = rb_first(&rb_root)) != NULL) {
+		struct trace *t = rb_entry(n, struct trace, rb_node);
+
+		rb_erase(&t->rb_node, &rb_root);
+		free(t);
+	}
 }
 
 static void show_entries_rb(void)
@@ -479,8 +517,6 @@ static int do_file(void)
 {
 	int i, ret;
 
-	memset(&rb_root, 0, sizeof(rb_root));
-
 	for (max_cpus = 0, i = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
 		struct per_cpu_info *pci = &per_cpu_info[i];
 		struct stat st;
@@ -494,17 +530,6 @@ static int do_file(void)
 			break;
 		if (!st.st_size)
 			continue;
-
-		if (output_name) {
-			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
-					"%s_log.%d", output_name, i);
-
-			pci->ofp = fopen(pci->ofname, "w");
-			if (pci->ofp == NULL) {
-				perror(pci->ofname);
-				break;
-			}
-		}
 
 		printf("Processing %s\n", pci->fname);
 
@@ -521,12 +546,11 @@ static int do_file(void)
 			break;
 		}
 
-		ret = sort_entries(tb, st.st_size, i);
+		ret = sort_entries(tb, st.st_size, ~0U);
 		if (ret == -1)
 			break;
 
 		close(pci->fd);
-		pci->nelems = ret;
 		printf("\t%2d %10s %15d\n", i, pci->fname, pci->nelems);
 
 	}
@@ -537,14 +561,20 @@ static int do_file(void)
 	}
 
 	show_entries_rb();
-	show_stats();
 	return 0;
 }
 
-static int read_data(int fd, void *buffer, int bytes)
+static int read_data(int fd, void *buffer, int bytes, int block)
 {
-	int ret, bytes_left;
+	int ret, bytes_left, fl;
 	void *p;
+
+	fl = fcntl(fd, F_GETFL);
+
+	if (!block)
+		fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+	else
+		fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
 
 	bytes_left = bytes;
 	p = buffer;
@@ -553,8 +583,9 @@ static int read_data(int fd, void *buffer, int bytes)
 		if (!ret)
 			return 1;
 		else if (ret < 0) {
-			perror("read");
-			return 1;
+			if (errno != EAGAIN)
+				perror("read");
+			return -1;
 		} else {
 			p += ret;
 			bytes_left -= ret;
@@ -564,87 +595,108 @@ static int read_data(int fd, void *buffer, int bytes)
 	return 0;
 }
 
-static int do_stdin(void)
+static void resize_buffer(void **buffer, long *old_size)
 {
-	struct blk_io_trace *bit;
-	int ptr_len, fd;
+	long cur_size = *old_size;
 	void *ptr;
 
-	nfiles = 1;
+	*old_size *= 2;
+	ptr = malloc(*old_size);
+	memcpy(ptr, *buffer, cur_size);
+	free(*buffer);
+	*buffer = ptr;
+}
+
+static int read_sort_events(int fd, void **buffer)
+{
+	long offset, max_offset;
+	int events;
+
+	max_offset = 128 * sizeof(struct blk_io_trace);
+	*buffer = malloc(max_offset);
+	events = 0;
+	offset = 0;
+
+	do {
+		struct blk_io_trace *t;
+		int pdu_len;
+
+		if (max_offset - offset < sizeof(*t))
+			resize_buffer(buffer, &max_offset);
+
+		if (read_data(fd, *buffer + offset, sizeof(*t), !events)) {
+			if (events)
+				break;
+
+			usleep(1000);
+			continue;
+		}
+
+		t = *buffer + offset;
+		offset += sizeof(*t);
+
+		pdu_len = be16_to_cpu(t->pdu_len);
+
+		if (max_offset - offset < pdu_len)
+			resize_buffer(buffer, &max_offset);
+
+		if (read_data(fd, *buffer + offset, pdu_len, 1))
+			break;
+
+		offset += pdu_len;
+		events++;
+	} while (!is_done());
+
+	return events;
+}
+
+static int do_stdin(void)
+{
+	int fd;
+	void *ptr;
 
 	fd = dup(0);
-	ptr_len = sizeof(*bit);
-	ptr = malloc(ptr_len);
-	bit = ptr;
 	do {
-		struct per_cpu_info *pci;
-		int cpu;
+		int events;
 
-		if (read_data(fd, bit, sizeof(*bit)))
+		events = read_sort_events(fd, &ptr);
+		if (!events)
 			break;
-
-		trace_to_cpu(bit);
-
-		if (bit->pdu_len) {
-			struct blk_io_trace t;
-
-			if (ptr_len < bit->pdu_len + sizeof(*bit)) {
-				memcpy(&t, bit, sizeof(t));
-				if (ptr)
-					free(ptr);
-
-				ptr_len = bit->pdu_len + sizeof(*bit);
-				ptr = malloc(ptr_len);
-				bit = ptr;
-				memcpy(ptr, &t, sizeof(t));
-			}
-			if (read_data(fd, ptr + sizeof(*bit), bit->pdu_len))
-				break;
-		}
-
-		if (verify_trace(bit))
-			break;
-
-		cpu = bit->cpu;
-		if (cpu > max_cpus) {
-			fprintf(stderr, "CPU number too large (%d)\n", cpu);
-			break;
-		}
-
-		pci = &per_cpu_info[cpu];
-		pci->nelems++;
-
-		if (output_name && !pci->ofp) {
-			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
-					"%s_log.%d", output_name, cpu);
-
-			pci->ofp = fopen(pci->ofname, "w");
-			if (pci->ofp == NULL) {
-				perror(pci->ofname);
-				break;
-			}
-		}
-
-		if (genesis_time == 0)
-			genesis_time = bit->time;
-		bit->time -= genesis_time;
-
-		check_time(bit);
-
-		if (dump_trace(bit, pci))
-			break;
-
+	
+		sort_entries(ptr, ~0UL, events);
+		show_entries_rb();
+		free_entries_rb();
 	} while (1);
 
 	close(fd);
 	free(ptr);
-	show_stats();
 	return 0;
+}
+
+void flush_output(void)
+{
+	int i;
+
+	for (i = 0; i < MAX_CPUS; i++) {
+		struct per_cpu_info *pci = &per_cpu_info[i];
+
+		if (pci->ofp) {
+			fflush(pci->ofp);
+			fclose(pci->ofp);
+			pci->ofp = NULL;
+		}
+	}
+}
+
+void handle_sigint(int sig)
+{
+	done = 1;
+	flush_output();
 }
 
 int main(int argc, char *argv[])
 {
-	int c, ret, i;
+	int c, ret;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -666,20 +718,18 @@ int main(int argc, char *argv[])
 	}
 
 	memset(per_cpu_info, 0, sizeof(per_cpu_info));
+	memset(&rb_root, 0, sizeof(rb_root));
+
+	signal(SIGINT, handle_sigint);
+	signal(SIGHUP, handle_sigint);
+	signal(SIGTERM, handle_sigint);
 
 	if (!strcmp(dev, "-"))
 		ret = do_stdin();
 	else
 		ret = do_file();
 
-	for (i = 0; i < MAX_CPUS; i++) {
-		struct per_cpu_info *pci = &per_cpu_info[i];
-
-		if (pci->ofp) {
-			fflush(pci->ofp);
-			fclose(pci->ofp);
-		}
-	}
-
+	show_stats();
+	flush_output();
 	return ret;
 }
