@@ -41,8 +41,8 @@
 
 #define DECLARE_MASK_MAP(mask)          { BLK_TC_##mask, #mask, "BLK_TC_"#mask }
 #define COMPARE_MASK_MAP(mmp, str)                                      \
-        (!strcmp(mmp->short_form, toupper(str)) ||                      \
-         !strcmp(mmp->long_form, toupper(str)))
+        (!strcasecmp((mmp)->short_form, (str)) ||                      \
+         !strcasecmp((mmp)->long_form, (str)))
 
 #define VALID_SET(x)	((1 <= (x)) && ((x) < (1 << BLK_TC_SHIFT)))
 
@@ -133,26 +133,12 @@ static int trace_started;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-inline int compare_mask_map(struct mask_map *mmp, char *string)
-{
-	int i, result;
-	char *s, *ustring = strdup(string);
-
-	for (i = 0, s = ustring; i < strlen(ustring); i++, s++)
-		*s = toupper(*s);
-
-	result = !strcmp(mmp->short_form, ustring) ||
-		 !strcmp(mmp->long_form, ustring);
-	free(ustring);
-	return result;
-}
-
 int find_mask_map(char *string)
 {
 	int i;
 
 	for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
-		if (compare_mask_map(&mask_maps[i], string))
+		if (COMPARE_MASK_MAP(&mask_maps[i], string))
 			return mask_maps[i].mask;
 
 	return -1;
