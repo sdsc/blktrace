@@ -159,7 +159,7 @@ static void output(struct per_cpu_info *pci, char *s)
 	printf("%s", s);
 
 	if (pci->ofp)
-		fprintf(pci->ofp,"%s",s);
+		fprintf(pci->ofp, "%s", s);
 }
 
 static char hstring[256];
@@ -333,6 +333,17 @@ static int dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int ret = 0;
 
+	if (output_name && !pci->ofp) {
+		snprintf(pci->ofname, sizeof(pci->ofname) - 1,
+				"%s_log.%d", output_name, pci->cpu);
+
+		pci->ofp = fopen(pci->ofname, "w");
+		if (pci->ofp == NULL) {
+			perror(pci->ofname);
+			return 1;
+		}
+	}
+
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
 		ret = dump_trace_pc(t, pci);
 	else
@@ -443,17 +454,6 @@ static int sort_entries(void *traces, unsigned long offset, int nr)
 			break;
 
 		pci = &per_cpu_info[bit->cpu];
-
-		if (output_name && !pci->ofp) {
-			snprintf(pci->ofname, sizeof(pci->ofname) - 1,
-					"%s_log.%d", output_name, bit->cpu);
-
-			pci->ofp = fopen(pci->ofname, "w");
-			if (pci->ofp == NULL) {
-				perror(pci->ofname);
-				break;
-			}
-		}
 
 		pci->nelems++;
 
