@@ -140,7 +140,7 @@ static int kill_running_trace;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int find_mask_map(char *string)
+static int find_mask_map(char *string)
 {
 	int i;
 
@@ -155,7 +155,7 @@ static int start_trace(char *dev)
 {
 	struct blk_user_trace_setup buts;
 
-	memset(&buts, sizeof(buts), 0);
+	memset(&buts, 0, sizeof(buts));
 	buts.buf_size = BUF_SIZE;
 	buts.buf_nr = BUF_NR;
 	buts.act_mask = act_mask;
@@ -308,7 +308,7 @@ static int start_threads(void)
 	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
 	if (ncpus < 0) {
 		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
-		return 1;
+		return 0;
 	}
 
 	thread_information = malloc(ncpus * sizeof(struct thread_information));
@@ -318,7 +318,7 @@ static int start_threads(void)
 		tip->events_processed = 0;
 
 		if (!strcmp(output_name, "-")) {
-			tip->ofd = dup(1);
+			tip->ofd = dup(STDOUT_FILENO);
 			tip->fd_lock = &stdout_mutex;
 		} else {
 			sprintf(op, "%s_out.%d", output_name, tip->cpu);
@@ -327,7 +327,7 @@ static int start_threads(void)
 
 		if (tip->ofd < 0) {
 			perror(op);
-			return 1;
+			return 0;
 		}
 
 		if (pthread_create(&tip->thread, NULL, extract, tip)) {
@@ -355,7 +355,7 @@ static void stop_threads(void)
 	}
 }
 
-void show_stats(void)
+static void show_stats(void)
 {
 	int i;
 	struct thread_information *tip;
@@ -373,7 +373,7 @@ void show_stats(void)
 	printf("Total:  %20ld events\n", events_processed);
 }
 
-void handle_sigint(int sig)
+static void handle_sigint(int sig)
 {
 	done = 1;
 }

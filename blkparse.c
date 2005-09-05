@@ -90,7 +90,6 @@ static struct per_cpu_info per_cpu_info[MAX_CPUS];
 static unsigned long long events;
 
 static int max_cpus;
-static int nfiles;
 
 static char *dev, *output_name;
 
@@ -325,7 +324,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
-			return;
+			break;
 	}
 }
 
@@ -513,57 +512,6 @@ static void show_entries_rb(void)
 	} while ((n = rb_next(n)) != NULL);
 }
 
-static int do_file(void)
-{
-	int i, ret;
-
-	for (max_cpus = 0, i = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
-		struct per_cpu_info *pci = &per_cpu_info[i];
-		struct stat st;
-		void *tb;
-
-		pci->cpu = i;
-		pci->ofp = NULL;
-
-		snprintf(pci->fname, sizeof(pci->fname)-1,"%s_out.%d", dev, i);
-		if (stat(pci->fname, &st) < 0)
-			break;
-		if (!st.st_size)
-			continue;
-
-		printf("Processing %s\n", pci->fname);
-
-		tb = malloc(st.st_size);
-
-		pci->fd = open(pci->fname, O_RDONLY);
-		if (pci->fd < 0) {
-			perror(pci->fname);
-			break;
-		}
-
-		if (read(pci->fd, tb, st.st_size) != st.st_size) {
-			fprintf(stderr, "error reading\n");
-			break;
-		}
-
-		ret = sort_entries(tb, st.st_size, ~0U);
-		if (ret == -1)
-			break;
-
-		close(pci->fd);
-		printf("\t%2d %10s %15d\n", i, pci->fname, pci->nelems);
-
-	}
-
-	if (!nfiles) {
-		fprintf(stderr, "No files found\n");
-		return 1;
-	}
-
-	show_entries_rb();
-	return 0;
-}
-
 static int read_data(int fd, void *buffer, int bytes, int block)
 {
 	int ret, bytes_left, fl;
@@ -592,6 +540,57 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 		}
 	}
 
+	return 0;
+}
+
+static int do_file(void)
+{
+	int i, ret, nfiles;
+
+	nfiles = 0;
+	max_cpus = 0;
+	for (i = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
+		struct per_cpu_info *pci = &per_cpu_info[i];
+		struct stat st;
+		void *tb;
+
+		pci->cpu = i;
+		pci->ofp = NULL;
+
+		snprintf(pci->fname, sizeof(pci->fname)-1,"%s_out.%d", dev, i);
+		if (stat(pci->fname, &st) < 0)
+			break;
+		if (!st.st_size)
+			continue;
+
+		printf("Processing %s\n", pci->fname);
+
+		tb = malloc(st.st_size);
+
+		pci->fd = open(pci->fname, O_RDONLY);
+		if (pci->fd < 0) {
+			perror(pci->fname);
+			break;
+		}
+
+		if (read_data(pci->fd, tb, st.st_size, 1))
+			break;
+
+		ret = sort_entries(tb, st.st_size, ~0U);
+		if (ret == -1)
+			break;
+
+		close(pci->fd);
+		printf("\t%2d %10s %15d\n", i, pci->fname, pci->nelems);
+
+	}
+
+	if (!nfiles) {
+		fprintf(stderr, "No files found\n");
+		return 1;
+	}
+
+	show_entries_rb();
 	return 0;
 }
 
@@ -655,7 +654,7 @@ static int do_stdin(void)
 	int fd;
 	void *ptr;
 
-	fd = dup(0);
+	fd = dup(STDIN_FILENO);
 	do {
 		int events;
 
@@ -673,7 +672,7 @@ static int do_stdin(void)
 	return 0;
 }
 
-void flush_output(void)
+static void flush_output(void)
 {
 	int i;
 
@@ -688,10 +687,15 @@ void flush_output(void)
 	}
 }
 
-void handle_sigint(int sig)
+static void handle_sigint(int sig)
 {
 	done = 1;
 	flush_output();
+}
+
+static void usage(char *prog)
+{
+	fprintf(stderr, "Usage: %s -i <name> [-o <output>]\n", prog);
 }
 
 int main(int argc, char *argv[])
@@ -707,13 +711,13 @@ int main(int argc, char *argv[])
 			output_name = strdup(optarg);
 			break;
 		default:
-			fprintf(stderr, "Usage: %s -i <dev>\n", argv[0]);
+			usage(argv[0]);
 			return 1;
 		}
 	}
 
 	if (!dev) {
-		fprintf(stderr, "Usage: %s -i <dev>\n", argv[0]);
+		usage(argv[0]);
 		return 1;
 	}
 
