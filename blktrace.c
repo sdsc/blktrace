@@ -180,6 +180,12 @@ static void stop_trace(void)
 	}
 }
 
+static void exit_trace(int status)
+{
+	stop_trace();
+	exit(status);
+}
+
 static void extract_data(struct thread_information *tip, char *ofn, int nb)
 {
 	int ret, bytes_left;
@@ -197,7 +203,7 @@ static void extract_data(struct thread_information *tip, char *ofn, int nb)
 			fprintf(stderr, "Thread %d extract_data %s failed\n",
 				tip->cpu, tip->fn);
 			free(buf);
-			exit(1);
+			exit_trace(1);
 		} else {
 			p += ret;
 			bytes_left -= ret;
@@ -209,7 +215,7 @@ static void extract_data(struct thread_information *tip, char *ofn, int nb)
 		perror(ofn);
 		fprintf(stderr,"Thread %d extract_data %s failed\n", tip->cpu, ofn);
 		free(buf);
-		exit(1);
+		exit_trace(1);
 	}
 
 	free(buf);
@@ -241,7 +247,7 @@ static void *extract(void *arg)
 
 	if (sched_setaffinity(pid, sizeof(cpu_mask), &cpu_mask) == -1) {
 		perror("sched_setaffinity");
-		exit(1);
+		exit_trace(1);
 	}
 
 	snprintf(tip->fn, sizeof(tip->fn),
@@ -251,7 +257,7 @@ static void *extract(void *arg)
 		perror(tip->fn);
 		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu,
 			tip->fn);
-		exit(1);
+		exit_trace(1);
 	}
 
 	while (!is_done()) {
@@ -261,11 +267,11 @@ static void *extract(void *arg)
 				perror(tip->fn);
 				fprintf(stderr,"Thread %d failed read of %s\n",
 					tip->cpu, tip->fn);
-				exit(1);
+				exit_trace(1);
 			} else if (ret > 0) {
 				fprintf(stderr,"Thread %d misread %s %d,%d\n",
 					tip->cpu, tip->fn, ret, (int)sizeof(t));
-				exit(1);
+				exit_trace(1);
 			} else {
 				usleep(10000);
 				continue;
@@ -273,7 +279,7 @@ static void *extract(void *arg)
 		}
 
 		if (verify_trace(&t))
-			exit(1);
+			exit_trace(1);
 
 		pdu_len = t.pdu_len;
 
@@ -285,7 +291,7 @@ static void *extract(void *arg)
 		if (ret < 0) {
 			fprintf(stderr,"Thread %d failed write\n", tip->cpu);
 			tip_fd_unlock(tip);
-			exit(1);
+			exit_trace(1);
 		}
 
 		if (pdu_len)
