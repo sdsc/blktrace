@@ -17,30 +17,45 @@ rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
 Usage
 -----
 
-To run:
-	% blktrace -d <dev> [-a <trace> [-a <trace>]]
-		-a <trace> is one of: (use multiple -a options to get more)
-			READ
-			WRITE
-			BARRIER
-			SYNC
-			QUEUE
-			REQUEUE
-			ISSUE
-			COMPLETE
-			FS
-			PC
+% blktrace -d <dev> [-o <output> -a <trace> [-a <trace>]]
+	-a <trace> is one of: (use multiple -a options to get more)
+		READ
+		WRITE
+		BARRIER
+		SYNC
+		QUEUE
+		REQUEUE
+		ISSUE
+		COMPLETE
+		FS
+		PC
 	--- run task to generate load to be traced ---
 	<SIGINT to kill>
 	--- Generates:
-		<dev>_dat.[0..ncpus] : Contains binary pdu data
-		<dev>_out.[0..ncpus] : Contains binary trace data
+		<output>_out.[0..ncpus] : Contains binary trace data
 
-	% blkparse <dev>
+	% blkparse -i <input> [-o <output>]
 	--- Generates:
-		<dev>_log.[0..ncpus] : Contains formatted trace data
+		<output>_log.[0..ncpus] : Contains formatted trace data, if
+		output logging is added with the -o option.
 		Merged formatted trace data to stdout
 
 
-20050826, Jens Axboe <axboe@suse.de>
+If you want to do live tracing, you can pipe the data between blktrace
+and blkparse:
+
+% blktrace -d <device> -o - | blkparse -i -
+
+This has a small risk of displaying some traces a little out of sync, since
+it will do batch sorts of input events. Similarly, you can do traces over
+the network with eg netcat:
+
+% blktrace -d /dev/sda -o - | netcat parsehost portno
+% netcat tracehost portno | blkparse -i -
+
+Which will send the traces from tracehost to parsehost over the network on
+the defined port number.
+
+
+20050906, Jens Axboe <axboe@suse.de>
 
