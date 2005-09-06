@@ -28,6 +28,7 @@
 #include <getopt.h>
 #include <errno.h>
 #include <signal.h>
+#include <locale.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -767,6 +768,8 @@ int main(int argc, char *argv[])
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
+
+	setlocale(LC_NUMERIC, "en_US");
 
 	if (!strcmp(dev, "-"))
 		ret = do_stdin();
