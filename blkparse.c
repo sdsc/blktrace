@@ -113,10 +113,18 @@ static void resize_cpu_info(int cpuid)
 
 static struct per_cpu_info *get_cpu_info(int cpu)
 {
+	struct per_cpu_info *pci;
+
 	if (cpu >= max_cpus)
 		resize_cpu_info(cpu);
 
-	return &per_cpu_info[cpu];
+	/*
+	 * ->cpu might already be set, but just set it unconditionally
+	 */
+	pci = &per_cpu_info[cpu];
+	pci->cpu = cpu;
+
+	return pci;
 }
 
 static inline void check_time(struct blk_io_trace *bit)
@@ -576,7 +584,6 @@ static int do_file(void)
 		void *tb;
 
 		pci = get_cpu_info(i);
-		pci->cpu = i;
 		pci->ofp = NULL;
 
 		snprintf(pci->fname, sizeof(pci->fname)-1,"%s_out.%d", dev, i);
