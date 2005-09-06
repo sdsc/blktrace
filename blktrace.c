@@ -398,6 +398,13 @@ static void show_stats(void)
 	printf("Total:  %20ld events\n", events_processed);
 }
 
+static void show_usage(char *program)
+{
+	fprintf(stderr,"Usage: %s [-d <dev>] "
+		       "[-a <trace> [-a <trace>]] <dev>\n",
+		program);
+}
+
 static void handle_sigint(int sig)
 {
 	done = 1;
@@ -433,7 +440,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			dev = strdup(optarg);
+			dev = optarg;
 			break;
 
 		case 'r':
@@ -448,15 +455,16 @@ int main(int argc, char *argv[])
 			break;
 
 		default:
-			fprintf(stderr,"Usage: %s -d <dev> "
-				       "[-a <trace> [-a <trace>]]\n", argv[0]);
+			show_usage(argv[0]);
 			return 4;
 		}
 	}
 
-	if ((dev == NULL) || (optind < argc)) {
-		fprintf(stderr,"Usage: %s -d <dev> "
-			       "[-a <trace> [-a <trace>]]\n", argv[0]);
+	while (optind < argc)
+		dev = argv[optind++];
+
+	if (dev == NULL) {
+		show_usage(argv[0]);
 		return 4;
 	}
 
