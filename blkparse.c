@@ -54,7 +54,7 @@ struct per_cpu_info {
 	unsigned long long iread_kb, iwrite_kb;
 };
 
-#define S_OPTS	"i:o:"
+#define S_OPTS	"i:o:b:"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -67,6 +67,12 @@ static struct option l_opts[] = {
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'o'
+	},
+	{
+		.name = "batch",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'b'
 	},
 	{
 		.name = NULL,
@@ -89,6 +95,9 @@ static struct per_cpu_info *per_cpu_info;
 static unsigned long long events;
 
 static char *dev, *output_name;
+
+#define RB_BATCH_DEFAULT	(1024)
+static int rb_batch = RB_BATCH_DEFAULT;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -671,7 +680,7 @@ static int read_sort_events(int fd, void **buffer)
 
 		offset += pdu_len;
 		events++;
-	} while (!is_done());
+	} while (!is_done() && events < rb_batch);
 
 	return events;
 }
@@ -736,6 +745,11 @@ int main(int argc, char *argv[])
 			break;
 		case 'o':
 			output_name = strdup(optarg);
+			break;
+		case 'b':
+			rb_batch = atoi(optarg);
+			if (rb_batch <= 0)
+				rb_batch = RB_BATCH_DEFAULT;
 			break;
 		default:
 			usage(argv[0]);
