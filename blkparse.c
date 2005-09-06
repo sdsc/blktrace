@@ -226,32 +226,32 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9);
+	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
+		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
 }
 
 static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9);
+	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
+		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
 }
 
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	sprintf(tstring,"%s   %Lu + %u\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9);
+	sprintf(tstring,"%s   %Lu + %u [%s]\n", setup_header(pci, t, act),
+		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
 }
 
 static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
 			char act)
 {
-	sprintf(tstring,"%s %Lu + %u\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9);
+	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
+		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
 }
 
@@ -270,11 +270,12 @@ static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char act)
 	}
 
 	if (act == 'C') {
-		sprintf(tstring,"[%d]", t->error);
+		sprintf(tstring,"[%d]\n", t->error);
+		output(pci, tstring);
+	} else {
+		sprintf(tstring,"[%s]\n", t->comm);
 		output(pci, tstring);
 	}
-
-	printf("\n");
 	return 0;
 }
 
