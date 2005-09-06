@@ -140,6 +140,8 @@ static int kill_running_trace;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+static void exit_trace(int status);
+
 static int find_mask_map(char *string)
 {
 	int i;
@@ -178,12 +180,6 @@ static void stop_trace(void)
 
 		trace_started = 0;
 	}
-}
-
-static void exit_trace(int status)
-{
-	stop_trace();
-	exit(status);
 }
 
 static void extract_data(struct thread_information *tip, char *ofn, int nb)
@@ -345,6 +341,15 @@ static int start_threads(void)
 	return ncpus;
 }
 
+static void close_thread(struct thread_information *tip)
+{
+	if (tip->fd != -1)
+		close(tip->fd);
+	if (tip->ofd != -1)
+		close(tip->ofd);
+	tip->fd = tip->ofd = -1;
+}
+
 static void stop_threads(void)
 {
 	struct thread_information *tip = thread_information;
@@ -355,10 +360,24 @@ static void stop_threads(void)
 
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
-
-		close(tip->fd);
-		close(tip->ofd);
+		close_thread(tip);
 	}
+}
+
+static void stop_tracing(void)
+{
+	struct thread_information *tip = thread_information;
+	int i;
+
+	for (i = 0; i < ncpus; i++, tip++)
+		close_thread(tip);
+	stop_trace();
+}
+
+static void exit_trace(int status)
+{
+	stop_tracing();
+	exit(status);
 }
 
 static void show_stats(void)
@@ -486,7 +505,7 @@ int main(int argc, char *argv[])
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
 
-	atexit(stop_trace);
+	atexit(stop_tracing);
 
 	while (!is_done())
 		sleep(1);
