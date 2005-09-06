@@ -182,7 +182,7 @@ static void stop_trace(void)
 	}
 }
 
-static void extract_data(struct thread_information *tip, char *ofn, int nb)
+static void *extract_data(struct thread_information *tip, char *ofn, int nb)
 {
 	int ret, bytes_left;
 	unsigned char *buf, *p;
@@ -200,21 +200,14 @@ static void extract_data(struct thread_information *tip, char *ofn, int nb)
 				tip->cpu, tip->fn);
 			free(buf);
 			exit_trace(1);
+			return NULL;
 		} else {
 			p += ret;
 			bytes_left -= ret;
 		}
 	}
 
-	ret = write(tip->ofd, buf, nb);
-	if (ret != nb) {
-		perror(ofn);
-		fprintf(stderr,"Thread %d extract_data %s failed\n", tip->cpu, ofn);
-		free(buf);
-		exit_trace(1);
-	}
-
-	free(buf);
+	return buf;
 }
 
 static inline void tip_fd_unlock(struct thread_information *tip)
@@ -233,7 +226,7 @@ static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
 	int ret, pdu_len;
-	char dp[64];
+	char dp[64], *pdu_data;
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
@@ -256,6 +249,7 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
+	pdu_data = NULL;
 	while (!is_done()) {
 		ret = read(tip->fd, &t, sizeof(t));
 		if (ret != sizeof(t)) {
@@ -281,6 +275,13 @@ static void *extract(void *arg)
 
 		trace_to_be(&t);
 
+		if (pdu_len)
+			pdu_data = extract_data(tip, dp, pdu_len);
+
+		/*
+		 * now we have both trace and payload, get a lock on the
+		 * output descriptor and send it off
+		 */
 		tip_fd_lock(tip);
 
 		ret = write(tip->ofd, &t, sizeof(t));
@@ -290,11 +291,18 @@ static void *extract(void *arg)
 			exit_trace(1);
 		}
 
-		if (pdu_len)
-			extract_data(tip, dp, pdu_len);
+		if (pdu_data) {
+			ret = write(tip->ofd, pdu_data, pdu_len);
+			if (ret != pdu_len) {
+				perror("write pdu data");
+				exit_trace(1);
+			}
+
+			free(pdu_data);
+			pdu_data = NULL;
+		}
 
 		tip_fd_unlock(tip);
-
 		tip->events_processed++;
 	}
 
