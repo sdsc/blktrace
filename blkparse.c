@@ -388,13 +388,13 @@ static void dump_pci_stats(struct per_cpu_info *pci)
 {
 	printf("\tReads:\n");
 	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pci->qreads, pci->qread_kb);
-	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pci->ireads, pci->iread_kb);
+	printf("\t\tDispatched:%'8lu, %'8LuKiB\n", pci->ireads, pci->iread_kb);
 	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pci->creads, pci->cread_kb);
 	printf("\t\tMerges:    %'8lu\n", pci->mreads);
 
 	printf("\tWrites:\n");
 	printf("\t\tQueued:    %'8lu, %'8LuKiB\n", pci->qwrites,pci->qwrite_kb);
-	printf("\t\tDispatched %'8lu, %'8LuKiB\n", pci->iwrites,pci->iwrite_kb);
+	printf("\t\tDispatched:%'8lu, %'8LuKiB\n", pci->iwrites,pci->iwrite_kb);
 	printf("\t\tCompleted: %'8lu, %'8LuKiB\n", pci->cwrites,pci->cwrite_kb);
 	printf("\t\tMerges:    %'8lu\n", pci->mwrites);
 }
