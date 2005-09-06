@@ -54,7 +54,6 @@ static inline void trace_to_be(struct blk_io_trace *t)
 	t->cpu		= cpu_to_be32(t->cpu);
 	t->error	= cpu_to_be16(t->error);
 	t->pdu_len	= cpu_to_be16(t->pdu_len);
-	t->device	= cpu_to_be32(t->device);
 	/* t->comm is a string (endian neutral) */
 }
 
@@ -70,7 +69,6 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 	t->cpu		= be32_to_cpu(t->cpu);
 	t->error	= be16_to_cpu(t->error);
 	t->pdu_len	= be16_to_cpu(t->pdu_len);
-	t->device	= be32_to_cpu(t->device);
 	/* t->comm is a string (endian neutral) */
 }
 
