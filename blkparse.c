@@ -32,8 +32,6 @@
 #include "blktrace.h"
 #include "rbtree.h"
 
-#define MAX_CPUS	(512)
-
 #define SECONDS(x) 	((unsigned long long)(x) / 1000000000)
 #define NANO_SECONDS(x)	((unsigned long long)(x) % 1000000000)
 
@@ -85,16 +83,41 @@ struct trace {
 	struct rb_node rb_node;
 };
 
-static struct per_cpu_info per_cpu_info[MAX_CPUS];
+static int max_cpus;
+static struct per_cpu_info *per_cpu_info;
 
 static unsigned long long events;
-
-static int max_cpus;
 
 static char *dev, *output_name;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
+
+static void resize_cpu_info(int cpuid)
+{
+	int new_space, new_max = cpuid + 1;
+	char *new_start;
+
+	per_cpu_info = realloc(per_cpu_info, new_max * sizeof(*per_cpu_info));
+	if (!per_cpu_info) {
+		fprintf(stderr, "Cannot allocate CPU info -- %d x %d bytes\n",
+			new_max, (int) sizeof(*per_cpu_info));
+		exit(1);
+	}
+
+	new_start = (char *)per_cpu_info + (max_cpus * sizeof(*per_cpu_info));
+	new_space = (new_max - max_cpus) * sizeof(*per_cpu_info);
+	memset(new_start, 0, new_space);
+	max_cpus = new_max;
+}
+
+static struct per_cpu_info *get_cpu_info(int cpu)
+{
+	if (cpu >= max_cpus)
+		resize_cpu_info(cpu);
+
+	return &per_cpu_info[cpu];
+}
 
 static inline void check_time(struct blk_io_trace *bit)
 {
@@ -374,7 +397,7 @@ static void show_stats(void)
 
 	memset(&foo, 0, sizeof(foo));
 
-	for (i = 0; i < MAX_CPUS; i++) {
+	for (i = 0; i < max_cpus; i++) {
 		pci = &per_cpu_info[i];
 
 		if (!pci->nelems)
@@ -452,8 +475,7 @@ static int sort_entries(void *traces, unsigned long offset, int nr)
 		if (verify_trace(bit))
 			break;
 
-		pci = &per_cpu_info[bit->cpu];
-
+		pci = get_cpu_info(bit->cpu);
 		pci->nelems++;
 
 		if (trace_rb_insert(t))
@@ -545,15 +567,14 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 
 static int do_file(void)
 {
-	int i, ret, nfiles;
+	int i, nfiles;
 
-	nfiles = 0;
-	max_cpus = 0;
-	for (i = 0; i < MAX_CPUS; i++, nfiles++, max_cpus++) {
-		struct per_cpu_info *pci = &per_cpu_info[i];
+	for (i = 0, nfiles = 0;; i++, nfiles++) {
+		struct per_cpu_info *pci;
 		struct stat st;
 		void *tb;
 
+		pci = get_cpu_info(i);
 		pci->cpu = i;
 		pci->ofp = NULL;
 
@@ -576,8 +597,7 @@ static int do_file(void)
 		if (read_data(pci->fd, tb, st.st_size, 1))
 			break;
 
-		ret = sort_entries(tb, st.st_size, ~0U);
-		if (ret == -1)
+		if (sort_entries(tb, st.st_size, ~0U) == -1)
 			break;
 
 		close(pci->fd);
@@ -676,7 +696,7 @@ static void flush_output(void)
 {
 	int i;
 
-	for (i = 0; i < MAX_CPUS; i++) {
+	for (i = 0; i < max_cpus; i++) {
 		struct per_cpu_info *pci = &per_cpu_info[i];
 
 		if (pci->ofp) {
@@ -721,7 +741,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	memset(per_cpu_info, 0, sizeof(per_cpu_info));
 	memset(&rb_root, 0, sizeof(rb_root));
 
 	signal(SIGINT, handle_sigint);
