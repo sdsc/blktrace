@@ -424,7 +424,7 @@ int main(int argc, char *argv[])
 			if (i < 0) {
 				fprintf(stderr,"Invalid action mask %s\n", 
 					optarg);
-				return 4;
+				return 1;
 			}
 			act_mask_tmp |= i;
 			break;
@@ -434,7 +434,7 @@ int main(int argc, char *argv[])
 				fprintf(stderr,
 					"Invalid set action mask %s/0x%x\n", 
 					optarg, i);
-				return 4;
+				return 1;
 			}
 			act_mask_tmp = i;
 			break;
@@ -456,7 +456,7 @@ int main(int argc, char *argv[])
 
 		default:
 			show_usage(argv[0]);
-			return 4;
+			return 1;
 		}
 	}
 
@@ -465,7 +465,7 @@ int main(int argc, char *argv[])
 
 	if (dev == NULL) {
 		show_usage(argv[0]);
-		return 4;
+		return 1;
 	}
 
 	if (!relay_path)
@@ -477,24 +477,24 @@ int main(int argc, char *argv[])
 	if (stat(relay_path, &st) < 0) {
 		fprintf(stderr,"%s does not appear to be mounted\n",
 			relay_path);
-		return 2;
+		return 1;
 	}
 
 	devfd = open(dev, O_RDONLY);
 	if (devfd < 0) {
 		perror(dev);
-		return 3;
+		return 1;
 	}
 
 	if (kill_running_trace) {
 		stop_trace();
-		exit(0);
+		return 0;
 	}
 
 	if (start_trace(dev)) {
 		close(devfd);
 		fprintf(stderr, "Failed to start trace on %s\n", dev);
-		return 4;
+		return 1;
 	}
 
 	setlocale(LC_NUMERIC, "en_US");
@@ -506,7 +506,7 @@ int main(int argc, char *argv[])
 	if (!i) {
 		fprintf(stderr, "Failed to start worker threads\n");
 		stop_trace();
-		return 5;
+		return 1;
 	}
 
 	signal(SIGINT, handle_sigint);
