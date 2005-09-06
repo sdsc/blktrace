@@ -1,7 +1,7 @@
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/blktrace.c linux-2.6.13-mm1/drivers/block/blktrace.c
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/blktrace.c linux-2.6.13-mm1/drivers/block/blktrace.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/blktrace.c	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.13-mm1/drivers/block/blktrace.c	2005-09-05 12:50:53.000000000 +0200
-@@ -0,0 +1,224 @@
++++ linux-2.6.13-mm1/drivers/block/blktrace.c	2005-09-06 08:56:16.000000000 +0200
+@@ -0,0 +1,222 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -12,20 +12,12 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
 +
-+static inline unsigned long long blk_trace_cpu_time(void)
-+{
-+	unsigned long long offset;
-+
-+	offset = sched_clock() - per_cpu(blk_trace_cpu_offset, get_cpu());
-+	put_cpu();
-+	return offset;
-+}
-+
 +void __blk_add_trace(struct blk_trace *bt, sector_t sector, int bytes,
 +		     int rw, u32 what, int error, int pdu_len, char *pdu_data)
 +{
 +	struct blk_io_trace t;
 +	unsigned long flags;
++	int cpu;
 +
 +	if (rw & (1 << BIO_RW_BARRIER))
 +		what |= BLK_TC_ACT(BLK_TC_BARRIER);
@@ -36,20 +28,26 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
 +		what |= BLK_TC_ACT(BLK_TC_WRITE);
 +	else
 +		what |= BLK_TC_ACT(BLK_TC_READ);
-+		
++
 +	if (((bt->act_mask << BLK_TC_SHIFT) & what) == 0)
 +		return;
 +
 +	t.magic		= BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
 +	t.sequence	= atomic_add_return(1, &bt->sequence);
-+	t.time		= blk_trace_cpu_time();
++
++	cpu = get_cpu();
++	t.cpu		= cpu;
++	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
++	put_cpu();
++
 +	t.sector	= sector;
 +	t.bytes		= bytes;
 +	t.action	= what;
-+	t.pid		= current->pid;
-+	t.cpu		= raw_smp_processor_id();
 +	t.error		= error;
 +	t.pdu_len	= pdu_len;
++
++	t.pid		= current->pid;
++	memcpy(t.comm, current->comm, sizeof(t.comm));
 +
 +	local_irq_save(flags);
 +	__relay_write(bt->rchan, &t, sizeof(t));
@@ -226,7 +224,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
 +
 +module_init(blk_trace_init);
 +
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c linux-2.6.13-mm1/drivers/block/elevator.c
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c linux-2.6.13-mm1/drivers/block/elevator.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-01 13:07:30.000000000 +0200
 +++ linux-2.6.13-mm1/drivers/block/elevator.c	2005-09-05 09:33:45.000000000 +0200
 @@ -34,6 +34,7 @@
@@ -247,7 +245,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
  		/*
  		 * just mark as started even if we don't start it, a request
  		 * that has been delayed should not be passed by new incoming
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c linux-2.6.13-mm1/drivers/block/ioctl.c
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c linux-2.6.13-mm1/drivers/block/ioctl.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-01 13:07:30.000000000 +0200
 +++ linux-2.6.13-mm1/drivers/block/ioctl.c	2005-09-05 09:33:45.000000000 +0200
 @@ -4,6 +4,7 @@
@@ -269,7 +267,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
  	}
  	return -ENOIOCTLCMD;
  }
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig linux-2.6.13-mm1/drivers/block/Kconfig
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig linux-2.6.13-mm1/drivers/block/Kconfig
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-01 13:07:30.000000000 +0200
 +++ linux-2.6.13-mm1/drivers/block/Kconfig	2005-09-05 09:33:45.000000000 +0200
 @@ -419,6 +419,14 @@ config LBD
@@ -287,7 +285,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
  config CDROM_PKTCDVD
  	tristate "Packet writing on CD/DVD media"
  	depends on !UML
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c linux-2.6.13-mm1/drivers/block/ll_rw_blk.c
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c linux-2.6.13-mm1/drivers/block/ll_rw_blk.c
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-01 13:07:30.000000000 +0200
 +++ linux-2.6.13-mm1/drivers/block/ll_rw_blk.c	2005-09-05 09:33:45.000000000 +0200
 @@ -29,6 +29,7 @@
@@ -384,7 +382,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile linux-2.6.13-mm1/drivers/block/Makefile
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile linux-2.6.13-mm1/drivers/block/Makefile
 --- /opt/kernel/linux-2.6.13-mm1/drivers/block/Makefile	2005-09-01 13:07:30.000000000 +0200
 +++ linux-2.6.13-mm1/drivers/block/Makefile	2005-09-05 09:33:45.000000000 +0200
 @@ -45,3 +45,5 @@ obj-$(CONFIG_VIODASD)		+= viodasd.o
@@ -393,7 +391,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/drivers/blo
  
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 +
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h linux-2.6.13-mm1/include/linux/blkdev.h
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h linux-2.6.13-mm1/include/linux/blkdev.h
 --- /opt/kernel/linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-01 13:07:53.000000000 +0200
 +++ linux-2.6.13-mm1/include/linux/blkdev.h	2005-09-05 09:33:45.000000000 +0200
 @@ -22,6 +22,7 @@ typedef struct request_queue request_que
@@ -413,10 +411,10 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/lin
  };
  
  enum {
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/linux/blktrace.h linux-2.6.13-mm1/include/linux/blktrace.h
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/blktrace.h linux-2.6.13-mm1/include/linux/blktrace.h
 --- /opt/kernel/linux-2.6.13-mm1/include/linux/blktrace.h	1970-01-01 01:00:00.000000000 +0100
-+++ linux-2.6.13-mm1/include/linux/blktrace.h	2005-09-05 12:54:43.000000000 +0200
-@@ -0,0 +1,149 @@
++++ linux-2.6.13-mm1/include/linux/blktrace.h	2005-09-06 08:55:30.000000000 +0200
+@@ -0,0 +1,150 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -472,7 +470,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/lin
 +#define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
-+#define BLK_IO_TRACE_VERSION	0x03
++#define BLK_IO_TRACE_VERSION	0x04
 +
 +/*
 + * The trace itself
@@ -485,9 +483,10 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/lin
 +	u32 bytes;		/* transfer length */
 +	u32 action;		/* what happened */
 +	u32 pid;		/* who did it */
-+	u16 cpu;		/* on what cpu did it happen */
++	u32 cpu;		/* on what cpu did it happen */
 +	u16 error;		/* completion error */
 +	u16 pdu_len;		/* length of data after this trace */
++	char comm[16];		/* task command name (TASK_COMM_LEN) */
 +};
 +
 +struct blk_trace {
@@ -566,7 +565,7 @@ diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/lin
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif
-diff -urpN -X /home/axboe/cdrom/exclude /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h linux-2.6.13-mm1/include/linux/fs.h
+diff -urpN -X linux-2.6.13-mm1/Documentation/dontdiff /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h linux-2.6.13-mm1/include/linux/fs.h
 --- /opt/kernel/linux-2.6.13-mm1/include/linux/fs.h	2005-09-01 13:07:53.000000000 +0200
 +++ linux-2.6.13-mm1/include/linux/fs.h	2005-09-05 09:33:45.000000000 +0200
 @@ -196,6 +196,8 @@ extern int dir_notify_enable;
