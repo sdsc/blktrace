@@ -470,6 +470,26 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
+#define min(a, b)	((a) < (b) ? (a) : (b))
+
+static struct blk_io_trace *find_trace(void *p, unsigned long offset, int nr)
+{
+	unsigned long max_offset = min(offset,nr * sizeof(struct blk_io_trace));
+	unsigned long off;
+	struct blk_io_trace *bit;
+	__u32 magic;
+
+	for (off = 0; off < max_offset; off++) {
+		bit = p + off;
+
+		magic = be32_to_cpu(bit->magic);
+		if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
+			return bit;
+	}
+
+	return NULL;
+}
+
 static int sort_entries(void *traces, unsigned long offset, int nr)
 {
 	struct per_cpu_info *pci;
@@ -482,7 +502,9 @@ static int sort_entries(void *traces, unsigned long offset, int nr)
 		if (!nr)
 			break;
 
-		bit = traces;
+		bit = find_trace(traces, offset - (traces - start), nr);
+		if (!bit)
+			break;
 
 		t = malloc(sizeof(*t));
 		t->bit = bit;
@@ -631,16 +653,13 @@ static int do_file(void)
 	return 0;
 }
 
-static void resize_buffer(void **buffer, long *old_size)
+static void resize_buffer(void **buffer, long *size, long offset)
 {
-	long cur_size = *old_size;
-	void *ptr;
+	long old_size = *size;
 
-	*old_size *= 2;
-	ptr = malloc(*old_size);
-	memcpy(ptr, *buffer, cur_size);
-	free(*buffer);
-	*buffer = ptr;
+	*size *= 2;
+	*buffer = realloc(*buffer, *size);
+	memset(*buffer + offset, 0, *size - old_size);
 }
 
 static int read_sort_events(int fd, void **buffer)
@@ -658,7 +677,7 @@ static int read_sort_events(int fd, void **buffer)
 		int pdu_len;
 
 		if (max_offset - offset < sizeof(*t))
-			resize_buffer(buffer, &max_offset);
+			resize_buffer(buffer, &max_offset, offset);
 
 		if (read_data(fd, *buffer + offset, sizeof(*t), !events)) {
 			if (events)
@@ -672,14 +691,16 @@ static int read_sort_events(int fd, void **buffer)
 		offset += sizeof(*t);
 
 		pdu_len = be16_to_cpu(t->pdu_len);
+		if (pdu_len) {
+			if (max_offset - offset < pdu_len)
+				resize_buffer(buffer, &max_offset, offset);
 
-		if (max_offset - offset < pdu_len)
-			resize_buffer(buffer, &max_offset);
+			if (read_data(fd, *buffer + offset, pdu_len, 1))
+				break;
 
-		if (read_data(fd, *buffer + offset, pdu_len, 1))
-			break;
+			offset += pdu_len;
+		}
 
-		offset += pdu_len;
 		events++;
 	} while (!is_done() && events < rb_batch);
 
@@ -699,7 +720,9 @@ static int do_stdin(void)
 		if (!events)
 			break;
 	
-		sort_entries(ptr, ~0UL, events);
+		if (sort_entries(ptr, ~0UL, events) == -1)
+			break;
+
 		show_entries_rb();
 		free_entries_rb();
 	} while (1);
