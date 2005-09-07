@@ -364,7 +364,7 @@ static void stop_threads(void)
 	int i;
 
 	for (i = 0; i < ncpus; i++, tip++) {
-		int ret;
+		long ret;
 
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
