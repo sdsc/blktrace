@@ -51,7 +51,7 @@ it will do batch sorts of input events. Similarly, you can do traces over
 the network with eg netcat:
 
 % blktrace -d /dev/sda -o - | netcat parsehost portno
-% netcat tracehost portno | blkparse -i -
+% netcat -l -p portno tracehost | blkparse -i -
 
 Which will send the traces from tracehost to parsehost over the network on
 the defined port number.

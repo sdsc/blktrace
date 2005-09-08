@@ -182,7 +182,7 @@ static void stop_trace(void)
 	}
 }
 
-static void extract_data(struct thread_information *tip, char *ofn, int nb)
+static void *extract_data(struct thread_information *tip, char *ofn, int nb)
 {
 	int ret, bytes_left;
 	unsigned char *buf, *p;
@@ -200,21 +200,14 @@ static void extract_data(struct thread_information *tip, char *ofn, int nb)
 				tip->cpu, tip->fn);
 			free(buf);
 			exit_trace(1);
+			return NULL;
 		} else {
 			p += ret;
 			bytes_left -= ret;
 		}
 	}
 
-	ret = write(tip->ofd, buf, nb);
-	if (ret != nb) {
-		perror(ofn);
-		fprintf(stderr,"Thread %d extract_data %s failed\n", tip->cpu, ofn);
-		free(buf);
-		exit_trace(1);
-	}
-
-	free(buf);
+	return buf;
 }
 
 static inline void tip_fd_unlock(struct thread_information *tip)
@@ -233,7 +226,7 @@ static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
 	int ret, pdu_len;
-	char dp[64];
+	char dp[64], *pdu_data;
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
@@ -256,6 +249,7 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
+	pdu_data = NULL;
 	while (!is_done()) {
 		ret = read(tip->fd, &t, sizeof(t));
 		if (ret != sizeof(t)) {
@@ -281,6 +275,13 @@ static void *extract(void *arg)
 
 		trace_to_be(&t);
 
+		if (pdu_len)
+			pdu_data = extract_data(tip, dp, pdu_len);
+
+		/*
+		 * now we have both trace and payload, get a lock on the
+		 * output descriptor and send it off
+		 */
 		tip_fd_lock(tip);
 
 		ret = write(tip->ofd, &t, sizeof(t));
@@ -290,11 +291,18 @@ static void *extract(void *arg)
 			exit_trace(1);
 		}
 
-		if (pdu_len)
-			extract_data(tip, dp, pdu_len);
+		if (pdu_data) {
+			ret = write(tip->ofd, pdu_data, pdu_len);
+			if (ret != pdu_len) {
+				perror("write pdu data");
+				exit_trace(1);
+			}
+
+			free(pdu_data);
+			pdu_data = NULL;
+		}
 
 		tip_fd_unlock(tip);
-
 		tip->events_processed++;
 	}
 
@@ -356,7 +364,7 @@ static void stop_threads(void)
 	int i;
 
 	for (i = 0; i < ncpus; i++, tip++) {
-		int ret;
+		long ret;
 
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
@@ -424,7 +432,7 @@ int main(int argc, char *argv[])
 			if (i < 0) {
 				fprintf(stderr,"Invalid action mask %s\n", 
 					optarg);
-				return 4;
+				return 1;
 			}
 			act_mask_tmp |= i;
 			break;
@@ -434,7 +442,7 @@ int main(int argc, char *argv[])
 				fprintf(stderr,
 					"Invalid set action mask %s/0x%x\n", 
 					optarg, i);
-				return 4;
+				return 1;
 			}
 			act_mask_tmp = i;
 			break;
@@ -456,7 +464,7 @@ int main(int argc, char *argv[])
 
 		default:
 			show_usage(argv[0]);
-			return 4;
+			return 1;
 		}
 	}
 
@@ -465,7 +473,7 @@ int main(int argc, char *argv[])
 
 	if (dev == NULL) {
 		show_usage(argv[0]);
-		return 4;
+		return 1;
 	}
 
 	if (!relay_path)
@@ -477,24 +485,24 @@ int main(int argc, char *argv[])
 	if (stat(relay_path, &st) < 0) {
 		fprintf(stderr,"%s does not appear to be mounted\n",
 			relay_path);
-		return 2;
+		return 1;
 	}
 
 	devfd = open(dev, O_RDONLY);
 	if (devfd < 0) {
 		perror(dev);
-		return 3;
+		return 1;
 	}
 
 	if (kill_running_trace) {
 		stop_trace();
-		exit(0);
+		return 0;
 	}
 
 	if (start_trace(dev)) {
 		close(devfd);
 		fprintf(stderr, "Failed to start trace on %s\n", dev);
-		return 4;
+		return 1;
 	}
 
 	setlocale(LC_NUMERIC, "en_US");
@@ -506,7 +514,7 @@ int main(int argc, char *argv[])
 	if (!i) {
 		fprintf(stderr, "Failed to start worker threads\n");
 		stop_trace();
-		return 5;
+		return 1;
 	}
 
 	signal(SIGINT, handle_sigint);
