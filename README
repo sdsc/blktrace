@@ -13,6 +13,12 @@ included in this repository. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
 
+If you don't have git, you can get hourly snapshots from:
+
+http://www.kernel.org/pub/linux/kernel/people/axboe/blktrace/
+
+The snapshots include the full git object database as well.
+
 
 Usage
 -----
