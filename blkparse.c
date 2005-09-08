@@ -39,6 +39,13 @@
 static int backwards;
 static unsigned long long genesis_time, last_reported_time;
 
+struct io_stats {
+	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
+	unsigned long ireads, iwrites;
+	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
+	unsigned long long iread_kb, iwrite_kb;
+};
+
 struct per_cpu_info {
 	int cpu;
 	int nelems;
@@ -46,16 +53,21 @@ struct per_cpu_info {
 	int fd;
 	char fname[128];
 
-	FILE *ofp;
-	char ofname[128];
-
-	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
-	unsigned long ireads, iwrites;
-	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
-	unsigned long long iread_kb, iwrite_kb;
+	struct io_stats io_stats;
 };
 
-#define S_OPTS	"i:o:b:"
+struct per_process_info {
+	char name[16];
+	__u32 pid;
+	struct io_stats io_stats;
+	struct per_process_info *hash_next, *list_next;
+};
+
+#define PPI_HASH_SHIFT	(8)
+static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
+static struct per_process_info *ppi_list;
+
+#define S_OPTS	"i:o:b:s"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -74,6 +86,12 @@ static struct option l_opts[] = {
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'b'
+	},
+	{
+		.name = "per program stats",
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 's'
 	},
 	{
 		.name = NULL,
@@ -96,12 +114,76 @@ static struct per_cpu_info *per_cpu_info;
 static unsigned long long events;
 
 static char *dev, *output_name;
+static FILE *ofp;
+
+static int per_process_stats;
 
 #define RB_BATCH_DEFAULT	(1024)
 static int rb_batch = RB_BATCH_DEFAULT;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
+
+static inline unsigned long hash_long(unsigned long val)
+{
+	const unsigned int bpl = 8 * sizeof(long);
+
+	/*
+	 * assuming 32 or 64-bit
+	 */
+	if (bpl == 32)
+		val *= 0x9e370001UL;
+	else
+		val *= 0x9e37fffffffc0001UL;
+
+	return val >> (bpl - PPI_HASH_SHIFT);
+}
+
+static inline void add_process_to_hash(struct per_process_info *ppi)
+{
+	const int hash_idx = hash_long(ppi->pid);
+
+	ppi->hash_next = ppi_hash[hash_idx];
+	ppi_hash[hash_idx] = ppi;
+}
+
+static inline void add_process_to_list(struct per_process_info *ppi)
+{
+	ppi->list_next = ppi_list;
+	ppi_list = ppi;
+}
+
+static struct per_process_info *find_process_by_pid(__u32 pid)
+{
+	const int hash_idx = hash_long(pid);
+	struct per_process_info *ppi;
+
+	ppi = ppi_hash[hash_idx];
+	while (ppi) {
+		if (ppi->pid == pid)
+			return ppi;
+
+		ppi = ppi->hash_next;
+	}
+
+	return NULL;
+}
+
+static struct io_stats *find_process_io_stats(__u32 pid, char *name)
+{
+	struct per_process_info *ppi = find_process_by_pid(pid);
+
+	if (!ppi) {
+		ppi = malloc(sizeof(*ppi));
+		memset(ppi, 0, sizeof(*ppi));
+		strncpy(ppi->name, name, sizeof(ppi->name));
+		ppi->pid = pid;
+		add_process_to_hash(ppi);
+		add_process_to_list(ppi);
+	}
+
+	return &ppi->io_stats;
+}
 
 static void resize_cpu_info(int cpuid)
 {
@@ -146,60 +228,103 @@ static inline void check_time(struct blk_io_trace *bit)
 	last_reported_time = this;
 }
 
-static inline void account_m(struct per_cpu_info *pci, int rw,
-			     unsigned int bytes)
+static inline void __account_m(struct io_stats *ios, struct blk_io_trace *t,
+			       int rw)
 {
 	if (rw) {
-		pci->mwrites++;
-		pci->qwrite_kb += bytes >> 10;
+		ios->mwrites++;
+		ios->qwrite_kb += t->bytes >> 10;
 	} else {
-		pci->mreads++;
-		pci->qread_kb += bytes >> 10;
+		ios->mreads++;
+		ios->qread_kb += t->bytes >> 10;
 	}
 }
 
-static inline void account_q(struct per_cpu_info *pci, int rw,
-			     unsigned int bytes)
+static inline void account_m(struct blk_io_trace *t, struct per_cpu_info *pci,
+			     int rw)
 {
-	if (rw) {
-		pci->qwrites++;
-		pci->qwrite_kb += bytes >> 10;
-	} else {
-		pci->qreads++;
-		pci->qread_kb += bytes >> 10;
+	__account_m(&pci->io_stats, t, rw);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_m(ios, t, rw);
 	}
 }
 
-static inline void account_c(struct per_cpu_info *pci, int rw,
-			     unsigned int bytes)
+static inline void __account_q(struct io_stats *ios, struct blk_io_trace *t,
+			       int rw)
 {
 	if (rw) {
-		pci->cwrites++;
-		pci->cwrite_kb += bytes >> 10;
+		ios->qwrites++;
+		ios->qwrite_kb += t->bytes >> 10;
 	} else {
-		pci->creads++;
-		pci->cread_kb += bytes >> 10;
+		ios->qreads++;
+		ios->qread_kb += t->bytes >> 10;
 	}
 }
 
-static inline void account_i(struct per_cpu_info *pci, int rw,
-			     unsigned int bytes)
+static inline void account_q(struct blk_io_trace *t, struct per_cpu_info *pci,
+			     int rw)
+{
+	__account_q(&pci->io_stats, t, rw);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_q(ios, t, rw);
+	}
+}
+
+static inline void __account_c(struct io_stats *ios, int rw, unsigned int bytes)
 {
 	if (rw) {
-		pci->iwrites++;
-		pci->iwrite_kb += bytes >> 10;
+		ios->cwrites++;
+		ios->cwrite_kb += bytes >> 10;
 	} else {
-		pci->ireads++;
-		pci->iread_kb += bytes >> 10;
+		ios->creads++;
+		ios->cread_kb += bytes >> 10;
+	}
+}
+
+static inline void account_c(struct blk_io_trace *t, struct per_cpu_info *pci,
+			     int rw, int bytes)
+{
+	__account_c(&pci->io_stats, rw, bytes);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_c(ios, rw, bytes);
+	}
+}
+
+static inline void __account_i(struct io_stats *ios, int rw, unsigned int bytes)
+{
+	if (rw) {
+		ios->iwrites++;
+		ios->iwrite_kb += bytes >> 10;
+	} else {
+		ios->ireads++;
+		ios->iread_kb += bytes >> 10;
+	}
+}
+
+static inline void account_i(struct blk_io_trace *t, struct per_cpu_info *pci,
+			     int rw)
+{
+	__account_i(&pci->io_stats, rw, t->bytes);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_i(ios, rw, t->bytes);
 	}
 }
 
 static void output(struct per_cpu_info *pci, char *s)
 {
-	printf("%s", s);
-
-	if (pci->ofp)
-		fprintf(pci->ofp, "%s", s);
+	fprintf(ofp, "%s", s);
 }
 
 static char hstring[256];
@@ -335,15 +460,15 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
-			account_q(pci, w, t->bytes);
+			account_q(t, pci, w);
 			log_queue(pci, t, 'Q');
 			break;
 		case __BLK_TA_BACKMERGE:
-			account_m(pci, w, t->bytes);
+			account_m(t, pci, w);
 			log_merge(pci, t, 'M');
 			break;
 		case __BLK_TA_FRONTMERGE:
-			account_m(pci, w, t->bytes);
+			account_m(t, pci, w);
 			log_merge(pci, t, 'F');
 			break;
 		case __BLK_TA_GETRQ:
@@ -353,15 +478,15 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_generic(pci, t, 'S');
 			break;
 		case __BLK_TA_REQUEUE:
-			account_c(pci, w, -t->bytes);
+			account_c(t, pci, w, -t->bytes);
 			log_queue(pci, t, 'R');
 			break;
 		case __BLK_TA_ISSUE:
-			account_i(pci, w, t->bytes);
+			account_i(t, pci, w);
 			log_issue(pci, t, 'D');
 			break;
 		case __BLK_TA_COMPLETE:
-			account_c(pci, w, t->bytes);
+			account_c(t, pci, w, t->bytes);
 			log_complete(pci, t, 'C');
 			break;
 		default:
@@ -374,17 +499,6 @@ static int dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int ret = 0;
 
-	if (output_name && !pci->ofp) {
-		snprintf(pci->ofname, sizeof(pci->ofname) - 1,
-				"%s_log.%d", output_name, pci->cpu);
-
-		pci->ofp = fopen(pci->ofname, "w");
-		if (pci->ofp == NULL) {
-			perror(pci->ofname);
-			return 1;
-		}
-	}
-
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
 		ret = dump_trace_pc(t, pci);
 	else
@@ -394,55 +508,74 @@ static int dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci)
 	return ret;
 }
 
-static void dump_pci_stats(struct per_cpu_info *pci)
+static void dump_io_stats(struct io_stats *ios, char *msg)
 {
-	printf(" Reads Queued:    %'8lu, %'8LuKiB\t", pci->qreads, pci->qread_kb);
-	printf(" Writes Queued:    %'8lu, %'8LuKiB\n", pci->qwrites,pci->qwrite_kb);
+	fprintf(ofp, "%s\n", msg);
 
-	printf(" Read Dispatches: %'8lu, %'8LuKiB\t", pci->ireads, pci->iread_kb);
-	printf(" Write Dispatches: %'8lu, %'8LuKiB\n", pci->iwrites,pci->iwrite_kb);
-	printf(" Reads Completed: %'8lu, %'8LuKiB\t", pci->creads, pci->cread_kb);
-	printf(" Writes Completed: %'8lu, %'8LuKiB\n", pci->cwrites,pci->cwrite_kb);
-	printf(" Read Merges:     %'8lu%8c\t", pci->mreads, ' ');
+	fprintf(ofp, " Reads Queued:    %'8lu, %'8LuKiB\t", ios->qreads, ios->qread_kb);
+	fprintf(ofp, " Writes Queued:    %'8lu, %'8LuKiB\n", ios->qwrites,ios->qwrite_kb);
 
-	printf(" Write Merges:     %'8lu\n", pci->mwrites);
+	fprintf(ofp, " Read Dispatches: %'8lu, %'8LuKiB\t", ios->ireads, ios->iread_kb);
+	fprintf(ofp, " Write Dispatches: %'8lu, %'8LuKiB\n", ios->iwrites,ios->iwrite_kb);
+	fprintf(ofp, " Reads Completed: %'8lu, %'8LuKiB\t", ios->creads, ios->cread_kb);
+	fprintf(ofp, " Writes Completed: %'8lu, %'8LuKiB\n", ios->cwrites,ios->cwrite_kb);
+	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
+
+	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
 }
 
-static void show_stats(void)
+static void show_process_stats(void)
+{
+	struct per_process_info *ppi;
+
+	ppi = ppi_list;
+	while (ppi) {
+		dump_io_stats(&ppi->io_stats, ppi->name);
+		ppi = ppi->list_next;
+	}
+
+	fprintf(ofp, "\n");
+}
+
+static void show_cpu_stats(void)
 {
 	struct per_cpu_info foo, *pci;
+	struct io_stats *ios;
 	int i, pci_events = 0;
 
 	memset(&foo, 0, sizeof(foo));
 
 	for (i = 0; i < max_cpus; i++) {
+		char cpu[8];
+
 		pci = &per_cpu_info[i];
+		ios = &pci->io_stats;
 
 		if (!pci->nelems)
 			continue;
 
-		foo.qreads += pci->qreads;
-		foo.qwrites += pci->qwrites;
-		foo.creads += pci->creads;
-		foo.cwrites += pci->cwrites;
-		foo.mreads += pci->mreads;
-		foo.mwrites += pci->mwrites;
-		foo.qread_kb += pci->qread_kb;
-		foo.qwrite_kb += pci->qwrite_kb;
-		foo.cread_kb += pci->cread_kb;
-		foo.cwrite_kb += pci->cwrite_kb;
+		foo.io_stats.qreads += ios->qreads;
+		foo.io_stats.qwrites += ios->qwrites;
+		foo.io_stats.creads += ios->creads;
+		foo.io_stats.cwrites += ios->cwrites;
+		foo.io_stats.mreads += ios->mreads;
+		foo.io_stats.mwrites += ios->mwrites;
+		foo.io_stats.qread_kb += ios->qread_kb;
+		foo.io_stats.qwrite_kb += ios->qwrite_kb;
+		foo.io_stats.cread_kb += ios->cread_kb;
+		foo.io_stats.cwrite_kb += ios->cwrite_kb;
 
-		printf("CPU%d:\n", i);
-		dump_pci_stats(pci);
+		snprintf(cpu, sizeof(cpu) - 1, "CPU%d:", i);
+		dump_io_stats(ios, cpu);
 		pci_events++;
 	}
 
 	if (pci_events > 1) {
-		printf("Total:\n");
-		dump_pci_stats(&foo);
+		fprintf(ofp, "\n");
+		dump_io_stats(&foo.io_stats, "Total:");
 	}
 
-	printf("Events: %'Lu\n", events);
+	fprintf(ofp, "\nEvents: %'Lu\n", events);
 }
 
 static inline int trace_rb_insert(struct trace *t)
@@ -615,7 +748,6 @@ static int do_file(void)
 		void *tb;
 
 		pci = get_cpu_info(i);
-		pci->ofp = NULL;
 
 		snprintf(pci->fname, sizeof(pci->fname)-1,"%s_out.%d", dev, i);
 		if (stat(pci->fname, &st) < 0)
@@ -734,17 +866,7 @@ static int do_stdin(void)
 
 static void flush_output(void)
 {
-	int i;
-
-	for (i = 0; i < max_cpus; i++) {
-		struct per_cpu_info *pci = &per_cpu_info[i];
-
-		if (pci->ofp) {
-			fflush(pci->ofp);
-			fclose(pci->ofp);
-			pci->ofp = NULL;
-		}
-	}
+	fflush(ofp);
 }
 
 static void handle_sigint(int sig)
@@ -755,11 +877,12 @@ static void handle_sigint(int sig)
 
 static void usage(char *prog)
 {
-	fprintf(stderr, "Usage: %s -i <name> [-o <output>]\n", prog);
+	fprintf(stderr, "Usage: %s -i <name> [-o <output>][-s]\n", prog);
 }
 
 int main(int argc, char *argv[])
 {
+	char *ofp_buffer;
 	int c, ret;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
@@ -774,6 +897,9 @@ int main(int argc, char *argv[])
 			rb_batch = atoi(optarg);
 			if (rb_batch <= 0)
 				rb_batch = RB_BATCH_DEFAULT;
+			break;
+		case 's':
+			per_process_stats = 1;
 			break;
 		default:
 			usage(argv[0]);
@@ -794,12 +920,36 @@ int main(int argc, char *argv[])
 
 	setlocale(LC_NUMERIC, "en_US");
 
+	if (!output_name)
+		ofp = fdopen(STDOUT_FILENO, "w");
+	else {
+		char ofname[128];
+
+		snprintf(ofname, sizeof(ofname) - 1, "%s.log", output_name);
+		ofp = fopen(ofname, "w");
+	}
+
+	if (!ofp) {
+		perror("fopen");
+		return 1;
+	}
+
+	ofp_buffer = malloc(4096);	
+	if (setvbuf(ofp, ofp_buffer, _IOFBF, 4096)) {
+		perror("setvbuf");
+		return 1;
+	}
+
 	if (!strcmp(dev, "-"))
 		ret = do_stdin();
 	else
 		ret = do_file();
 
-	show_stats();
+	if (per_process_stats)
+		show_process_stats();
+
+	show_cpu_stats();
+
 	flush_output();
 	return ret;
 }

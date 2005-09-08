@@ -23,7 +23,7 @@ The snapshots include the full git object database as well.
 Usage
 -----
 
-% blktrace -d <dev> [-o <output> -a <trace> [-a <trace>]]
+% blktrace -d <dev> [-o <output> -a <trace> [-a <trace>] -k]
 	-a <trace> is one of: (use multiple -a options to get more)
 		READ
 		WRITE
@@ -35,16 +35,18 @@ Usage
 		COMPLETE
 		FS
 		PC
+	-k Kill a currently running trace.
 	--- run task to generate load to be traced ---
 	<SIGINT to kill>
 	--- Generates:
 		<output>_out.[0..ncpus] : Contains binary trace data
 
-	% blkparse -i <input> [-o <output>]
+	% blkparse -i <input> [-o <output> -s]
 	--- Generates:
-		<output>_log.[0..ncpus] : Contains formatted trace data, if
-		output logging is added with the -o option.
-		Merged formatted trace data to stdout
+		<output>.log : Contains formatted trace data, if
+		output logging is added with the -o option. Otherwise, the
+		output is sent to stdout. If the -s option is used, in
+		addition to per-CPU stats, per process stats are shown as well.
 
 
 If you want to do live tracing, you can pipe the data between blktrace
