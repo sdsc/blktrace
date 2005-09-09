@@ -1099,13 +1099,8 @@ static int read_sort_events(int fd, void **buffer, long *max_offset)
 		if (*max_offset - offset < sizeof(*t))
 			resize_buffer(buffer, max_offset, offset);
 
-		if (read_data(fd, *buffer + offset, sizeof(*t), !events)) {
-			if (events)
-				break;
-
-			usleep(1000);
-			continue;
-		}
+		if (read_data(fd, *buffer + offset, sizeof(*t), !events))
+			break;
 
 		t = *buffer + offset;
 		offset += sizeof(*t);
