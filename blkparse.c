@@ -1012,10 +1012,10 @@ static int do_stdin(void)
 
 		show_entries_rb();
 		free_entries_rb();
+		free(ptr);
 	} while (1);
 
 	close(fd);
-	free(ptr);
 	return 0;
 }
 
