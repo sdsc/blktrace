@@ -890,10 +890,10 @@ int main(int argc, char *argv[])
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
 		case 'i':
-			dev = strdup(optarg);
+			dev = optarg;
 			break;
 		case 'o':
-			output_name = strdup(optarg);
+			output_name = optarg;
 			break;
 		case 'b':
 			rb_batch = atoi(optarg);

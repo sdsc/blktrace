@@ -131,7 +131,7 @@ static volatile int done;
 
 static int devfd, ncpus;
 static struct thread_information *thread_information;
-static char *buts_name_p;
+static char buts_name[32];
 static char *dev;
 static char *output_name;
 static int act_mask = ~0U;
@@ -167,8 +167,8 @@ static int start_trace(char *dev)
 		return 1;
 	}
 
+	memcpy(buts_name, buts.name, sizeof(buts_name));
 	trace_started = 1;
-	buts_name_p = strdup(buts.name);
 	return 0;
 }
 
@@ -240,7 +240,7 @@ static void *extract(void *arg)
 	}
 
 	snprintf(tip->fn, sizeof(tip->fn),
-		 "%s/block/%s/trace%d", relay_path, buts_name_p, tip->cpu);
+		 "%s/block/%s/trace%d", relay_path, buts_name, tip->cpu);
 	tip->fd = open(tip->fn, O_RDONLY);
 	if (tip->fd < 0) {
 		perror(tip->fn);
@@ -456,7 +456,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'o':
-			output_name = strdup(optarg);
+			output_name = optarg;
 			break;
 		case 'k':
 			kill_running_trace = 1;
@@ -508,7 +508,7 @@ int main(int argc, char *argv[])
 	setlocale(LC_NUMERIC, "en_US");
 
 	if (!output_name)
-		output_name = strdup(buts_name_p);
+		output_name = buts_name;
 
 	i = start_threads();
 	if (!i) {
