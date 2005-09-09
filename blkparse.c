@@ -33,8 +33,8 @@
 #include "blktrace.h"
 #include "rbtree.h"
 
-#define SECONDS(x) 	((unsigned long long)(x) / 1000000000)
-#define NANO_SECONDS(x)	((unsigned long long)(x) % 1000000000)
+#define SECONDS(x) 		((unsigned long long)(x) / 1000000000)
+#define NANO_SECONDS(x)		((unsigned long long)(x) % 1000000000)
 
 static int backwards;
 static unsigned long long genesis_time, last_reported_time;
@@ -278,6 +278,91 @@ static struct io_track *find_track(__u64 sector)
 	return iot;
 }
 
+static void log_track_merge(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
+		return;
+
+	iot = __find_track(t->sector - (t->bytes >> 10));
+	if (!iot) {
+		fprintf(stderr, "Trying to merge on non-existing request\n");
+		return;
+	}
+
+	rb_erase(&iot->rb_node, &rb_track_root);
+	iot->sector -= t->bytes >> 10;
+	track_rb_insert(iot);
+}
+
+static void log_track_queue(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+
+	iot = find_track(t->sector);
+	iot->queue_time = t->time;
+}
+
+/*
+ * return time between queue and issue
+ */
+static unsigned long long log_track_issue(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return -1;
+	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
+		return -1;
+
+	iot = __find_track(t->sector);
+	if (!iot) {
+		fprintf(stderr, "Trying to issue on non-existing request\n");
+		return -1;
+	}
+
+	iot->dispatch_time = t->time;
+	return iot->dispatch_time - iot->queue_time;
+}
+
+/*
+ * return time between dispatch and complete
+ */
+static unsigned long long log_track_complete(struct blk_io_trace *t)
+{
+	unsigned long long elapsed;
+	struct io_track *iot;
+
+	if (!track_ios)
+		return -1;
+	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
+		return -1;
+
+	iot = __find_track(t->sector);
+	if (!iot) {
+		fprintf(stderr, "Trying to dispatch on non-existing request\n");
+		return -1;
+	}
+
+	iot->completion_time = t->time;
+	elapsed = iot->completion_time - iot->dispatch_time;
+
+	/*
+	 * kill the trace, we don't need it after completion
+	 */
+	rb_erase(&iot->rb_node, &rb_track_root);
+	free(iot);
+
+	return elapsed;
+}
+
+
 static struct io_stats *find_process_io_stats(__u32 pid, char *name)
 {
 	struct per_process_info *ppi = find_process_by_pid(pid);
@@ -459,7 +544,7 @@ static inline char *setup_header(struct per_cpu_info *pci,
 
 	rwbs[i] = '\0';
 
-	sprintf(hstring, "%c %3d %15ld %5Lu.%09Lu %5u %c %3s", backwards,
+	sprintf(hstring, "%2d %15ld %5Lu.%09Lu %5u %c %3s",
 		pci->cpu,
 		(unsigned long)t->sequence, SECONDS(t->time), 
 		NANO_SECONDS(t->time), t->pid, act, rwbs);
@@ -470,14 +555,28 @@ static inline char *setup_header(struct per_cpu_info *pci,
 static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 			 char act)
 {
-	sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9, t->error);
+	unsigned long long elapsed = log_track_complete(t);
+
+	if (elapsed != -1ULL) {
+		double usec = (double) elapsed / 1000;
+
+		sprintf(tstring,"%s %Lu + %u (%4.2f) [%d]\n",
+			setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9,
+			usec, t->error);
+	} else {
+		sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9, t->error);
+	}
+	
 	output(pci, tstring);
 }
 
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
+	log_track_queue(t);
+
 	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
@@ -486,14 +585,28 @@ static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
+	unsigned long long elapsed = log_track_issue(t);
+
+	if (elapsed != -1ULL) {
+		double usec = (double) elapsed / 1000;
+
+		sprintf(tstring,"%s %Lu + %u (%4.2f) [%s]\n",
+			setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9,
+			usec, t->comm);
+	} else {
+		sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9, t->comm);
+	}
+
 	output(pci, tstring);
 }
 
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
+	log_track_merge(t);
+
 	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
@@ -563,67 +676,6 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 	return ret;
 }
 
-static void log_track_merge(struct blk_io_trace *t)
-{
-	struct io_track *iot;
-
-	if (!track_ios)
-		return;
-
-	iot = __find_track(t->sector - (t->bytes >> 10));
-	if (!iot) {
-		fprintf(stderr, "Trying to merge on non-existing request\n");
-		return;
-	}
-
-	rb_erase(&iot->rb_node, &rb_track_root);
-	iot->sector -= t->bytes >> 10;
-	track_rb_insert(iot);
-}
-
-static void log_track_queue(struct blk_io_trace *t)
-{
-	struct io_track *iot;
-
-	if (!track_ios)
-		return;
-
-	iot = find_track(t->sector);
-	iot->queue_time = t->time;
-}
-
-static void log_track_issue(struct blk_io_trace *t)
-{
-	struct io_track *iot;
-
-	if (!track_ios)
-		return;
-
-	iot = __find_track(t->sector);
-	if (!iot) {
-		fprintf(stderr, "Trying to issue on non-existing request\n");
-		return;
-	}
-
-	iot->dispatch_time = t->time;
-}
-
-static void log_track_complete(struct blk_io_trace *t)
-{
-	struct io_track *iot;
-
-	if (!track_ios)
-		return;
-
-	iot = __find_track(t->sector);
-	if (!iot) {
-		fprintf(stderr, "Trying to dispatch on non-existing request\n");
-		return;
-	}
-
-	iot->completion_time = t->time;
-}
-
 static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
@@ -633,7 +685,6 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_QUEUE:
 			account_q(t, pci, w);
 			log_queue(pci, t, 'Q');
-			log_track_queue(t);
 			break;
 		case __BLK_TA_BACKMERGE:
 			account_m(t, pci, w);
@@ -642,7 +693,6 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_FRONTMERGE:
 			account_m(t, pci, w);
 			log_merge(pci, t, 'F');
-			log_track_merge(t);
 			break;
 		case __BLK_TA_GETRQ:
 			log_generic(pci, t, 'G');
@@ -653,17 +703,14 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_REQUEUE:
 			account_c(t, pci, w, -t->bytes);
 			log_queue(pci, t, 'R');
-			log_track_queue(t);
 			break;
 		case __BLK_TA_ISSUE:
 			account_i(t, pci, w);
 			log_issue(pci, t, 'D');
-			log_track_issue(t);
 			break;
 		case __BLK_TA_COMPLETE:
 			account_c(t, pci, w, t->bytes);
 			log_complete(pci, t, 'C');
-			log_track_complete(t);
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
