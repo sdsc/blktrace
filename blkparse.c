@@ -383,7 +383,7 @@ static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	sprintf(tstring,"%s   %Lu + %u [%s]\n", setup_header(pci, t, act),
+	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
 	output(pci, tstring);
 }
