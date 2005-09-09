@@ -65,9 +65,9 @@ struct per_process_info {
 	/*
 	 * individual io stats
 	 */
-	unsigned long long longest_allocation_wait;
-	unsigned long long longest_dispatch_wait;
-	unsigned long long longest_completion_wait;
+	unsigned long long longest_allocation_wait[2];
+	unsigned long long longest_dispatch_wait[2];
+	unsigned long long longest_completion_wait[2];
 };
 
 #define PPI_HASH_SHIFT	(8)
@@ -336,9 +336,10 @@ static unsigned long long log_track_queue(struct blk_io_trace *t)
 
 	if (per_process_stats) {
 		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
-		if (ppi && elapsed > ppi->longest_allocation_wait)
-			ppi->longest_allocation_wait = elapsed;
+		if (ppi && elapsed > ppi->longest_allocation_wait[w])
+			ppi->longest_allocation_wait[w] = elapsed;
 	}
 
 	return elapsed;
@@ -368,9 +369,10 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 
 	if (per_process_stats) {
 		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
-		if (ppi && elapsed > ppi->longest_dispatch_wait)
-			ppi->longest_dispatch_wait = elapsed;
+		if (ppi && elapsed > ppi->longest_dispatch_wait[w])
+			ppi->longest_dispatch_wait[w] = elapsed;
 	}
 
 	return elapsed;
@@ -400,9 +402,10 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 
 	if (per_process_stats) {
 		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
-		if (ppi && elapsed > ppi->longest_completion_wait)
-			ppi->longest_completion_wait = elapsed;
+		if (ppi && elapsed > ppi->longest_completion_wait[w])
+			ppi->longest_completion_wait[w] = elapsed;
 	}
 
 	/*
@@ -610,9 +613,9 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 	unsigned long long elapsed = log_track_complete(t);
 
 	if (elapsed != -1ULL) {
-		double usec = (double) elapsed / 1000;
+		unsigned long usec = elapsed / 1000;
 
-		sprintf(tstring,"%s %Lu + %u (%8.2f) [%d]\n",
+		sprintf(tstring,"%s %Lu + %u (%8lu) [%d]\n",
 			setup_header(pci, t, act),
 			(unsigned long long)t->sector, t->bytes >> 9,
 			usec, t->error);
@@ -630,9 +633,9 @@ static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 	unsigned long long elapsed = log_track_queue(t);
 
 	if (elapsed != -1ULL) {
-		double usec = (double) elapsed / 1000;
+		unsigned long usec = elapsed / 1000;
 
-		sprintf(tstring,"%s %Lu + %u (%8.2f) [%s]\n",
+		sprintf(tstring,"%s %Lu + %u (%8lu) [%s]\n",
 			setup_header(pci, t, act),
 			(unsigned long long)t->sector, t->bytes >> 9,
 			usec, t->comm);
@@ -811,12 +814,19 @@ static void dump_io_stats(struct io_stats *ios, char *msg)
 
 static void dump_wait_stats(struct per_process_info *ppi)
 {
-	double await = (double) ppi->longest_allocation_wait / 1000;
-	double dwait = (double) ppi->longest_dispatch_wait / 1000;
-	double cwait = (double) ppi->longest_completion_wait / 1000;
+	unsigned long rawait = ppi->longest_allocation_wait[0] / 1000;
+	unsigned long rdwait = ppi->longest_dispatch_wait[0] / 1000;
+	unsigned long rcwait = ppi->longest_completion_wait[0] / 1000;
+	unsigned long wawait = ppi->longest_allocation_wait[1] / 1000;
+	unsigned long wdwait = ppi->longest_dispatch_wait[1] / 1000;
+	unsigned long wcwait = ppi->longest_completion_wait[1] / 1000;
 
-	fprintf(ofp, " Wait: Alloc=%f, Dispatch=%f, Completion=%f\n",
-		await, dwait, cwait);
+	fprintf(ofp, " Allocation wait: %'8lu%8c\t", rawait, ' ');
+	fprintf(ofp, " Allocation wait:  %'8lu\n", wawait);
+	fprintf(ofp, " Dispatch wait:   %'8lu%8c\t", rdwait, ' ');
+	fprintf(ofp, " Dispatch wait:    %'8lu\n", wdwait);
+	fprintf(ofp, " Completion wait: %'8lu%8c\t", rcwait, ' ');
+	fprintf(ofp, " Completion wait:  %'8lu\n", wcwait);
 }
 
 static void show_process_stats(void)
