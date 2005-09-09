@@ -885,7 +885,7 @@ static void usage(char *prog)
 int main(int argc, char *argv[])
 {
 	char *ofp_buffer;
-	int c, ret;
+	int c, ret, mode;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -922,13 +922,15 @@ int main(int argc, char *argv[])
 
 	setlocale(LC_NUMERIC, "en_US");
 
-	if (!output_name)
+	if (!output_name) {
 		ofp = fdopen(STDOUT_FILENO, "w");
-	else {
+		mode = _IOLBF;
+	} else {
 		char ofname[128];
 
 		snprintf(ofname, sizeof(ofname) - 1, "%s.log", output_name);
 		ofp = fopen(ofname, "w");
+		mode = _IOFBF;
 	}
 
 	if (!ofp) {
@@ -937,7 +939,7 @@ int main(int argc, char *argv[])
 	}
 
 	ofp_buffer = malloc(4096);	
-	if (setvbuf(ofp, ofp_buffer, _IOFBF, 4096)) {
+	if (setvbuf(ofp, ofp_buffer, mode, 4096)) {
 		perror("setvbuf");
 		return 1;
 	}
