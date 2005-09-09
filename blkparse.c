@@ -558,10 +558,14 @@ static void show_cpu_stats(void)
 		foo.io_stats.cwrites += ios->cwrites;
 		foo.io_stats.mreads += ios->mreads;
 		foo.io_stats.mwrites += ios->mwrites;
+		foo.io_stats.ireads += ios->ireads;
+		foo.io_stats.iwrites += ios->iwrites;
 		foo.io_stats.qread_kb += ios->qread_kb;
 		foo.io_stats.qwrite_kb += ios->qwrite_kb;
 		foo.io_stats.cread_kb += ios->cread_kb;
 		foo.io_stats.cwrite_kb += ios->cwrite_kb;
+		foo.io_stats.iread_kb += ios->iread_kb;
+		foo.io_stats.iwrite_kb += ios->iwrite_kb;
 
 		snprintf(cpu, sizeof(cpu) - 1, "CPU%d:", i);
 		dump_io_stats(ios, cpu);
