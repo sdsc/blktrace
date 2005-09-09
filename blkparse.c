@@ -544,7 +544,7 @@ static inline char *setup_header(struct per_cpu_info *pci,
 
 	rwbs[i] = '\0';
 
-	sprintf(hstring, "%2d %15ld %5Lu.%09Lu %5u %c %3s",
+	sprintf(hstring, "%2d %8ld %5Lu.%09Lu %5u %c %3s",
 		pci->cpu,
 		(unsigned long)t->sequence, SECONDS(t->time), 
 		NANO_SECONDS(t->time), t->pid, act, rwbs);
@@ -560,7 +560,7 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 	if (elapsed != -1ULL) {
 		double usec = (double) elapsed / 1000;
 
-		sprintf(tstring,"%s %Lu + %u (%4.2f) [%d]\n",
+		sprintf(tstring,"%s %Lu + %u (%8.2f) [%d]\n",
 			setup_header(pci, t, act),
 			(unsigned long long)t->sector, t->bytes >> 9,
 			usec, t->error);
@@ -590,7 +590,7 @@ static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 	if (elapsed != -1ULL) {
 		double usec = (double) elapsed / 1000;
 
-		sprintf(tstring,"%s %Lu + %u (%4.2f) [%s]\n",
+		sprintf(tstring,"%s %Lu + %u (%8.2f) [%s]\n",
 			setup_header(pci, t, act),
 			(unsigned long long)t->sector, t->bytes >> 9,
 			usec, t->comm);
