@@ -996,13 +996,16 @@ static void resize_buffer(void **buffer, long *size, long offset)
 	memset(*buffer + offset, 0, *size - old_size);
 }
 
-static int read_sort_events(int fd, void **buffer)
+static int read_sort_events(int fd, void **buffer, long *max_offset)
 {
-	long offset, max_offset;
+	long offset;
 	int events;
 
-	max_offset = 128 * sizeof(struct blk_io_trace);
-	*buffer = malloc(max_offset);
+	if (*max_offset == 0) {
+		*max_offset = 128 * sizeof(struct blk_io_trace);
+		*buffer = malloc(*max_offset);
+	}
+
 	events = 0;
 	offset = 0;
 
@@ -1010,8 +1013,8 @@ static int read_sort_events(int fd, void **buffer)
 		struct blk_io_trace *t;
 		int pdu_len;
 
-		if (max_offset - offset < sizeof(*t))
-			resize_buffer(buffer, &max_offset, offset);
+		if (*max_offset - offset < sizeof(*t))
+			resize_buffer(buffer, max_offset, offset);
 
 		if (read_data(fd, *buffer + offset, sizeof(*t), !events)) {
 			if (events)
@@ -1026,8 +1029,8 @@ static int read_sort_events(int fd, void **buffer)
 
 		pdu_len = be16_to_cpu(t->pdu_len);
 		if (pdu_len) {
-			if (max_offset - offset < pdu_len)
-				resize_buffer(buffer, &max_offset, offset);
+			if (*max_offset - offset < pdu_len)
+				resize_buffer(buffer, max_offset, offset);
 
 			if (read_data(fd, *buffer + offset, pdu_len, 1))
 				break;
@@ -1045,12 +1048,14 @@ static int do_stdin(void)
 {
 	int fd;
 	void *ptr;
+	long max_offset;
 
 	fd = dup(STDIN_FILENO);
+	max_offset = 0;
 	do {
 		int events;
 
-		events = read_sort_events(fd, &ptr);
+		events = read_sort_events(fd, &ptr, &max_offset);
 		if (!events)
 			break;
 	
@@ -1059,9 +1064,9 @@ static int do_stdin(void)
 
 		show_entries_rb();
 		free_entries_rb();
-		free(ptr);
 	} while (1);
 
+	free(ptr);
 	close(fd);
 	return 0;
 }
