@@ -126,6 +126,7 @@ struct io_track {
 
 	__u64 sector;
 	__u32 pid;
+	unsigned long long allocation_time;
 	unsigned long long queue_time;
 	unsigned long long dispatch_time;
 	unsigned long long completion_time;
@@ -298,7 +299,7 @@ static void log_track_merge(struct blk_io_trace *t)
 	track_rb_insert(iot);
 }
 
-static void log_track_queue(struct blk_io_trace *t)
+static void log_track_getrq(struct blk_io_trace *t)
 {
 	struct io_track *iot;
 
@@ -306,7 +307,23 @@ static void log_track_queue(struct blk_io_trace *t)
 		return;
 
 	iot = find_track(t->sector);
+	iot->allocation_time = t->time;
+}
+
+
+/*
+ * return time between rq allocation and queue
+ */
+static unsigned long long log_track_queue(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return -1;
+
+	iot = find_track(t->sector);
 	iot->queue_time = t->time;
+	return iot->queue_time - iot->allocation_time;
 }
 
 /*
@@ -575,10 +592,19 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char act)
 {
-	log_track_queue(t);
+	unsigned long long elapsed = log_track_queue(t);
 
-	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
+	if (elapsed != -1ULL) {
+		double usec = (double) elapsed / 1000;
+
+		sprintf(tstring,"%s %Lu + %u (%8.2f) [%s]\n",
+			setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9,
+			usec, t->comm);
+	} else {
+		sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
+			(unsigned long long)t->sector, t->bytes >> 9, t->comm);
+	}
 	output(pci, tstring);
 }
 
@@ -695,6 +721,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_merge(pci, t, 'F');
 			break;
 		case __BLK_TA_GETRQ:
+			log_track_getrq(t);
 			log_generic(pci, t, 'G');
 			break;
 		case __BLK_TA_SLEEPRQ:
