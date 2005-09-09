@@ -1074,9 +1074,14 @@ static void resize_buffer(void **buffer, long *size, long offset)
 {
 	long old_size = *size;
 
+	if (*size == 0)
+		*size = 64 * sizeof(struct blk_io_trace);
+
 	*size *= 2;
 	*buffer = realloc(*buffer, *size);
-	memset(*buffer + offset, 0, *size - old_size);
+
+	if (old_size)
+		memset(*buffer + offset, 0, *size - old_size);
 }
 
 static int read_sort_events(int fd, void **buffer, long *max_offset)
@@ -1084,17 +1089,11 @@ static int read_sort_events(int fd, void **buffer, long *max_offset)
 	long offset;
 	int events;
 
-	if (*max_offset == 0) {
-		*max_offset = 128 * sizeof(struct blk_io_trace);
-		*buffer = malloc(*max_offset);
-	}
-
-	events = 0;
-	offset = 0;
-
+	events = offset = 0;
 	do {
 		struct blk_io_trace *t;
 		int pdu_len;
+		__u32 magic;
 
 		if (*max_offset - offset < sizeof(*t))
 			resize_buffer(buffer, max_offset, offset);
@@ -1105,9 +1104,15 @@ static int read_sort_events(int fd, void **buffer, long *max_offset)
 		t = *buffer + offset;
 		offset += sizeof(*t);
 
+		magic = be32_to_cpu(t->magic);
+		if ((magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
+			fprintf(stderr, "Bad magic %x\n", magic);
+			break;
+		}
+
 		pdu_len = be16_to_cpu(t->pdu_len);
 		if (pdu_len) {
-			if (*max_offset - offset < pdu_len)
+			if (*max_offset - offset <= pdu_len)
 				resize_buffer(buffer, max_offset, offset);
 
 			if (read_data(fd, *buffer + offset, pdu_len, 1))
@@ -1125,7 +1130,7 @@ static int read_sort_events(int fd, void **buffer, long *max_offset)
 static int do_stdin(void)
 {
 	int fd;
-	void *ptr;
+	void *ptr = NULL;
 	long max_offset;
 
 	fd = dup(STDIN_FILENO);
@@ -1144,7 +1149,9 @@ static int do_stdin(void)
 		free_entries_rb();
 	} while (1);
 
-	free(ptr);
+	if (ptr)
+		free(ptr);
+
 	close(fd);
 	return 0;
 }
