@@ -61,6 +61,13 @@ struct per_process_info {
 	__u32 pid;
 	struct io_stats io_stats;
 	struct per_process_info *hash_next, *list_next;
+
+	/*
+	 * individual io stats
+	 */
+	unsigned long long longest_allocation_wait;
+	unsigned long long longest_dispatch_wait;
+	unsigned long long longest_completion_wait;
 };
 
 #define PPI_HASH_SHIFT	(8)
@@ -265,13 +272,14 @@ static struct io_track *__find_track(__u64 sector)
 	return NULL;
 }
 
-static struct io_track *find_track(__u64 sector)
+static struct io_track *find_track(__u32 pid, __u64 sector)
 {
 	struct io_track *iot = __find_track(sector);
 
 	iot = __find_track(sector);
 	if (!iot) {
 		iot = malloc(sizeof(*iot));
+		iot->pid = pid;
 		iot->sector = sector;
 		track_rb_insert(iot);
 	}
@@ -306,7 +314,7 @@ static void log_track_getrq(struct blk_io_trace *t)
 	if (!track_ios)
 		return;
 
-	iot = find_track(t->sector);
+	iot = find_track(t->pid, t->sector);
 	iot->allocation_time = t->time;
 }
 
@@ -316,14 +324,24 @@ static void log_track_getrq(struct blk_io_trace *t)
  */
 static unsigned long long log_track_queue(struct blk_io_trace *t)
 {
+	unsigned long long elapsed;
 	struct io_track *iot;
 
 	if (!track_ios)
 		return -1;
 
-	iot = find_track(t->sector);
+	iot = find_track(t->pid, t->sector);
 	iot->queue_time = t->time;
-	return iot->queue_time - iot->allocation_time;
+	elapsed = iot->queue_time - iot->allocation_time;
+
+	if (per_process_stats) {
+		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+
+		if (ppi && elapsed > ppi->longest_allocation_wait)
+			ppi->longest_allocation_wait = elapsed;
+	}
+
+	return elapsed;
 }
 
 /*
@@ -331,6 +349,7 @@ static unsigned long long log_track_queue(struct blk_io_trace *t)
  */
 static unsigned long long log_track_issue(struct blk_io_trace *t)
 {
+	unsigned long long elapsed;
 	struct io_track *iot;
 
 	if (!track_ios)
@@ -345,7 +364,16 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	}
 
 	iot->dispatch_time = t->time;
-	return iot->dispatch_time - iot->queue_time;
+	elapsed = iot->dispatch_time - iot->queue_time;
+
+	if (per_process_stats) {
+		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+
+		if (ppi && elapsed > ppi->longest_dispatch_wait)
+			ppi->longest_dispatch_wait = elapsed;
+	}
+
+	return elapsed;
 }
 
 /*
@@ -369,6 +397,13 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 
 	iot->completion_time = t->time;
 	elapsed = iot->completion_time - iot->dispatch_time;
+
+	if (per_process_stats) {
+		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+
+		if (ppi && elapsed > ppi->longest_completion_wait)
+			ppi->longest_completion_wait = elapsed;
+	}
 
 	/*
 	 * kill the trace, we don't need it after completion
@@ -774,6 +809,16 @@ static void dump_io_stats(struct io_stats *ios, char *msg)
 	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
 }
 
+static void dump_wait_stats(struct per_process_info *ppi)
+{
+	double await = (double) ppi->longest_allocation_wait / 1000;
+	double dwait = (double) ppi->longest_dispatch_wait / 1000;
+	double cwait = (double) ppi->longest_completion_wait / 1000;
+
+	fprintf(ofp, " Wait: Alloc=%f, Dispatch=%f, Completion=%f\n",
+		await, dwait, cwait);
+}
+
 static void show_process_stats(void)
 {
 	struct per_process_info *ppi;
@@ -781,6 +826,7 @@ static void show_process_stats(void)
 	ppi = ppi_list;
 	while (ppi) {
 		dump_io_stats(&ppi->io_stats, ppi->name);
+		dump_wait_stats(ppi);
 		ppi = ppi->list_next;
 	}
 
