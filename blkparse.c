@@ -67,7 +67,7 @@ struct per_process_info {
 static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
 
-#define S_OPTS	"i:o:b:s"
+#define S_OPTS	"i:o:b:st"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -94,6 +94,12 @@ static struct option l_opts[] = {
 		.val = 's'
 	},
 	{
+		.name = "track ios",
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 't'
+	},
+	{
 		.name = NULL,
 		.has_arg = 0,
 		.flag = NULL,
@@ -101,11 +107,28 @@ static struct option l_opts[] = {
 	}
 };
 
-static struct rb_root rb_root;
+static struct rb_root rb_sort_root;
+static struct rb_root rb_track_root;
 
+/*
+ * for sorting the displayed output
+ */
 struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
+};
+
+/*
+ * for tracking individual ios
+ */
+struct io_track {
+	struct rb_node rb_node;
+
+	__u64 sector;
+	__u32 pid;
+	unsigned long long queue_time;
+	unsigned long long dispatch_time;
+	unsigned long long completion_time;
 };
 
 static int max_cpus;
@@ -117,6 +140,7 @@ static char *dev, *output_name;
 static FILE *ofp;
 
 static int per_process_stats;
+static int track_ios;
 
 #define RB_BATCH_DEFAULT	(1024)
 static int rb_batch = RB_BATCH_DEFAULT;
@@ -165,6 +189,93 @@ static struct per_process_info *find_process_by_pid(__u32 pid)
 	}
 
 	return NULL;
+}
+
+static inline int trace_rb_insert(struct trace *t)
+{
+	struct rb_node **p = &rb_sort_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct trace *__t;
+
+	while (*p) {
+		parent = *p;
+		__t = rb_entry(parent, struct trace, rb_node);
+
+		if (t->bit->sequence < __t->bit->sequence)
+			p = &(*p)->rb_left;
+		else if (t->bit->sequence > __t->bit->sequence)
+			p = &(*p)->rb_right;
+		else {
+			fprintf(stderr, "sequence alias!\n");
+			return 1;
+		}
+	}
+
+	rb_link_node(&t->rb_node, parent, p);
+	rb_insert_color(&t->rb_node, &rb_sort_root);
+	return 0;
+}
+
+static inline int track_rb_insert(struct io_track *iot)
+{
+	struct rb_node **p = &rb_track_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct io_track *__iot;
+
+	while (*p) {
+		parent = *p;
+		
+		__iot = rb_entry(parent, struct io_track, rb_node);
+
+		if (iot->sector < __iot->sector)
+			p = &(*p)->rb_left;
+		else if (iot->sector > __iot->sector)
+			p = &(*p)->rb_right;
+		else {
+			fprintf(stderr, "sequence alias!\n");
+			return 1;
+		}
+	}
+
+	rb_link_node(&iot->rb_node, parent, p);
+	rb_insert_color(&iot->rb_node, &rb_track_root);
+	return 0;
+}
+
+static struct io_track *__find_track(__u64 sector)
+{
+	struct rb_node **p = &rb_track_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct io_track *__iot;
+
+	while (*p) {
+		parent = *p;
+		
+		__iot = rb_entry(parent, struct io_track, rb_node);
+
+		if (sector < __iot->sector)
+			p = &(*p)->rb_left;
+		else if (sector > __iot->sector)
+			p = &(*p)->rb_right;
+		else
+			return __iot;
+	}
+
+	return NULL;
+}
+
+static struct io_track *find_track(__u64 sector)
+{
+	struct io_track *iot = __find_track(sector);
+
+	iot = __find_track(sector);
+	if (!iot) {
+		iot = malloc(sizeof(*iot));
+		iot->sector = sector;
+		track_rb_insert(iot);
+	}
+
+	return iot;
 }
 
 static struct io_stats *find_process_io_stats(__u32 pid, char *name)
@@ -452,14 +563,77 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 	return ret;
 }
 
+static void log_track_merge(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+
+	iot = __find_track(t->sector - (t->bytes >> 10));
+	if (!iot) {
+		fprintf(stderr, "Trying to merge on non-existing request\n");
+		return;
+	}
+
+	rb_erase(&iot->rb_node, &rb_track_root);
+	iot->sector -= t->bytes >> 10;
+	track_rb_insert(iot);
+}
+
+static void log_track_queue(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+
+	iot = find_track(t->sector);
+	iot->queue_time = t->time;
+}
+
+static void log_track_issue(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+
+	iot = __find_track(t->sector);
+	if (!iot) {
+		fprintf(stderr, "Trying to issue on non-existing request\n");
+		return;
+	}
+
+	iot->dispatch_time = t->time;
+}
+
+static void log_track_complete(struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+
+	iot = __find_track(t->sector);
+	if (!iot) {
+		fprintf(stderr, "Trying to dispatch on non-existing request\n");
+		return;
+	}
+
+	iot->completion_time = t->time;
+}
+
 static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
+	int act = t->action & 0xffff;
 
-	switch (t->action & 0xffff) {
+	switch (act) {
 		case __BLK_TA_QUEUE:
 			account_q(t, pci, w);
 			log_queue(pci, t, 'Q');
+			log_track_queue(t);
 			break;
 		case __BLK_TA_BACKMERGE:
 			account_m(t, pci, w);
@@ -468,6 +642,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_FRONTMERGE:
 			account_m(t, pci, w);
 			log_merge(pci, t, 'F');
+			log_track_merge(t);
 			break;
 		case __BLK_TA_GETRQ:
 			log_generic(pci, t, 'G');
@@ -478,14 +653,17 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_REQUEUE:
 			account_c(t, pci, w, -t->bytes);
 			log_queue(pci, t, 'R');
+			log_track_queue(t);
 			break;
 		case __BLK_TA_ISSUE:
 			account_i(t, pci, w);
 			log_issue(pci, t, 'D');
+			log_track_issue(t);
 			break;
 		case __BLK_TA_COMPLETE:
 			account_c(t, pci, w, t->bytes);
 			log_complete(pci, t, 'C');
+			log_track_complete(t);
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
@@ -580,31 +758,6 @@ static void show_cpu_stats(void)
 	fprintf(ofp, "\nEvents: %'Lu\n", events);
 }
 
-static inline int trace_rb_insert(struct trace *t)
-{
-	struct rb_node **p = &rb_root.rb_node;
-	struct rb_node *parent = NULL;
-	struct trace *__t;
-
-	while (*p) {
-		parent = *p;
-		__t = rb_entry(parent, struct trace, rb_node);
-
-		if (t->bit->sequence < __t->bit->sequence)
-			p = &(*p)->rb_left;
-		else if (t->bit->sequence > __t->bit->sequence)
-			p = &(*p)->rb_right;
-		else {
-			fprintf(stderr, "sequence alias!\n");
-			return 1;
-		}
-	}
-
-	rb_link_node(&t->rb_node, parent, p);
-	rb_insert_color(&t->rb_node, &rb_root);
-	return 0;
-}
-
 #define min(a, b)	((a) < (b) ? (a) : (b))
 
 static struct blk_io_trace *find_trace(void *p, unsigned long offset, int nr)
@@ -668,10 +821,10 @@ static void free_entries_rb(void)
 {
 	struct rb_node *n;
 
-	while ((n = rb_first(&rb_root)) != NULL) {
+	while ((n = rb_first(&rb_sort_root)) != NULL) {
 		struct trace *t = rb_entry(n, struct trace, rb_node);
 
-		rb_erase(&t->rb_node, &rb_root);
+		rb_erase(&t->rb_node, &rb_sort_root);
 		free(t);
 	}
 }
@@ -683,7 +836,7 @@ static void show_entries_rb(void)
 	struct trace *t;
 	int cpu;
 
-	n = rb_first(&rb_root);
+	n = rb_first(&rb_sort_root);
 	if (!n)
 		return;
 
@@ -903,6 +1056,9 @@ int main(int argc, char *argv[])
 		case 's':
 			per_process_stats = 1;
 			break;
+		case 't':
+			track_ios = 1;
+			break;
 		default:
 			usage(argv[0]);
 			return 1;
@@ -914,7 +1070,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	memset(&rb_root, 0, sizeof(rb_root));
+	memset(&rb_sort_root, 0, sizeof(rb_sort_root));
+	memset(&rb_track_root, 0, sizeof(rb_track_root));
 
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
