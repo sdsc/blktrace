@@ -126,17 +126,15 @@ static volatile int done;
 
 static inline unsigned long hash_long(unsigned long val)
 {
-	const unsigned int bpl = 8 * sizeof(long);
+#if __WORDSIZE == 32
+	val *= 0x9e370001UL;
+#elif __WORDSIZE == 64
+	val *= 0x9e37fffffffc0001UL;
+#else
+#error unknown word size
+#endif
 
-	/*
-	 * assuming 32 or 64-bit
-	 */
-	if (bpl == 32)
-		val *= 0x9e370001UL;
-	else
-		val *= 0x9e37fffffffc0001UL;
-
-	return val >> (bpl - PPI_HASH_SHIFT);
+	return val >> (__WORDSIZE - PPI_HASH_SHIFT);
 }
 
 static inline void add_process_to_hash(struct per_process_info *ppi)
