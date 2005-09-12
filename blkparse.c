@@ -274,7 +274,7 @@ static struct io_track *__find_track(__u64 sector)
 
 static struct io_track *find_track(__u32 pid, __u64 sector)
 {
-	struct io_track *iot = __find_track(sector);
+	struct io_track *iot;
 
 	iot = __find_track(sector);
 	if (!iot) {
