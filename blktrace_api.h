@@ -51,7 +51,7 @@ enum {
 #define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
-#define BLK_IO_TRACE_VERSION	0x04
+#define BLK_IO_TRACE_VERSION	0x05
 
 /*
  * The trace itself
@@ -67,6 +67,7 @@ struct blk_io_trace {
 	__u32 cpu;		/* on what cpu did it happen */
 	__u16 error;		/* completion error */
 	__u16 pdu_len;		/* length of data after this trace */
+	__u32 device;		/* device identifier (dev_t) */
 	char  comm[16];		/* task command name (TASK_COMM_LEN) */
 };
 

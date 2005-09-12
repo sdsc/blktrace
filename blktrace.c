@@ -122,21 +122,30 @@ struct thread_information {
 	int ofd;
 
 	unsigned long events_processed;
+	struct device_information *device;
 };
 
+struct device_information {
+	int fd;
+	char *path;
+	char buts_name[32];
+	int trace_started;
+	struct thread_information *threads;
+};
+
+static int ncpus;
+static struct thread_information *thread_information;
+static int ndevs;
+static struct device_information *device_information;
+
+/* command line option globals */
 static char *relay_path;
+static char *output_name;
+static int act_mask = ~0U;
+static int kill_running_trace;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
-
-static int devfd, ncpus;
-static struct thread_information *thread_information;
-static char buts_name[32];
-static char *dev;
-static char *output_name;
-static int act_mask = ~0U;
-static int trace_started;
-static int kill_running_trace;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -153,7 +162,7 @@ static int find_mask_map(char *string)
 	return -1;
 }
 
-static int start_trace(char *dev)
+static int start_trace(struct device_information *dip)
 {
 	struct blk_user_trace_setup buts;
 
@@ -162,24 +171,33 @@ static int start_trace(char *dev)
 	buts.buf_nr = BUF_NR;
 	buts.act_mask = act_mask;
 
-	if (ioctl(devfd, BLKSTARTTRACE, &buts) < 0) {
+	if (ioctl(dip->fd, BLKSTARTTRACE, &buts) < 0) {
 		perror("BLKSTARTTRACE");
 		return 1;
 	}
 
-	memcpy(buts_name, buts.name, sizeof(buts_name));
-	trace_started = 1;
+	memcpy(dip->buts_name, buts.name, sizeof(dip->buts_name));
+	dip->trace_started = 1;
 	return 0;
 }
 
-static void stop_trace(void)
+static void stop_trace(struct device_information *dip)
 {
-	if (trace_started || kill_running_trace) {
-		if (ioctl(devfd, BLKSTOPTRACE) < 0)
+	if (dip->trace_started || kill_running_trace) {
+		if (ioctl(dip->fd, BLKSTOPTRACE) < 0)
 			perror("BLKSTOPTRACE");
-
-		trace_started = 0;
+		close(dip->fd);
+		dip->trace_started = 0;
 	}
+}
+
+static void stop_all_traces(void)
+{
+	struct device_information *dip;
+	int i;
+
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+		stop_trace(dip);
 }
 
 static void *extract_data(struct thread_information *tip, char *ofn, int nb)
@@ -239,8 +257,8 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
-	snprintf(tip->fn, sizeof(tip->fn),
-		 "%s/block/%s/trace%d", relay_path, buts_name, tip->cpu);
+	snprintf(tip->fn, sizeof(tip->fn), "%s/block/%s/trace%d",
+			relay_path, tip->device->buts_name, tip->cpu);
 	tip->fd = open(tip->fn, O_RDONLY);
 	if (tip->fd < 0) {
 		perror(tip->fn);
@@ -309,44 +327,44 @@ static void *extract(void *arg)
 	return NULL;
 }
 
-static int start_threads(void)
+static int start_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
 	char op[64];
-	int i;
+	int j, pipeline = output_name && !strcmp(output_name, "-");
 
-	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
-	if (ncpus < 0) {
-		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
-		return 0;
-	}
-
-	thread_information = malloc(ncpus * sizeof(struct thread_information));
-	for (i = 0, tip = thread_information; i < ncpus; i++, tip++) {
+	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
+		tip->cpu = j;
+		tip->device = dip;
 		tip->fd_lock = NULL;
-		tip->cpu = i;
 		tip->events_processed = 0;
 
-		if (!strcmp(output_name, "-")) {
+		if (pipeline) {
 			tip->ofd = dup(STDOUT_FILENO);
 			tip->fd_lock = &stdout_mutex;
 		} else {
-			sprintf(op, "%s_out.%d", output_name, tip->cpu);
+			if (output_name)
+				sprintf(op, "%s_%s_out.%d", output_name,
+					dip->buts_name, tip->cpu);
+			else
+				sprintf(op, "%s_out.%d",
+					dip->buts_name, tip->cpu);
 			tip->ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
 		}
 
 		if (tip->ofd < 0) {
 			perror(op);
-			return 0;
+			return 1;
 		}
 
 		if (pthread_create(&tip->thread, NULL, extract, tip)) {
-			perror( "pthread_create");
-			return 0;
+			perror("pthread_create");
+			close(tip->ofd);
+			return 1;
 		}
 	}
 
-	return ncpus;
+	return 0;
 }
 
 static void close_thread(struct thread_information *tip)
@@ -358,54 +376,142 @@ static void close_thread(struct thread_information *tip)
 	tip->fd = tip->ofd = -1;
 }
 
-static void stop_threads(void)
+static void stop_threads(struct device_information *dip)
 {
-	struct thread_information *tip = thread_information;
-	int i;
+	struct thread_information *tip;
+	long ret;
+	int j;
 
-	for (i = 0; i < ncpus; i++, tip++) {
-		long ret;
-
+	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
 		close_thread(tip);
 	}
 }
 
-static void stop_tracing(void)
+static void stop_all_threads(void)
 {
-	struct thread_information *tip = thread_information;
+	struct device_information *dip;
 	int i;
 
-	for (i = 0; i < ncpus; i++, tip++)
-		close_thread(tip);
-	stop_trace();
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+		stop_threads(dip);
+}
+
+static void stop_all_tracing(void)
+{
+	struct device_information *dip;
+	struct thread_information *tip;
+	int i, j;
+
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+		for (tip = dip->threads, j = 0; j < ncpus; j++, tip++)
+			close_thread(tip);
+		stop_trace(dip);
+	}
 }
 
 static void exit_trace(int status)
 {
-	stop_tracing();
+	stop_all_tracing();
 	exit(status);
+}
+
+static int resize_devices(char *path)
+{
+	int size = (ndevs + 1) * sizeof(struct device_information);
+
+	device_information = realloc(device_information, size);
+	if (!device_information) {
+		fprintf(stderr, "Out of memory, device %s (%d)\n", path, size);
+		return 1;
+	}
+	device_information[ndevs].path = path;
+	ndevs++;
+	return 0;
+}
+
+static int open_devices(void)
+{
+	struct device_information *dip;
+	int i;
+
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+		dip->fd = open(dip->path, O_RDONLY);
+		if (dip->fd < 0) {
+			perror(dip->path);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static int start_devices(void)
+{
+	struct device_information *dip;
+	int i, j, size;
+
+	size = ncpus * sizeof(struct thread_information);
+	thread_information = malloc(size * ndevs);
+	if (!thread_information) {
+		fprintf(stderr, "Out of memory, threads (%d)\n", size * ndevs);
+		return 1;
+	}
+
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+		if (start_trace(dip)) {
+			close(dip->fd);
+			fprintf(stderr, "Failed to start trace on %s\n",
+				dip->path);
+			break;
+		}
+	}
+	if (i != ndevs) {
+		for (dip = device_information, j = 0; j < i; j++, dip++)
+			stop_trace(dip);
+		return 1;
+	}
+
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+		dip->threads = thread_information + (i * ncpus);
+		if (start_threads(dip)) {
+			fprintf(stderr, "Failed to start worker threads\n");
+			break;
+		}
+	}
+	if (i != ndevs) {
+		for (dip = device_information, j = 0; j < i; j++, dip++)
+			stop_threads(dip);
+		for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+			stop_trace(dip);
+		return 1;
+	}
+
+	return 0;
 }
 
 static void show_stats(void)
 {
-	int i;
+	int i, j;
+	struct device_information *dip;
 	struct thread_information *tip;
-	unsigned long events_processed = 0;
-
-	if (!strcmp(output_name, "-"))
+	unsigned long long events_processed;
+  
+	if (output_name && !strcmp(output_name, "-"))
 		return;
 
-	for (i = 0, tip = thread_information; i < ncpus; i++, tip++) {
-		printf("CPU%3d: %20ld events\n",
-		       tip->cpu, tip->events_processed);
-		events_processed += tip->events_processed;
+	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+		printf("Device: %s\n", dip->path);
+		events_processed = 0;
+		for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
+			printf("  CPU%3d: %20ld events\n",
+			       tip->cpu, tip->events_processed);
+			events_processed += tip->events_processed;
+		}
+		printf("  Total:  %20lld events\n", events_processed);
 	}
-
-	printf("Total:  %20ld events\n", events_processed);
 }
-
+  
 static void show_usage(char *program)
 {
 	fprintf(stderr,"Usage: %s [-d <dev>] "
@@ -448,7 +554,8 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			dev = optarg;
+			if (resize_devices(optarg) != 0)
+				return 1;
 			break;
 
 		case 'r':
@@ -468,10 +575,12 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	while (optind < argc)
-		dev = argv[optind++];
+	while (optind < argc) {
+		if (resize_devices(argv[optind++]) != 0)
+			return 1;
+	}
 
-	if (dev == NULL) {
+	if (ndevs == 0) {
 		show_usage(argv[0]);
 		return 1;
 	}
@@ -488,48 +597,37 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	devfd = open(dev, O_RDONLY);
-	if (devfd < 0) {
-		perror(dev);
+	if (open_devices() != 0)
 		return 1;
-	}
 
 	if (kill_running_trace) {
-		stop_trace();
+		stop_all_traces();
 		return 0;
-	}
-
-	if (start_trace(dev)) {
-		close(devfd);
-		fprintf(stderr, "Failed to start trace on %s\n", dev);
-		return 1;
 	}
 
 	setlocale(LC_NUMERIC, "en_US");
 
-	if (!output_name)
-		output_name = buts_name;
-
-	i = start_threads();
-	if (!i) {
-		fprintf(stderr, "Failed to start worker threads\n");
-		stop_trace();
+	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if (ncpus < 0) {
+		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
 		return 1;
 	}
+
+	if (start_devices() != 0)
+		return 1;
 
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
 
-	atexit(stop_tracing);
+	atexit(stop_all_tracing);
 
 	while (!is_done())
 		sleep(1);
 
-	stop_threads();
-	stop_trace();
+	stop_all_threads();
+	stop_all_traces();
 	show_stats();
-	close(devfd);
 
 	return 0;
 }

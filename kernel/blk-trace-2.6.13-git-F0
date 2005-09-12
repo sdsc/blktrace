@@ -26,6 +26,45 @@ diff --git a/drivers/block/Makefile b/drivers/block/Makefile
  
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 +
+diff --git a/drivers/block/blktrace.c b/drivers/block/blktrace.c
+--- a/drivers/block/blktrace.c
++++ b/drivers/block/blktrace.c
+@@ -36,6 +36,7 @@ void __blk_add_trace(struct blk_trace *b
+ 	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
+ 	put_cpu();
+ 
++	t.device	= bt->dev;
+ 	t.sector	= sector;
+ 	t.bytes		= bytes;
+ 	t.action	= what;
+@@ -161,6 +162,7 @@ int blk_start_trace(struct block_device 
+ 		goto err;
+ 
+ 	bt->dir = dir;
++	bt->dev = bdev->bd_dev;
+ 	atomic_set(&bt->sequence, 0);
+ 
+ 	ret = -EIO;
+diff --git a/drivers/block/cfq-iosched.c b/drivers/block/cfq-iosched.c
+--- a/drivers/block/cfq-iosched.c
++++ b/drivers/block/cfq-iosched.c
+@@ -2260,6 +2260,8 @@ static void cfq_put_cfqd(struct cfq_data
+ 	if (!atomic_dec_and_test(&cfqd->ref))
+ 		return;
+ 
++	blk_put_queue(q);
++
+ 	cfq_shutdown_timer_wq(cfqd);
+ 	q->elevator->elevator_data = NULL;
+ 
+@@ -2316,6 +2318,7 @@ static int cfq_init_queue(request_queue_
+ 	e->elevator_data = cfqd;
+ 
+ 	cfqd->queue = q;
++	atomic_inc(&q->refcnt);
+ 
+ 	cfqd->max_queued = q->nr_requests / 4;
+ 	q->nr_batching = cfq_queued;
 diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
 --- a/drivers/block/elevator.c
 +++ b/drivers/block/elevator.c
@@ -186,10 +225,38 @@ diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
  };
  
  enum {
+diff --git a/include/linux/blktrace.h b/include/linux/blktrace.h
+--- a/include/linux/blktrace.h
++++ b/include/linux/blktrace.h
+@@ -53,7 +53,7 @@ enum {
+ #define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
+ 
+ #define BLK_IO_TRACE_MAGIC	0x65617400
+-#define BLK_IO_TRACE_VERSION	0x04
++#define BLK_IO_TRACE_VERSION	0x05
+ 
+ /*
+  * The trace itself
+@@ -69,6 +69,7 @@ struct blk_io_trace {
+ 	u32 cpu;		/* on what cpu did it happen */
+ 	u16 error;		/* completion error */
+ 	u16 pdu_len;		/* length of data after this trace */
++	u32 device		/* device number */
+ 	char comm[16];		/* task command name (TASK_COMM_LEN) */
+ };
+ 
+@@ -76,6 +77,7 @@ struct blk_trace {
+ 	struct dentry *dir;
+ 	struct rchan *rchan;
+ 	atomic_t sequence;
++	u32 dev;
+ 	u16 act_mask;
+ };
+ 
 diff --git a/include/linux/fs.h b/include/linux/fs.h
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -195,6 +195,8 @@ extern int dir_notify_enable;
+@@ -196,6 +196,8 @@ extern int dir_notify_enable;
  #define BLKBSZGET  _IOR(0x12,112,size_t)
  #define BLKBSZSET  _IOW(0x12,113,size_t)
  #define BLKGETSIZE64 _IOR(0x12,114,size_t)	/* return device size in bytes (u64 *arg) */
@@ -199,8 +266,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 --- /dev/null	2005-09-03 12:52:15.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-08 08:33:20.000000000 +0200
-@@ -0,0 +1,222 @@
++++ linux-2.6/drivers/block/blktrace.c	2005-09-12 09:46:27.000000000 +0200
+@@ -0,0 +1,224 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -239,6 +306,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
 +	put_cpu();
 +
++	t.device	= bt->dev;
 +	t.sector	= sector;
 +	t.bytes		= bytes;
 +	t.action	= what;
@@ -364,6 +432,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +		goto err;
 +
 +	bt->dir = dir;
++	bt->dev = bdev->bd_dev;
 +	atomic_set(&bt->sequence, 0);
 +
 +	ret = -EIO;
@@ -424,8 +493,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +module_init(blk_trace_init);
 +
 --- /dev/null	2005-09-03 12:52:15.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-08 08:33:20.000000000 +0200
-@@ -0,0 +1,150 @@
++++ linux-2.6/include/linux/blktrace.h	2005-09-12 09:46:53.000000000 +0200
+@@ -0,0 +1,152 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -481,7 +550,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +#define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
-+#define BLK_IO_TRACE_VERSION	0x04
++#define BLK_IO_TRACE_VERSION	0x05
 +
 +/*
 + * The trace itself
@@ -497,6 +566,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	u32 cpu;		/* on what cpu did it happen */
 +	u16 error;		/* completion error */
 +	u16 pdu_len;		/* length of data after this trace */
++	u32 device		/* device number */
 +	char comm[16];		/* task command name (TASK_COMM_LEN) */
 +};
 +
@@ -504,6 +574,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	struct dentry *dir;
 +	struct rchan *rchan;
 +	atomic_t sequence;
++	u32 dev;
 +	u16 act_mask;
 +};
 +

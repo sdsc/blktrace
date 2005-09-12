@@ -7,7 +7,7 @@
 #include "blktrace_api.h"
 
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
-#define SUPPORTED_VERSION	(0x04)
+#define SUPPORTED_VERSION	(0x05)
 
 #if defined(__LITTLE_ENDIAN_BITFIELD)
 #define be16_to_cpu(x)		__bswap_16(x)
@@ -54,6 +54,7 @@ static inline void trace_to_be(struct blk_io_trace *t)
 	t->cpu		= cpu_to_be32(t->cpu);
 	t->error	= cpu_to_be16(t->error);
 	t->pdu_len	= cpu_to_be16(t->pdu_len);
+	t->device	= cpu_to_be32(t->device);
 	/* t->comm is a string (endian neutral) */
 }
 
@@ -69,6 +70,7 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 	t->cpu		= be32_to_cpu(t->cpu);
 	t->error	= be16_to_cpu(t->error);
 	t->pdu_len	= be16_to_cpu(t->pdu_len);
+	t->device	= be32_to_cpu(t->device);
 	/* t->comm is a string (endian neutral) */
 }
 
