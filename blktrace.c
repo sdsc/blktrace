@@ -65,7 +65,7 @@ struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:o:k"
+#define S_OPTS	"d:a:A:r:o:kw:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -102,6 +102,12 @@ static struct option l_opts[] = {
 		.has_arg = 0,
 		.flag = NULL,
 		.val = 'k'
+	},
+	{
+		.name = "stopwatch",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'w'
 	},
 	{
 		.name = NULL,
@@ -529,6 +535,7 @@ int main(int argc, char *argv[])
 	static char default_relay_path[] = "/relay";
 	struct stat st;
 	int i, c;
+	int stop_watch = 0;
 	int act_mask_tmp = 0;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) >= 0) {
@@ -567,6 +574,15 @@ int main(int argc, char *argv[])
 			break;
 		case 'k':
 			kill_running_trace = 1;
+			break;
+		case 'w':
+			stop_watch = atoi(optarg);
+			if (stop_watch <= 0) {
+				fprintf(stderr,
+					"Invalid stopwatch value (%d secs)\n",
+					stop_watch);
+				return 1;
+			}
 			break;
 
 		default:
@@ -619,8 +635,12 @@ int main(int argc, char *argv[])
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
+	signal(SIGALRM, handle_sigint);
 
 	atexit(stop_all_tracing);
+
+	if (stop_watch)
+		alarm(stop_watch);
 
 	while (!is_done())
 		sleep(1);
