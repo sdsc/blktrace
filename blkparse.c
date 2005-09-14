@@ -91,7 +91,7 @@ struct per_process_info {
 static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
 
-#define S_OPTS	"i:o:b:st"
+#define S_OPTS	"i:o:b:stq"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -122,6 +122,12 @@ static struct option l_opts[] = {
 		.has_arg = 0,
 		.flag = NULL,
 		.val = 't'
+	},
+	{
+		.name = "quiet",
+		.has_arg = 0,
+		.flag = NULL,
+		.val = 'q'
 	},
 	{
 		.name = NULL,
@@ -1309,6 +1315,7 @@ int main(int argc, char *argv[])
 {
 	char *ofp_buffer;
 	int c, ret, mode;
+	int per_device_and_cpu_stats = 1;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -1331,6 +1338,9 @@ int main(int argc, char *argv[])
 			break;
 		case 't':
 			track_ios = 1;
+			break;
+		case 'q':
+			per_device_and_cpu_stats = 0;
 			break;
 		default:
 			usage(argv[0]);
@@ -1390,7 +1400,8 @@ int main(int argc, char *argv[])
 	if (per_process_stats)
 		show_process_stats();
 
-	show_device_and_cpu_stats();
+	if (per_device_and_cpu_stats)
+		show_device_and_cpu_stats();
 
 	flush_output();
 	return ret;
