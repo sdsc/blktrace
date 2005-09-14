@@ -1,21 +1,22 @@
 CC	= gcc
 CFLAGS	= -Wall -O2 -g -D_GNU_SOURCE
-PROG	= blkparse blktrace
+PROGS	= blkparse blktrace
 LIBS	= -lpthread
+SCRIPTS	= btrace
 
-all: $(PROG)
+all: $(PROGS) $(SCRIPTS)
 
 blkparse: blkparse.o rbtree.o
 blktrace: blktrace.o $(LIBS)
 
 clean:
-	-rm -f *.o $(PROG)
+	-rm -f *.o $(PROGS)
 
 INSTALL = install
 prefix = /usr/local
 bindir = $(prefix)/bin
 
-install: $(PROG)
+install: $(PROGS) $(SCRIPTS)
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
-	$(INSTALL) $(PROG) $(DESTDIR)$(bindir)
+	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
 
