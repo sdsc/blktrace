@@ -787,6 +787,20 @@ static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
 	output(pci, tstring);
 }
 
+static int log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char act)
+{
+	__u64 *depth;
+	int len;
+
+	len = sprintf(tstring,"%s ", setup_header(pci, t, act));
+	depth = (__u64 *) t + sizeof(*t);
+	sprintf(tstring + len, "%u\n", (unsigned int) be64_to_cpu(*depth));
+	output(pci, tstring);
+
+	return 0;
+}
+
 static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char act)
 {
 	unsigned char *buf;
@@ -884,7 +898,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_generic(pci, t, 'P');
 			break;
 		case __BLK_TA_UNPLUG:
-			log_generic(pci, t, 'U');
+			log_unplug(pci, t, 'U');
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
