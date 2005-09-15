@@ -880,6 +880,12 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			account_c(t, pci, w, t->bytes);
 			log_complete(pci, t, 'C');
 			break;
+		case __BLK_TA_PLUG:
+			log_generic(pci, t, 'P');
+			break;
+		case __BLK_TA_UNPLUG:
+			log_generic(pci, t, 'U');
+			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
 			break;

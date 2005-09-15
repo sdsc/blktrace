@@ -36,6 +36,8 @@ enum {
 	__BLK_TA_REQUEUE,		/* request requeued */
 	__BLK_TA_ISSUE,			/* sent to driver */
 	__BLK_TA_COMPLETE,		/* completed by driver */
+	__BLK_TA_PLUG,			/* queue was plugged */
+	__BLK_TA_UNPLUG,		/* queue was unplugged */
 };
 
 /*
@@ -49,6 +51,8 @@ enum {
 #define	BLK_TA_REQUEUE		(__BLK_TA_REQUEUE | BLK_TC_ACT(BLK_TC_REQUEUE))
 #define BLK_TA_ISSUE		(__BLK_TA_ISSUE | BLK_TC_ACT(BLK_TC_ISSUE))
 #define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
+#define BLK_TA_PLUG		(__BLK_TA_PLUG | BLK_TC_ACT(BLK_TC_QUEUE))
+#define BLK_TA_UNPLUG		(__BLK_TA_UNPLUG | BLK_TC_ACT(BLK_TC_QUEUE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
 #define BLK_IO_TRACE_VERSION	0x05
