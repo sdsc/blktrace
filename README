@@ -9,7 +9,7 @@ Nathan Scott <nathans@sgi.com> (bug fixes, process names, multiple devices)
 Requirements
 ------------
 
-You need to be running a 2.6.13-mm1 kernel with the blk-trace patch
+You need to be running a 2.6.14-rc1 kernel or newer, with the blk-trace patch
 included in this repository. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
