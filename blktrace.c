@@ -28,6 +28,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/param.h>
+#include <sys/statfs.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
@@ -38,6 +39,8 @@
 
 #define BUF_SIZE	(128 *1024)
 #define BUF_NR		(4)
+
+#define RELAYFS_TYPE	0xF0B4A981
 
 #define DECLARE_MASK_MAP(mask)          { BLK_TC_##mask, #mask, "BLK_TC_"#mask }
 #define COMPARE_MASK_MAP(mmp, str)                                      \
@@ -533,7 +536,7 @@ static void handle_sigint(int sig)
 int main(int argc, char *argv[])
 {
 	static char default_relay_path[] = "/relay";
-	struct stat st;
+	struct statfs st;
 	int i, c;
 	int stop_watch = 0;
 	int act_mask_tmp = 0;
@@ -607,8 +610,13 @@ int main(int argc, char *argv[])
 	if (act_mask_tmp != 0)
 		act_mask = act_mask_tmp;
 
-	if (stat(relay_path, &st) < 0) {
-		fprintf(stderr,"%s does not appear to be mounted\n",
+	if (statfs(relay_path, &st) < 0) {
+		perror("statfs");
+		fprintf(stderr,"%s does not appear to be a valid path\n",
+			relay_path);
+		return 1;
+	} else if (st.f_type != RELAYFS_TYPE) {
+		fprintf(stderr,"%s does not appear to be a relay filesystem\n",
 			relay_path);
 		return 1;
 	}
