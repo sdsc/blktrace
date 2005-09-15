@@ -29,12 +29,14 @@
 #include <errno.h>
 #include <signal.h>
 #include <locale.h>
+#include <limits.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
 
 #define SECONDS(x) 		((unsigned long long)(x) / 1000000000)
 #define NANO_SECONDS(x)		((unsigned long long)(x) % 1000000000)
+#define DOUBLE_TO_NANO_ULL(d)	((unsigned long long)((d) * 1000000000))
 
 #define MINORBITS	20
 #define MINORMASK	((1U << MINORBITS) - 1)
@@ -91,7 +93,7 @@ struct per_process_info {
 static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
 
-#define S_OPTS	"i:o:b:stq"
+#define S_OPTS	"i:o:b:stqw:"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -128,6 +130,12 @@ static struct option l_opts[] = {
 		.has_arg = 0,
 		.flag = NULL,
 		.val = 'q'
+	},
+	{
+		.name = "stopwatch",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'w'
 	},
 	{
 		.name = NULL,
@@ -171,6 +179,8 @@ static FILE *ofp;
 static char *output_name;
 
 static unsigned long long genesis_time;
+static unsigned long long stopwatch_start;	/* start from zero by default */
+static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 
 static int per_process_stats;
 static int track_ios;
@@ -1104,6 +1114,10 @@ static void show_entries_rb(void)
 		}
 
 		bit->time -= genesis_time;
+		if (bit->time < stopwatch_start)
+			continue;
+		if (bit->time >= stopwatch_end)
+			break;
 
 		check_time(pdi, bit);
 
@@ -1305,10 +1319,43 @@ static void handle_sigint(int sig)
 	flush_output();
 }
 
+/*
+ * Extract start and duration times from a string, allowing
+ * us to specify a time interval of interest within a trace.
+ * Format: "duration" (start is zero) or "start:duration".
+ */
+static int find_stopwatch_interval(char *string)
+{
+	double value;
+	char *sp;
+
+	value = strtod(string, &sp);
+	if (sp == string) {
+		fprintf(stderr,"Invalid stopwatch timer: %s\n", string);
+		return 1;
+	}
+	if (*sp == ':') {
+		stopwatch_start = DOUBLE_TO_NANO_ULL(value);
+		string = sp + 1;
+		value = strtod(string, &sp);
+		if (sp == string || *sp != '\0') {
+			fprintf(stderr,"Invalid stopwatch duration time: %s\n",
+				string);
+			return 1;
+		}
+	} else if (*sp != '\0') {
+		fprintf(stderr,"Invalid stopwatch start timer: %s\n", string);
+		return 1;
+	}
+	stopwatch_end = stopwatch_start + DOUBLE_TO_NANO_ULL(value);
+	return 0;
+}
+
 static void usage(char *prog)
 {
-	fprintf(stderr, "Usage: %s [-i <name>] [-o <output>] [-s] <name>...\n",
-			prog);
+	fprintf(stderr, "Usage: %s "
+		"[-i <name>] [-o <output>] [-s] [-w N[:n]] <name>...\n",
+		prog);
 }
 
 int main(int argc, char *argv[])
@@ -1341,6 +1388,10 @@ int main(int argc, char *argv[])
 			break;
 		case 'q':
 			per_device_and_cpu_stats = 0;
+			break;
+		case 'w':
+			if (find_stopwatch_interval(optarg) != 0)
+				return 1;
 			break;
 		default:
 			usage(argv[0]);
