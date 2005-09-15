@@ -779,6 +779,13 @@ static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 	output(pci, tstring);
 }
 
+static void log_action(struct per_cpu_info *pci, struct blk_io_trace *t,
+			char act)
+{
+	sprintf(tstring,"%s [%s]\n", setup_header(pci, t, act), t->comm);
+	output(pci, tstring);
+}
+
 static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
 			char act)
 {
@@ -895,7 +902,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_complete(pci, t, 'C');
 			break;
 		case __BLK_TA_PLUG:
-			log_generic(pci, t, 'P');
+			log_action(pci, t, 'P');
 			break;
 		case __BLK_TA_UNPLUG:
 			log_unplug(pci, t, 'U');
