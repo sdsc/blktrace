@@ -50,6 +50,7 @@ struct io_stats {
 	unsigned long ireads, iwrites;
 	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
 	unsigned long long iread_kb, iwrite_kb;
+	unsigned long io_unplugs, timer_unplugs;
 };
 
 struct per_cpu_info {
@@ -674,6 +675,26 @@ static inline void account_i(struct blk_io_trace *t, struct per_cpu_info *pci,
 	}
 }
 
+static inline void __account_unplug(struct io_stats *ios, int timer)
+{
+	if (timer)
+		ios->timer_unplugs++;
+	else
+		ios->io_unplugs++;
+}
+
+static inline void account_unplug(struct blk_io_trace *t,
+				  struct per_cpu_info *pci, int timer)
+{
+	__account_unplug(&pci->io_stats, timer);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_unplug(ios, timer);
+	}
+}
+
 static void output(struct per_cpu_info *pci, char *s)
 {
 	fprintf(ofp, "%s", s);
@@ -800,7 +821,7 @@ static int log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
 	__u64 *depth;
 	int len;
 
-	len = sprintf(tstring,"%s ", setup_header(pci, t, act));
+	len = sprintf(tstring,"%s [%s] ", setup_header(pci, t, act), t->comm);
 	depth = (__u64 *) ((char *) t + sizeof(*t));
 	sprintf(tstring + len, "%u\n", (unsigned int) be64_to_cpu(*depth));
 	output(pci, tstring);
@@ -905,9 +926,11 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_action(pci, t, "P");
 			break;
 		case __BLK_TA_UNPLUG_IO:
+			account_unplug(t, pci, 0);
 			log_unplug(pci, t, "U");
 			break;
 		case __BLK_TA_UNPLUG_TIMER:
+			account_unplug(t, pci, 1);
 			log_unplug(pci, t, "UT");
 			break;
 		default:
@@ -942,8 +965,9 @@ static void dump_io_stats(struct io_stats *ios, char *msg)
 	fprintf(ofp, " Reads Completed: %'8lu, %'8LuKiB\t", ios->creads, ios->cread_kb);
 	fprintf(ofp, " Writes Completed: %'8lu, %'8LuKiB\n", ios->cwrites,ios->cwrite_kb);
 	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
-
 	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
+	fprintf(ofp, " IO unplugs:      %'8lu%8c\t", ios->io_unplugs, ' ');
+	fprintf(ofp, " Timer unplugs:    %'8lu\n", ios->timer_unplugs);
 }
 
 static void dump_wait_stats(struct per_process_info *ppi)
@@ -1013,6 +1037,8 @@ static void show_device_and_cpu_stats(void)
 			total.cwrite_kb += ios->cwrite_kb;
 			total.iread_kb += ios->iread_kb;
 			total.iwrite_kb += ios->iwrite_kb;
+			total.timer_unplugs += ios->timer_unplugs;
+			total.io_unplugs += ios->io_unplugs;
 
 			snprintf(line, sizeof(line) - 1, "CPU%d (%s):",
 				 j, get_dev_name(pdi, name, sizeof(name)));
