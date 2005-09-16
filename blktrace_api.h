@@ -37,7 +37,9 @@ enum {
 	__BLK_TA_ISSUE,			/* sent to driver */
 	__BLK_TA_COMPLETE,		/* completed by driver */
 	__BLK_TA_PLUG,			/* queue was plugged */
-	__BLK_TA_UNPLUG,		/* queue was unplugged */
+	__BLK_TA_UNPLUG_IO,		/* queue was unplugged by io */
+	__BLK_TA_UNPLUG_TIMER,		/* queue was unplugged by timer */
+	__BLK_TA_IOSCHED,		/* some io scheduler defined action */
 };
 
 /*
@@ -52,7 +54,8 @@ enum {
 #define BLK_TA_ISSUE		(__BLK_TA_ISSUE | BLK_TC_ACT(BLK_TC_ISSUE))
 #define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
 #define BLK_TA_PLUG		(__BLK_TA_PLUG | BLK_TC_ACT(BLK_TC_QUEUE))
-#define BLK_TA_UNPLUG		(__BLK_TA_UNPLUG | BLK_TC_ACT(BLK_TC_QUEUE))
+#define BLK_TA_UNPLUG_IO	(__BLK_TA_UNPLUG_IO | BLK_TC_ACT(BLK_TC_QUEUE))
+#define BLK_TA_UNPLUG_TIMER	(__BLK_TA_UNPLUG_TIMER | BLK_TC_ACT(BLK_TC_QUEUE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
 #define BLK_IO_TRACE_VERSION	0x05

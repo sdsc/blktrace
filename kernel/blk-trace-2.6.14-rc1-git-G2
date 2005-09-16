@@ -100,36 +100,31 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  }
  
  EXPORT_SYMBOL(blk_plug_device);
-@@ -1487,14 +1490,27 @@ static void blk_backing_dev_unplug(struc
+@@ -1487,8 +1490,12 @@ static void blk_backing_dev_unplug(struc
  	/*
  	 * devices don't necessarily have an ->unplug_fn defined
  	 */
 -	if (q->unplug_fn)
 +	if (q->unplug_fn) {
-+		if (test_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags)) {
-+			int nrq = q->rq.count[READ] + q->rq.count[WRITE];
++		int nrq = q->rq.count[READ] + q->rq.count[WRITE];
 +
-+			blk_add_trace_pdu_int(q, BLK_TA_UNPLUG, nrq);
-+		}
-+
++		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, nrq);
  		q->unplug_fn(q);
 +	}
  }
  
  static void blk_unplug_work(void *data)
+@@ -1501,7 +1508,9 @@ static void blk_unplug_work(void *data)
+ static void blk_unplug_timeout(unsigned long data)
  {
- 	request_queue_t *q = data;
+ 	request_queue_t *q = (request_queue_t *)data;
++	int nrq = q->rq.count[READ] + q->rq.count[WRITE];
  
-+	if (test_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags)) {
-+		int nrq = q->rq.count[READ] + q->rq.count[WRITE];
-+
-+		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG, nrq);
-+	}
-+
- 	q->unplug_fn(q);
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, nrq);
+ 	kblockd_schedule_work(&q->unplug_work);
  }
  
-@@ -1624,6 +1640,11 @@ void blk_cleanup_queue(request_queue_t *
+@@ -1624,6 +1633,11 @@ void blk_cleanup_queue(request_queue_t *
  	if (q->queue_tags)
  		__blk_queue_free_tags(q);
  
@@ -141,7 +136,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	blk_queue_ordered(q, QUEUE_ORDERED_NONE);
  
  	kmem_cache_free(requestq_cachep, q);
-@@ -1970,6 +1991,8 @@ rq_starved:
+@@ -1970,6 +1984,8 @@ rq_starved:
  	
  	rq_init(q, rq);
  	rq->rl = rl;
@@ -150,7 +145,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  out:
  	return rq;
  }
-@@ -1998,6 +2021,8 @@ static struct request *get_request_wait(
+@@ -1998,6 +2014,8 @@ static struct request *get_request_wait(
  		if (!rq) {
  			struct io_context *ioc;
  
@@ -159,7 +154,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			__generic_unplug_device(q);
  			spin_unlock_irq(q->queue_lock);
  			io_schedule();
-@@ -2051,6 +2076,8 @@ EXPORT_SYMBOL(blk_get_request);
+@@ -2051,6 +2069,8 @@ EXPORT_SYMBOL(blk_get_request);
   */
  void blk_requeue_request(request_queue_t *q, struct request *rq)
  {
@@ -168,7 +163,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	if (blk_rq_tagged(rq))
  		blk_queue_end_tag(q, rq);
  
-@@ -2714,6 +2741,8 @@ static int __make_request(request_queue_
+@@ -2714,6 +2734,8 @@ static int __make_request(request_queue_
  			if (!q->back_merge_fn(q, req, bio))
  				break;
  
@@ -177,7 +172,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			req->biotail->bi_next = bio;
  			req->biotail = bio;
  			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2729,6 +2758,8 @@ static int __make_request(request_queue_
+@@ -2729,6 +2751,8 @@ static int __make_request(request_queue_
  			if (!q->front_merge_fn(q, req, bio))
  				break;
  
@@ -186,7 +181,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -3030,6 +3061,10 @@ end_io:
+@@ -3030,6 +3054,10 @@ end_io:
  		blk_partition_remap(bio);
  
  		ret = q->make_request_fn(q, bio);
@@ -197,7 +192,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	} while (ret);
  }
  
-@@ -3148,6 +3183,8 @@ static int __end_that_request_first(stru
+@@ -3148,6 +3176,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -466,8 +461,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +module_init(blk_trace_init);
 +
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-15 14:13:12.000000000 +0200
-@@ -0,0 +1,169 @@
++++ linux-2.6/include/linux/blktrace.h	2005-09-16 09:32:03.000000000 +0200
+@@ -0,0 +1,172 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -509,7 +504,9 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	__BLK_TA_ISSUE,			/* sent to driver */
 +	__BLK_TA_COMPLETE,		/* completed by driver */
 +	__BLK_TA_PLUG,			/* queue was plugged */
-+	__BLK_TA_UNPLUG,		/* queue was unplugged */
++	__BLK_TA_UNPLUG_IO,		/* queue was unplugged by io */
++	__BLK_TA_UNPLUG_TIMER,		/* queue was unplugged by timer */
++	__BLK_TA_IOSCHED,		/* some io scheduler defined action */
 +};
 +
 +/*
@@ -524,7 +521,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +#define BLK_TA_ISSUE		(__BLK_TA_ISSUE | BLK_TC_ACT(BLK_TC_ISSUE))
 +#define BLK_TA_COMPLETE		(__BLK_TA_COMPLETE| BLK_TC_ACT(BLK_TC_COMPLETE))
 +#define BLK_TA_PLUG		(__BLK_TA_PLUG | BLK_TC_ACT(BLK_TC_QUEUE))
-+#define BLK_TA_UNPLUG		(__BLK_TA_UNPLUG | BLK_TC_ACT(BLK_TC_QUEUE))
++#define BLK_TA_UNPLUG_IO	(__BLK_TA_UNPLUG_IO | BLK_TC_ACT(BLK_TC_QUEUE))
++#define BLK_TA_UNPLUG_TIMER	(__BLK_TA_UNPLUG_TIMER | BLK_TC_ACT(BLK_TC_QUEUE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
 +#define BLK_IO_TRACE_VERSION	0x05
@@ -618,7 +616,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +					 unsigned int pdu)
 +{
 +	struct blk_trace *bt = q->blk_trace;
-+	u64 rpdu = pdu;
++	u64 rpdu = cpu_to_be64(pdu);
 +
 +	if (likely(!bt))
 +		return;

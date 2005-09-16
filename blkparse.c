@@ -683,7 +683,7 @@ static char hstring[256];
 static char tstring[256];
 
 static inline char *setup_header(struct per_cpu_info *pci,
-				 struct blk_io_trace *t, char act)
+				 struct blk_io_trace *t, char *act)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
@@ -702,16 +702,16 @@ static inline char *setup_header(struct per_cpu_info *pci,
 
 	rwbs[i] = '\0';
 
-	sprintf(hstring, "%3d,%-3d %2d %8ld %5Lu.%09Lu %5u %c %3s",
+	sprintf(hstring, "%3d,%-3d %2d %8ld %5Lu.%09Lu %5u %2s %3s",
 		MAJOR(t->device), MINOR(t->device), pci->cpu,
-		(unsigned long)t->sequence, SECONDS(t->time), 
+		(unsigned long)t->sequence, SECONDS(t->time),
 		NANO_SECONDS(t->time), t->pid, act, rwbs);
 
 	return hstring;
 }
 
 static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
-			 char act)
+			 char *act)
 {
 	unsigned long long elapsed = log_track_complete(t);
 
@@ -731,7 +731,7 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 }
 
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char act)
+		      char *act)
 {
 	unsigned long long elapsed = log_track_queue(t);
 
@@ -750,7 +750,7 @@ static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 }
 
 static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char act)
+		      char *act)
 {
 	unsigned long long elapsed = log_track_issue(t);
 
@@ -770,7 +770,7 @@ static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 }
 
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char act)
+		      char *act)
 {
 	log_track_merge(t);
 
@@ -780,14 +780,14 @@ static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 }
 
 static void log_action(struct per_cpu_info *pci, struct blk_io_trace *t,
-			char act)
+			char *act)
 {
 	sprintf(tstring,"%s [%s]\n", setup_header(pci, t, act), t->comm);
 	output(pci, tstring);
 }
 
 static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
-			char act)
+			char *act)
 {
 	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
@@ -795,20 +795,20 @@ static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
 }
 
 static int log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char act)
+		      char *act)
 {
 	__u64 *depth;
 	int len;
 
 	len = sprintf(tstring,"%s ", setup_header(pci, t, act));
-	depth = (__u64 *) t + sizeof(*t);
+	depth = (__u64 *) ((char *) t + sizeof(*t));
 	sprintf(tstring + len, "%u\n", (unsigned int) be64_to_cpu(*depth));
 	output(pci, tstring);
 
 	return 0;
 }
 
-static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char act)
+static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
 {
 	unsigned char *buf;
 	int i;
@@ -822,7 +822,7 @@ static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char act)
 		output(pci, tstring);
 	}
 
-	if (act == 'C') {
+	if (act[0] == 'C') {
 		sprintf(tstring,"[%d]\n", t->error);
 		output(pci, tstring);
 	} else {
@@ -838,22 +838,22 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
-			log_generic(pci, t, 'Q');
+			log_generic(pci, t, "Q");
 			break;
 		case __BLK_TA_GETRQ:
-			log_generic(pci, t, 'G');
+			log_generic(pci, t, "G");
 			break;
 		case __BLK_TA_SLEEPRQ:
-			log_generic(pci, t, 'S');
+			log_generic(pci, t, "S");
 			break;
 		case __BLK_TA_REQUEUE:
-			log_generic(pci, t, 'R');
+			log_generic(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
-			ret = log_pc(pci, t, 'D');
+			ret = log_pc(pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
-			log_pc(pci, t, 'C');
+			log_pc(pci, t, "C");
 			break;
 		default:
 			fprintf(stderr, "Bad pc action %x\n", t->action);
@@ -872,40 +872,43 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 	switch (act) {
 		case __BLK_TA_QUEUE:
 			account_q(t, pci, w);
-			log_queue(pci, t, 'Q');
+			log_queue(pci, t, "Q");
 			break;
 		case __BLK_TA_BACKMERGE:
 			account_m(t, pci, w);
-			log_merge(pci, t, 'M');
+			log_merge(pci, t, "M");
 			break;
 		case __BLK_TA_FRONTMERGE:
 			account_m(t, pci, w);
-			log_merge(pci, t, 'F');
+			log_merge(pci, t, "F");
 			break;
 		case __BLK_TA_GETRQ:
 			log_track_getrq(t);
-			log_generic(pci, t, 'G');
+			log_generic(pci, t, "G");
 			break;
 		case __BLK_TA_SLEEPRQ:
-			log_generic(pci, t, 'S');
+			log_generic(pci, t, "S");
 			break;
 		case __BLK_TA_REQUEUE:
 			account_c(t, pci, w, -t->bytes);
-			log_queue(pci, t, 'R');
+			log_queue(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
 			account_i(t, pci, w);
-			log_issue(pci, t, 'D');
+			log_issue(pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
 			account_c(t, pci, w, t->bytes);
-			log_complete(pci, t, 'C');
+			log_complete(pci, t, "C");
 			break;
 		case __BLK_TA_PLUG:
-			log_action(pci, t, 'P');
+			log_action(pci, t, "P");
 			break;
-		case __BLK_TA_UNPLUG:
-			log_unplug(pci, t, 'U');
+		case __BLK_TA_UNPLUG_IO:
+			log_unplug(pci, t, "U");
+			break;
+		case __BLK_TA_UNPLUG_TIMER:
+			log_unplug(pci, t, "UT");
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
