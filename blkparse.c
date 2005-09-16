@@ -360,15 +360,15 @@ static void log_track_merge(struct blk_io_trace *t)
 	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return;
 
+	/*
+	 * this can happen if we lose events, so don't print an error
+	 */
 	iot = __find_track(t->device, t->sector - (t->bytes >> 10));
-	if (!iot) {
-		fprintf(stderr, "Trying to merge on non-existing request\n");
-		return;
+	if (iot) {
+		rb_erase(&iot->rb_node, &rb_track_root);
+		iot->sector -= t->bytes >> 10;
+		track_rb_insert(iot);
 	}
-
-	rb_erase(&iot->rb_node, &rb_track_root);
-	iot->sector -= t->bytes >> 10;
-	track_rb_insert(iot);
 }
 
 static void log_track_getrq(struct blk_io_trace *t)
@@ -422,11 +422,12 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return -1;
 
+	/*
+	 * this can happen if we lose events, so don't print an error
+	 */
 	iot = __find_track(t->device, t->sector);
-	if (!iot) {
-		fprintf(stderr, "Trying to issue on non-existing request\n");
+	if (!iot)
 		return -1;
-	}
 
 	iot->dispatch_time = t->time;
 	elapsed = iot->dispatch_time - iot->queue_time;
@@ -456,10 +457,8 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 		return -1;
 
 	iot = __find_track(t->device, t->sector);
-	if (!iot) {
-		fprintf(stderr, "Trying to dispatch on non-existing request\n");
+	if (!iot)
 		return -1;
-	}
 
 	iot->completion_time = t->time;
 	elapsed = iot->completion_time - iot->dispatch_time;
