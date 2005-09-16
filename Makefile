@@ -7,7 +7,10 @@ SCRIPTS	= btrace
 all: $(PROGS) $(SCRIPTS)
 
 blkparse: blkparse.o rbtree.o
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^)
+
 blktrace: blktrace.o $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
 
 clean:
 	-rm -f *.o $(PROGS)
