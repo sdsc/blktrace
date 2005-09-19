@@ -1118,7 +1118,7 @@ static int sort_entries(void)
 	return nr;
 }
 
-static void show_entries_rb(void)
+static void show_entries_rb(int kill_entries)
 {
 	struct per_dev_info *pdi;
 	struct blk_io_trace *bit;
@@ -1170,8 +1170,11 @@ static void show_entries_rb(void)
 			break;
 
 		rb_erase(&t->rb_node, &rb_sort_root);
-		free(bit);
-		free(t);
+
+		if (kill_entries) {
+			free(bit);
+			free(t);
+		}
 	}
 }
 
@@ -1236,15 +1239,16 @@ static int find_entries(void *tb, unsigned long size)
 
 static int do_file(void)
 {
-	struct per_dev_info *pdi;
 	int i, j, nfiles = 0, nelems;
 
-	for (pdi = devices, i = 0; i < ndevices; i++, pdi++) {
+	for (i = 0; i < ndevices; i++) {
 		for (j = 0;; j++, nfiles++) {
+			struct per_dev_info *pdi;
 			struct per_cpu_info *pci;
 			struct stat st;
 			void *tb;
 
+			pdi = &devices[i];
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 
@@ -1300,7 +1304,7 @@ static int do_file(void)
 		return 1;
 	}
 
-	show_entries_rb();
+	show_entries_rb(0);
 	return 0;
 }
 
@@ -1362,7 +1366,7 @@ static int do_stdin(void)
 		if (sort_entries() == -1)
 			break;
 
-		show_entries_rb();
+		show_entries_rb(1);
 	} while (1);
 
 	close(fd);
