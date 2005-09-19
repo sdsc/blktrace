@@ -356,26 +356,24 @@ static struct io_track *find_track(__u32 pid, dev_t device, __u64 sector)
 	return iot;
 }
 
-static void log_track_merge(struct blk_io_trace *t)
+static void log_track_frontmerge(struct blk_io_trace *t)
 {
 	struct io_track *iot;
 
 	if (!track_ios)
 		return;
-	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
-		return;
 
 	/*
 	 * this can happen if we lose events, so don't print an error
 	 */
-	iot = __find_track(t->device, t->sector - (t->bytes >> 10));
+	iot = __find_track(t->device, t->sector + (t->bytes >> 9));
 	if (!iot) {
 		fprintf(stderr, "failed to find mergeable event\n");
 		return;
 	}
 
 	rb_erase(&iot->rb_node, &rb_track_root);
-	iot->sector -= t->bytes >> 10;
+	iot->sector -= t->bytes >> 9;
 	track_rb_insert(iot);
 }
 
@@ -810,7 +808,8 @@ static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char *act)
 {
-	log_track_merge(t);
+	if (act[0] == 'F')
+		log_track_frontmerge(t);
 
 	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
 		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
