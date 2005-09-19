@@ -71,6 +71,7 @@ struct per_dev_info {
 	unsigned long long events;
 	unsigned long long last_reported_time;
 	struct io_stats io_stats;
+	unsigned long last_sequence;
 
 	int ncpus;
 	struct per_cpu_info *cpus;
@@ -146,16 +147,20 @@ static struct option l_opts[] = {
 	}
 };
 
-static struct rb_root rb_sort_root;
-static struct rb_root rb_track_root;
-
 /*
  * for sorting the displayed output
  */
 struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
+	struct trace *next;
+	int skipped;
 };
+
+static struct rb_root rb_sort_root;
+static struct rb_root rb_track_root;
+
+static struct trace *trace_list;
 
 /*
  * for tracking individual ios
@@ -364,11 +369,14 @@ static void log_track_merge(struct blk_io_trace *t)
 	 * this can happen if we lose events, so don't print an error
 	 */
 	iot = __find_track(t->device, t->sector - (t->bytes >> 10));
-	if (iot) {
-		rb_erase(&iot->rb_node, &rb_track_root);
-		iot->sector -= t->bytes >> 10;
-		track_rb_insert(iot);
+	if (!iot) {
+		fprintf(stderr, "failed to find mergeable event\n");
+		return;
 	}
+
+	rb_erase(&iot->rb_node, &rb_track_root);
+	iot->sector -= t->bytes >> 10;
+	track_rb_insert(iot);
 }
 
 static void log_track_getrq(struct blk_io_trace *t)
@@ -426,8 +434,10 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	 * this can happen if we lose events, so don't print an error
 	 */
 	iot = __find_track(t->device, t->sector);
-	if (!iot)
+	if (!iot) {
+		fprintf(stderr, "failed to find issue event\n");
 		return -1;
+	}
 
 	iot->dispatch_time = t->time;
 	elapsed = iot->dispatch_time - iot->queue_time;
@@ -457,8 +467,10 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 		return -1;
 
 	iot = __find_track(t->device, t->sector);
-	if (!iot)
+	if (!iot) {
+		fprintf(stderr, "failed to find complete event\n");
 		return -1;
+	}
 
 	iot->completion_time = t->time;
 	elapsed = iot->completion_time - iot->dispatch_time;
@@ -522,12 +534,17 @@ static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
 	pdi->ncpus = new_count;
 	pdi->cpus = cpus;
 }
-  
+
 static struct per_cpu_info *get_cpu_info(struct per_dev_info *pdi, int cpu)
 {
+	struct per_cpu_info *pci;
+
 	if (cpu >= pdi->ncpus)
 		resize_cpu_info(pdi, cpu);
-	return &pdi->cpus[cpu];
+
+	pci = &pdi->cpus[cpu];
+	pci->cpu = cpu;
+	return pci;
 }
 
 
@@ -546,18 +563,21 @@ static int resize_devices(char *name)
 	return 0;
 }
 
-static struct per_dev_info *get_dev_info(dev_t id, int create)
+static struct per_dev_info *get_dev_info(dev_t id)
 {
+	struct per_dev_info *pdi;
 	int i;
 
 	for (i = 0; i < ndevices; i++)
 		if (devices[i].id == id)
 			return &devices[i];
-	if (!create)
-		return NULL;
+
 	if (resize_devices(NULL) != 0)
 		return NULL;
-	return &devices[ndevices-1];
+
+	pdi = &devices[ndevices - 1];
+	pdi->id = id;
+	return pdi;
 }
 
 static char *get_dev_name(struct per_dev_info *pdi, char *buffer, int size)
@@ -569,7 +589,6 @@ static char *get_dev_name(struct per_dev_info *pdi, char *buffer, int size)
 	return buffer;
 }
 
-
 static void check_time(struct per_dev_info *pdi, struct blk_io_trace *bit)
 {
 	unsigned long long this = bit->time;
@@ -578,7 +597,6 @@ static void check_time(struct per_dev_info *pdi, struct blk_io_trace *bit)
 	pdi->backwards = (this < last) ? 'B' : ' ';
 	pdi->last_reported_time = this;
 }
-
 
 static inline void __account_m(struct io_stats *ios, struct blk_io_trace *t,
 			       int rw)
@@ -1057,9 +1075,9 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
-static struct blk_io_trace *find_trace(void *p, unsigned long offset, int nr)
+static struct blk_io_trace *find_trace(void *p, unsigned long offset)
 {
-	unsigned long max_offset = min(offset,nr * sizeof(struct blk_io_trace));
+	unsigned long max_offset = offset;
 	unsigned long off;
 	struct blk_io_trace *bit;
 	__u32 magic;
@@ -1075,68 +1093,36 @@ static struct blk_io_trace *find_trace(void *p, unsigned long offset, int nr)
 	return NULL;
 }
 
-static int sort_entries(void *traces, unsigned long offset, int nr,
-			struct per_dev_info *fpdi, struct per_cpu_info *fpci)
+static int sort_entries(void)
 {
 	struct per_dev_info *pdi;
 	struct per_cpu_info *pci;
 	struct blk_io_trace *bit;
 	struct trace *t;
-	void *start = traces;
+	int nr = 0;
 
-	while (traces - start <= offset - sizeof(*bit)) {
-		if (!nr)
-			break;
+	while ((t = trace_list) != NULL) {
 
-		bit = find_trace(traces, offset - (traces - start), nr);
-		if (!bit)
-			break;
+		trace_list = t->next;
+		bit = t->bit;
 
-		t = malloc(sizeof(*t));
-		if (!t) {
-			fprintf(stderr, "Out of memory, seq %d on dev %d,%d\n",
-				bit->sequence,
-				MAJOR(bit->device), MINOR(bit->device));
-			return -1;
-		}
-		t->bit = bit;
 		memset(&t->rb_node, 0, sizeof(t->rb_node));
 
 		trace_to_cpu(bit);
 
-		if (verify_trace(bit)) {
-			free(t);
+		if (verify_trace(bit))
 			break;
-		}
+		if (trace_rb_insert(t))
+			return -1;
 
-		pdi = fpdi ? fpdi : get_dev_info(bit->device, 1);
-		pdi->id = bit->device;
-		pci = fpci ? fpci : get_cpu_info(pdi, bit->cpu);
-		pci->cpu = bit->cpu;
+		pdi = get_dev_info(bit->device);
+		pci = get_cpu_info(pdi, bit->cpu);
 		pci->nelems++;
 
-		if (trace_rb_insert(t)) {
-			free(t);
-			return -1;
-		}
-
-		traces += sizeof(*bit) + bit->pdu_len;
-		nr--;
+		nr++;
 	}
 
-	return 0;
-}
-
-static void free_entries_rb(void)
-{
-	struct rb_node *n;
-
-	while ((n = rb_first(&rb_sort_root)) != NULL) {
-		struct trace *t = rb_entry(n, struct trace, rb_node);
-
-		rb_erase(&t->rb_node, &rb_sort_root);
-		free(t);
-	}
+	return nr;
 }
 
 static void show_entries_rb(void)
@@ -1147,15 +1133,12 @@ static void show_entries_rb(void)
 	struct trace *t;
 	int cpu;
 
-	n = rb_first(&rb_sort_root);
-	if (!n)
-		return;
+	while ((n = rb_first(&rb_sort_root)) != NULL) {
 
-	do {
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		pdi = get_dev_info(bit->device, 0);
+		pdi = get_dev_info(bit->device);
 		if (!pdi) {
 			fprintf(stderr, "Unknown device ID? (%d,%d)\n",
 				MAJOR(bit->device), MINOR(bit->device));
@@ -1168,6 +1151,20 @@ static void show_entries_rb(void)
 			break;
 		}
 
+		/*
+		 * back off displaying more info if we are out of sync
+		 * on SMP systems. to prevent stalling on lost events,
+		 * only allow an event to skip us once
+		 */
+		if (bit->sequence != (pdi->last_sequence + 1)) {
+			if (!t->skipped) {
+				t->skipped = 1;
+				break;
+			}
+		}
+
+		pdi->last_sequence = bit->sequence;
+
 		bit->time -= genesis_time;
 		if (bit->time < stopwatch_start)
 			continue;
@@ -1179,7 +1176,10 @@ static void show_entries_rb(void)
 		if (dump_trace(bit, &pdi->cpus[cpu], pdi))
 			break;
 
-	} while ((n = rb_next(n)) != NULL);
+		rb_erase(&t->rb_node, &rb_sort_root);
+		free(bit);
+		free(t);
+	}
 }
 
 static int read_data(int fd, void *buffer, int bytes, int block)
@@ -1213,10 +1213,38 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 	return 0;
 }
 
+/*
+ * Find the traces in 'tb' and add them to the list for sorting and
+ * displaying
+ */
+static int find_entries(void *tb, unsigned long size)
+{
+	struct blk_io_trace *bit;
+	struct trace *t;
+	void *start = tb;
+
+	while (tb - start <= size - sizeof(*bit)) {
+		bit = find_trace(tb, size - (tb - start));
+		if (!bit)
+			break;
+
+		t = malloc(sizeof(*t));
+		memset(t, 0, sizeof(*t));
+		t->bit = bit;
+
+		t->next = trace_list;
+		trace_list = t;
+
+		tb += sizeof(*bit) + bit->pdu_len;
+	}
+
+	return 0;
+}
+
 static int do_file(void)
 {
 	struct per_dev_info *pdi;
-	int i, j, nfiles = 0;
+	int i, j, nfiles = 0, nelems;
 
 	for (pdi = devices, i = 0; i < ndevices; i++, pdi++) {
 		for (j = 0;; j++, nfiles++) {
@@ -1256,14 +1284,20 @@ static int do_file(void)
 				continue;
 			}
 
-			if (sort_entries(tb, st.st_size, ~0U, pdi, pci) == -1) {
+			if (find_entries(tb, st.st_size)) {
+				close(pci->fd);
+				free(tb);
+			}
+
+			nelems = sort_entries();
+			if (nelems == -1) {
 				close(pci->fd);
 				free(tb);
 				continue;
 			}
 
 			printf("Completed %s (CPU%d %d, entries)\n",
-				pci->fname, j, pci->nelems);
+				pci->fname, j, nelems);
 			close(pci->fd);
 		}
 	}
@@ -1277,56 +1311,42 @@ static int do_file(void)
 	return 0;
 }
 
-static void resize_buffer(void **buffer, long *size, long offset)
+static int read_sort_events(int fd)
 {
-	long old_size = *size;
+	int events = 0;
 
-	if (*size == 0)
-		*size = 64 * sizeof(struct blk_io_trace);
-
-	*size *= 2;
-	*buffer = realloc(*buffer, *size);
-
-	if (old_size)
-		memset(*buffer + offset, 0, *size - old_size);
-}
-
-static int read_sort_events(int fd, void **buffer, long *max_offset)
-{
-	long offset;
-	int events;
-
-	events = offset = 0;
 	do {
-		struct blk_io_trace *t;
+		struct blk_io_trace *bit;
+		struct trace *t;
 		int pdu_len;
 		__u32 magic;
 
-		if (*max_offset - offset < sizeof(*t))
-			resize_buffer(buffer, max_offset, offset);
+		bit = malloc(sizeof(*bit));
 
-		if (read_data(fd, *buffer + offset, sizeof(*t), !events))
+		if (read_data(fd, bit, sizeof(*bit), !events))
 			break;
 
-		t = *buffer + offset;
-		offset += sizeof(*t);
-
-		magic = be32_to_cpu(t->magic);
+		magic = be32_to_cpu(bit->magic);
 		if ((magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
 			fprintf(stderr, "Bad magic %x\n", magic);
 			break;
 		}
 
-		pdu_len = be16_to_cpu(t->pdu_len);
+		pdu_len = be16_to_cpu(bit->pdu_len);
 		if (pdu_len) {
-			if (*max_offset - offset <= pdu_len)
-				resize_buffer(buffer, max_offset, offset);
+			void *ptr = realloc(bit, sizeof(*bit) + pdu_len);
 
-			if (read_data(fd, *buffer + offset, pdu_len, 1))
+			if (read_data(fd, ptr + sizeof(*bit), pdu_len, 1))
 				break;
 
-			offset += pdu_len;
+			bit = ptr;
 		}
+
+		t = malloc(sizeof(*t));
+		memset(t, 0, sizeof(*t));
+		t->bit = bit;
+		t->next = trace_list;
+		trace_list = t;
 
 		events++;
 	} while (!is_done() && events < rb_batch);
@@ -1337,27 +1357,20 @@ static int read_sort_events(int fd, void **buffer, long *max_offset)
 static int do_stdin(void)
 {
 	int fd;
-	void *ptr = NULL;
-	long max_offset;
 
 	fd = dup(STDIN_FILENO);
-	max_offset = 0;
 	do {
 		int events;
 
-		events = read_sort_events(fd, &ptr, &max_offset);
+		events = read_sort_events(fd);
 		if (!events)
 			break;
 	
-		if (sort_entries(ptr, ~0UL, events, NULL, NULL) == -1)
+		if (sort_entries() == -1)
 			break;
 
 		show_entries_rb();
-		free_entries_rb();
 	} while (1);
-
-	if (ptr)
-		free(ptr);
 
 	close(fd);
 	return 0;
