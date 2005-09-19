@@ -1101,8 +1101,6 @@ static int sort_entries(void)
 
 		memset(&t->rb_node, 0, sizeof(t->rb_node));
 
-		trace_to_cpu(bit);
-
 		if (verify_trace(bit))
 			break;
 		if (trace_rb_insert(t))
@@ -1118,7 +1116,7 @@ static int sort_entries(void)
 	return nr;
 }
 
-static void show_entries_rb(int kill_entries)
+static void show_entries_rb(int piped)
 {
 	struct per_dev_info *pdi;
 	struct blk_io_trace *bit;
@@ -1149,7 +1147,7 @@ static void show_entries_rb(int kill_entries)
 		 * on SMP systems. to prevent stalling on lost events,
 		 * only allow an event to skip us once
 		 */
-		if (bit->sequence != (pdi->last_sequence + 1)) {
+		if (piped && bit->sequence != (pdi->last_sequence + 1)) {
 			if (!t->skipped) {
 				t->skipped = 1;
 				break;
@@ -1171,7 +1169,7 @@ static void show_entries_rb(int kill_entries)
 
 		rb_erase(&t->rb_node, &rb_sort_root);
 
-		if (kill_entries) {
+		if (piped) {
 			free(bit);
 			free(t);
 		}
@@ -1228,6 +1226,7 @@ static int find_entries(void *tb, unsigned long size)
 		memset(t, 0, sizeof(*t));
 		t->bit = bit;
 
+		trace_to_cpu(bit);
 		t->next = trace_list;
 		trace_list = t;
 
@@ -1342,6 +1341,8 @@ static int read_sort_events(int fd)
 		t = malloc(sizeof(*t));
 		memset(t, 0, sizeof(*t));
 		t->bit = bit;
+
+		trace_to_cpu(bit);
 		t->next = trace_list;
 		trace_list = t;
 
