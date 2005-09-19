@@ -363,9 +363,6 @@ static void log_track_frontmerge(struct blk_io_trace *t)
 	if (!track_ios)
 		return;
 
-	/*
-	 * this can happen if we lose events, so don't print an error
-	 */
 	iot = __find_track(t->device, t->sector + (t->bytes >> 9));
 	if (!iot) {
 		fprintf(stderr, "failed to find mergeable event\n");
@@ -428,9 +425,6 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return -1;
 
-	/*
-	 * this can happen if we lose events, so don't print an error
-	 */
 	iot = __find_track(t->device, t->sector);
 	if (!iot) {
 		fprintf(stderr, "failed to find issue event\n");
