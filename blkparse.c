@@ -72,6 +72,7 @@ struct per_dev_info {
 	unsigned long long last_reported_time;
 	struct io_stats io_stats;
 	unsigned long last_sequence;
+	unsigned long skips;
 
 	int ncpus;
 	struct per_cpu_info *cpus;
@@ -1063,8 +1064,9 @@ static void show_device_and_cpu_stats(void)
 			dump_io_stats(&total, line);
 		}
 
-		fprintf(ofp, "Events (%s): %'Lu\n",
-			get_dev_name(pdi, line, sizeof(line)), pdi->events);
+		fprintf(ofp, "\nEvents (%s): %'Lu entries, %'lu skips\n",
+			get_dev_name(pdi, line, sizeof(line)), pdi->events,
+			pdi->skips);
 	}
 }
 
@@ -1145,12 +1147,15 @@ static void show_entries_rb(int piped)
 		/*
 		 * back off displaying more info if we are out of sync
 		 * on SMP systems. to prevent stalling on lost events,
-		 * only allow an event to skip us once
+		 * only allow an event to us a few times
 		 */
 		if (piped && bit->sequence != (pdi->last_sequence + 1)) {
-			if (!t->skipped) {
-				t->skipped = 1;
+			if (t->skipped < 5) {
+				t->skipped++;
 				break;
+			} else {
+				fprintf(stderr, "skipping from %lu to %u\n", pdi->last_sequence, bit->sequence);
+				pdi->skips++;
 			}
 		}
 
