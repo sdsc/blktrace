@@ -1149,8 +1149,8 @@ static void show_entries_rb(int piped)
 		 * on SMP systems. to prevent stalling on lost events,
 		 * only allow an event to us a few times
 		 */
-		if (piped && bit->sequence != (pdi->last_sequence + 1)) {
-			if (t->skipped < 5) {
+		if (bit->sequence != (pdi->last_sequence + 1)) {
+			if (piped && t->skipped < 5) {
 				t->skipped++;
 				break;
 			} else {
