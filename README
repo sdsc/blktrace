@@ -24,8 +24,17 @@ The snapshots include the full git object database as well.
 Usage
 -----
 
-% blktrace -d <dev> [-o <output> -a <trace> [-a <trace>] -k]
-	-a <trace> is one of: (use multiple -a options to get more)
+$ blktrace -d <dev> [ -r relay_path ] [ -o output ] [ -k ] [ -w time ]
+		    [ -a action ] [ -A action mask ]
+
+	-d Use specified device. May also be given last after options.
+	-r Path to mounted relayfs, defaults to /relay.
+	-o File(s) to send output to.
+	-k Kill running trace.
+	-w Stop after defined time, in seconds.
+	-a Only trace specific actions (use more -a options to add actions).
+	   Available actions are:
+
 		READ
 		WRITE
 		BARRIER
@@ -36,20 +45,56 @@ Usage
 		COMPLETE
 		FS
 		PC
-	-k Kill a currently running trace.
-	--- run task to generate load to be traced ---
-	<SIGINT to kill>
-	--- Generates:
-		<output>_out.[0..ncpus] : Contains binary trace data
 
-	% blkparse -i <input> [-o <output> -s -t]
-	--- Generates:
-		<output>.log : Contains formatted trace data, if
-		output logging is added with the -o option. Otherwise, the
-		output is sent to stdout. If the -s option is used, in
-		addition to per-CPU stats, per process stats are shown as well.
-		The -t option will provide individual io statistics, displaying
-		things like completion time, queueing time, etc.
+	-A Give the trace mask directly as a number.
+
+$ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
+		      [ -w start:stop ] [ -f output format ] [ -F format spec ]
+
+	-i Input file containing trace data, or '-' for stdin.
+	-o Output file. If not given, output is stdout.
+	-b stdin read batching.
+	-s Show per-program io statistics.
+	-t Track individual ios. Will tell you the time a request took to
+	   get queued, to get dispatched, and to get completed.
+	-q Quiet. Don't display any stats at the end of the trace.
+	-w Only parse data between the given time interval in seconds. If
+	   'start' isn't given, blkparse defaults the start time to 0.
+	-f Output format. Customize the output format. The format field
+	   identifiers are:
+
+		%a	- Action
+		%c	- CPU ID
+		%C	- Task command name
+		%d	- Direction (r/w)
+		%D	- Device number
+		%e	- Error number
+		%M	- Major
+		%m	- Minor
+		%n	- Nblocks
+		%p	- PID
+		%P	- PDU
+		%s	- Sequence number
+		%S	- Sector number
+		%t	- Time (wallclock - nanoseconds)
+		%T	- Time (wallclock - seconds)
+		%u	- Time (processing - microseconds)
+		%U	- Unplug depth(
+
+	-F Format specification. The individual specifiers are:
+
+		B	- Back merge
+		C	- Complete
+		D	- Issue
+		F	- Front merge
+		G	- Get request
+		M	- Both front and back merge
+		P	- Plug
+		Q	- Queue
+		R	- Requeue
+		S	- Sleep requests
+		T	- Unplug timer
+		U	- Unplug IO
 
 
 If you want to do live tracing, you can pipe the data between blktrace

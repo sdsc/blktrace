@@ -607,7 +607,7 @@ int main(int argc, char *argv[])
 		case 'a':
 			i = find_mask_map(optarg);
 			if (i < 0) {
-				fprintf(stderr,"Invalid action mask %s\n", 
+				fprintf(stderr,"Invalid action mask %s\n",
 					optarg);
 				return 1;
 			}
@@ -617,7 +617,7 @@ int main(int argc, char *argv[])
 		case 'A':
 			if ((sscanf(optarg, "%x", &i) != 1) || !VALID_SET(i)) {
 				fprintf(stderr,
-					"Invalid set action mask %s/0x%x\n", 
+					"Invalid set action mask %s/0x%x\n",
 					optarg, i);
 				return 1;
 			}

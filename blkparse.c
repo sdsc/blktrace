@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <locale.h>
 #include <limits.h>
+#include <ctype.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -44,6 +45,8 @@
 #define MINOR(dev)	((unsigned int) ((dev) & MINORMASK))
 
 #define min(a, b)	((a) < (b) ? (a) : (b))
+
+#define HEADER		"%D %2c %8s %5T.%9t %5p %2a %3d "
 
 struct io_stats {
 	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
@@ -96,7 +99,7 @@ struct per_process_info {
 static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
 
-#define S_OPTS	"i:o:b:stqw:"
+#define S_OPTS	"i:o:b:stqw:f:F:"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -139,6 +142,18 @@ static struct option l_opts[] = {
 		.has_arg = 1,
 		.flag = NULL,
 		.val = 'w'
+	},
+	{
+		.name = "format",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'f'
+	},
+	{
+		.name = "format-spec",
+		.has_arg = 1,
+		.flag = NULL,
+		.val = 'F'
 	},
 	{
 		.name = NULL,
@@ -303,8 +318,8 @@ static inline int track_rb_insert(struct io_track *iot)
 			p = &(*p)->rb_right;
 		else {
 			fprintf(stderr,
-				"sector alias (%llu) on device %d,%d!\n",
-				iot->sector,
+				"sector alias (%Lu) on device %d,%d!\n",
+				(unsigned long long) iot->sector,
 				MAJOR(iot->device), MINOR(iot->device));
 			return 1;
 		}
@@ -705,99 +720,310 @@ static inline void account_unplug(struct blk_io_trace *t,
 	}
 }
 
-static void output(struct per_cpu_info *pci, char *s)
+#define VALID_SPECS	"BCDFGMPQRSTU"
+static char *override_format[256];
+static inline int valid_spec(int spec)
 {
-	fprintf(ofp, "%s", s);
+	return strchr(VALID_SPECS, spec) != NULL;
 }
 
-static char hstring[256];
-static char tstring[256];
-
-static inline char *setup_header(struct per_cpu_info *pci,
-				 struct blk_io_trace *t, char *act)
+static void set_all_format_specs(char *optarg)
 {
-	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
-	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
-	int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
-	char rwbs[4];
-	int i = 0;
+	char *p;
 
-	if (w)
-		rwbs[i++] = 'W';
-	else
-		rwbs[i++] = 'R';
-	if (b)
-		rwbs[i++] = 'B';
-	if (s)
-		rwbs[i++] = 'S';
+	for (p = VALID_SPECS; *p; p++)
+		if (override_format[(int)(*p)] == NULL)
+			override_format[(int)(*p)] = strdup(optarg);
+}
 
-	rwbs[i] = '\0';
+static int add_format_spec(char *optarg)
+{
+	int spec = optarg[0];
 
-	sprintf(hstring, "%3d,%-3d %2d %8ld %5Lu.%09Lu %5u %2s %3s",
-		MAJOR(t->device), MINOR(t->device), pci->cpu,
-		(unsigned long)t->sequence, SECONDS(t->time),
-		NANO_SECONDS(t->time), t->pid, act, rwbs);
+	if (!valid_spec(spec)) {
+		fprintf(stderr,"Bad format specifier %c\n", spec);
+		return 1;
+	}
+	if (optarg[1] != ',') {
+		fprintf(stderr,"Bad format specifier - need ',' %s\n", optarg);
+		return 1;
+	}
+	optarg += 2;
+	if (*optarg == '\0') {
+		fprintf(stderr,"Bad format specifier - need fmt %s\n", optarg);
+		return 1;
+	}
 
-	return hstring;
+	/*
+	 * Set both merges (front and back)
+	 */
+	if (spec == 'M') {
+		override_format['B'] = strdup(optarg);
+		override_format['M'] = strdup(optarg);
+	} else
+		override_format[spec] = strdup(optarg);
+
+	return 0;
+}
+
+static void print_field(char *act, struct per_cpu_info *pci,
+			struct blk_io_trace *t, unsigned long long elapsed,
+			int pdu_len, unsigned char *pdu_buf, char field,
+			int minus, int has_w, int width)
+{
+	char format[64];
+
+	if (has_w) {
+		if (minus)
+			sprintf(format, "%%-%d", width);
+		else
+			sprintf(format, "%%%d", width);
+	} else
+		sprintf(format, "%%");
+
+	switch (field) {
+	case 'a':
+		fprintf(ofp, strcat(format, "s"), act);
+		break;
+	case 'c':
+		fprintf(ofp, strcat(format, "d"), pci->cpu);
+		break;
+	case 'C':
+		fprintf(ofp, strcat(format, "s"), t->comm);
+		break;
+	case 'd': {
+		char rwbs[4];
+		int i = 0;
+		int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
+		int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
+		int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
+		if (w)
+			rwbs[i++] = 'W';
+		else
+			rwbs[i++] = 'R';
+		if (b)
+			rwbs[i++] = 'B';
+		if (s)
+			rwbs[i++] = 'S';
+		rwbs[i] = '\0';
+		fprintf(ofp, strcat(format, "s"), rwbs);
+		break;
+	}
+	case 'D':	/* format width ignored */
+		fprintf(ofp,"%3d,%-3d", MAJOR(t->device), MINOR(t->device));
+		break;
+	case 'e':
+		fprintf(ofp, strcat(format, "d"), t->error);
+		break;
+	case 'M':
+		fprintf(ofp, strcat(format, "d"), MAJOR(t->device));
+		break;
+	case 'm':
+		fprintf(ofp, strcat(format, "d"), MINOR(t->device));
+		break;
+	case 'n':
+		fprintf(ofp, strcat(format, "u"), t->bytes >> 9);
+		break;
+	case 'p':
+		fprintf(ofp, strcat(format, "u"), t->pid);
+		break;
+	case 'P':	/* format width ignored */
+		if ((pdu_len > 0) && (pdu_buf != NULL)) {
+			int i;
+			unsigned char *p = pdu_buf;
+			for (i = 0; i < pdu_len; i++)
+				fprintf(ofp, "%02x ", *p++);
+		}
+		break;
+	case 's':
+		fprintf(ofp, strcat(format, "ld"), t->sequence);
+		break;
+	case 'S':
+		fprintf(ofp, strcat(format, "lu"), t->sector);
+		break;
+	case 't':
+		sprintf(format, "%%0%dlu", has_w ? width : 9);
+		fprintf(ofp, format, NANO_SECONDS(t->time));
+		break;
+	case 'T':
+		fprintf(ofp, strcat(format, "d"), SECONDS(t->time));
+		break;
+	case 'u':
+		if (elapsed == -1ULL) {
+			fprintf(stderr, "Expecting elapsed value\n");
+			exit(1);
+		}
+		fprintf(ofp, strcat(format, "llu"), elapsed / 1000);
+		break;
+	case 'U': {
+		__u64 *depth = (__u64 *) ((char *) t + sizeof(*t));
+		fprintf(ofp, strcat(format, "u"),
+					(unsigned int) be64_to_cpu(*depth));
+		break;
+	}
+	default:
+		fprintf(ofp,strcat(format, "c"), field);
+		break;
+	}
+}
+
+static char *parse_field(char *act, struct per_cpu_info *pci, 
+			 struct blk_io_trace *t, unsigned long long elapsed, 
+			 int pdu_len, unsigned char *pdu_buf, 
+			 char *master_format)
+{
+	int minus = 0;
+	int has_w = 0;
+	int width = 0;
+	char *p = master_format;
+
+	if (*p == '-') {
+		minus = 1;
+		p++;
+	}
+	if (isdigit(*p)) {
+		has_w = 1;
+		do {
+			width = (width * 10) + (*p++ - '0');
+		} while ((*p) && (isdigit(*p)));
+	}
+	if (*p) {
+		print_field(act, pci, t, elapsed, pdu_len, pdu_buf, *p++,
+			    minus, has_w, width);
+	}
+	return p;
+}
+
+static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
+			unsigned long long elapsed)
+{
+	char *fmt;
+	char scratch_format[1024];
+
+	if (override_format[fmt_spec] != NULL)
+		return override_format[fmt_spec];
+
+	switch (fmt_spec) {
+	case 'C': 	/* Complete */
+		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
+			strcpy(scratch_format, HEADER);
+			strcat(scratch_format, "%P");
+		} else {
+			strcpy(scratch_format, HEADER "%S + %n ");
+			if (elapsed != -1ULL)
+				strcat(scratch_format, "(%8u) ");
+		}
+		strcat(scratch_format, "[%e]\n");
+		fmt = scratch_format;
+		break;
+
+	case 'D': 	/* Issue */
+		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
+			strcpy(scratch_format, HEADER);
+			strcat(scratch_format, "%P");
+		} else {
+			strcpy(scratch_format, HEADER "%S + %n ");
+			if (elapsed != -1ULL)
+				strcat(scratch_format, "(%8u) ");
+		}
+		strcat(scratch_format,"[%C]\n");
+		fmt = scratch_format;
+		break;
+
+	case 'Q': 	/* Queue */
+		strcpy(scratch_format, HEADER "%S + %n ");
+		if (elapsed != -1ULL)
+			strcat(scratch_format, "(%8u) ");
+		strcat(scratch_format,"[%C]\n");
+		fmt = scratch_format;
+		break;
+
+	case 'B':	/* Back merge */
+	case 'F':	/* Front merge */
+	case 'M':	/* Front or back merge */
+		fmt = HEADER "%S + %n [%C]\n";
+		break;
+
+	case 'P':	/* Plug */
+		fmt = HEADER "[%C]\n";
+		break;
+
+	case 'G':	/* Get request */
+	case 'S':	/* Sleep request */
+		fmt = HEADER "%S + %n [%C]\n";
+		break;
+
+	case 'U':	/* Unplug IO */
+	case 'T':	/* Unplug timer */
+		fmt = HEADER "[%C] %U\n";
+		break;
+
+	default:
+		fprintf(stderr,"FATAL: Invalid format spec %c\n", fmt_spec);
+		exit(1);
+		/*NOTREACHED*/
+	}
+
+	return fmt;
+}
+
+static void process_fmt(char *act, struct per_cpu_info *pci,
+			   struct blk_io_trace *t, unsigned long long elapsed,
+			   int pdu_len, unsigned char *pdu_buf)
+{
+	char *p = fmt_select(act[0], t, elapsed);
+
+	while (*p) {
+		switch (*p) {
+		case '%': 	/* Field specifier */
+			p++;
+			if (*p == '%')
+				fprintf(ofp, "%c", *p++);
+			else if (!*p)
+				fprintf(ofp, "%c", '%');
+			else
+				p = parse_field(act, pci, t, elapsed,
+						pdu_len, pdu_buf, p);
+			break;
+		case '\\': {	/* escape */
+			switch (p[1]) {
+			case 'b': fprintf(ofp, "\b"); break;
+			case 'n': fprintf(ofp, "\n"); break;
+			case 'r': fprintf(ofp, "\r"); break;
+			case 't': fprintf(ofp, "\t"); break;
+			default:
+				fprintf(stderr,	
+					"Invalid escape char in format %c\n",
+					p[1]);
+				exit(1);
+				/*NOTREACHED*/
+			}
+			p += 2;
+			break;
+		}
+		default:
+			fprintf(ofp, "%c", *p++);
+			break;
+		}
+	}
 }
 
 static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 			 char *act)
 {
-	unsigned long long elapsed = log_track_complete(t);
-
-	if (elapsed != -1ULL) {
-		unsigned long usec = elapsed / 1000;
-
-		sprintf(tstring,"%s %Lu + %u (%8lu) [%d]\n",
-			setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9,
-			usec, t->error);
-	} else {
-		sprintf(tstring,"%s %Lu + %u [%d]\n", setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9, t->error);
-	}
-	
-	output(pci, tstring);
+	process_fmt(act, pci, t, log_track_complete(t), 0, NULL);
 }
 
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char *act)
 {
-	unsigned long long elapsed = log_track_queue(t);
-
-	if (elapsed != -1ULL) {
-		unsigned long usec = elapsed / 1000;
-
-		sprintf(tstring,"%s %Lu + %u (%8lu) [%s]\n",
-			setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9,
-			usec, t->comm);
-	} else {
-		sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9, t->comm);
-	}
-	output(pci, tstring);
+	process_fmt(act, pci, t, log_track_queue(t), 0, NULL);
 }
 
 static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char *act)
 {
-	unsigned long long elapsed = log_track_issue(t);
-
-	if (elapsed != -1ULL) {
-		double usec = (double) elapsed / 1000;
-
-		sprintf(tstring,"%s %Lu + %u (%8.2f) [%s]\n",
-			setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9,
-			usec, t->comm);
-	} else {
-		sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-			(unsigned long long)t->sector, t->bytes >> 9, t->comm);
-	}
-
-	output(pci, tstring);
+	process_fmt(act, pci, t, log_track_issue(t), 0, NULL);
 }
 
 static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
@@ -806,62 +1032,32 @@ static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
 	if (act[0] == 'F')
 		log_track_frontmerge(t);
 
-	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
-	output(pci, tstring);
+	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
 
 static void log_action(struct per_cpu_info *pci, struct blk_io_trace *t,
 			char *act)
 {
-	sprintf(tstring,"%s [%s]\n", setup_header(pci, t, act), t->comm);
-	output(pci, tstring);
+	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
 
 static void log_generic(struct per_cpu_info *pci, struct blk_io_trace *t,
 			char *act)
 {
-	sprintf(tstring,"%s %Lu + %u [%s]\n", setup_header(pci, t, act),
-		(unsigned long long)t->sector, t->bytes >> 9, t->comm);
-	output(pci, tstring);
+	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
 
-static int log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
+static void log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char *act)
 {
-	__u64 *depth;
-	int len;
-
-	len = sprintf(tstring,"%s [%s] ", setup_header(pci, t, act), t->comm);
-	depth = (__u64 *) ((char *) t + sizeof(*t));
-	sprintf(tstring + len, "%u\n", (unsigned int) be64_to_cpu(*depth));
-	output(pci, tstring);
-
-	return 0;
+	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
 
-static int log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
+static void log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
 {
-	unsigned char *buf;
-	int i;
+	unsigned char *buf = (unsigned char *) t + sizeof(*t);
 
-	sprintf(tstring,"%s ", setup_header(pci, t, act));
-	output(pci, tstring);
-
-	buf = (unsigned char *) t + sizeof(*t);
-	for (i = 0; i < t->pdu_len; i++) {
-		sprintf(tstring,"%02x ", buf[i]);
-		output(pci, tstring);
-	}
-
-	if (act[0] == 'C') {
-		sprintf(tstring,"[%d]\n", t->error);
-		output(pci, tstring);
-	} else {
-		sprintf(tstring,"[%s]\n", t->comm);
-		output(pci, tstring);
-	}
-	return 0;
+	process_fmt(act, pci, t, -1ULL, t->pdu_len, buf);
 }
 
 static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
@@ -882,7 +1078,7 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_generic(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
-			ret = log_pc(pci, t, "D");
+			log_pc(pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
 			log_pc(pci, t, "C");
@@ -893,7 +1089,7 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 			break;
 	}
 	
-	return ret;
+	return 0;
 }
 
 static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
@@ -1462,6 +1658,13 @@ int main(int argc, char *argv[])
 			break;
 		case 'w':
 			if (find_stopwatch_interval(optarg) != 0)
+				return 1;
+			break;
+		case 'f':
+			set_all_format_specs(optarg);
+			break;
+		case 'F':
+			if (add_format_spec(optarg) != 0)
 				return 1;
 			break;
 		default:
