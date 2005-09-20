@@ -103,64 +103,58 @@ static struct per_process_info *ppi_list;
 static struct option l_opts[] = {
 	{
 		.name = "input",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'i'
 	},
 	{
 		.name = "output",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'o'
 	},
 	{
 		.name = "batch",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'b'
 	},
 	{
 		.name = "per program stats",
-		.has_arg = 0,
+		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 's'
 	},
 	{
 		.name = "track ios",
-		.has_arg = 0,
+		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 't'
 	},
 	{
 		.name = "quiet",
-		.has_arg = 0,
+		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 'q'
 	},
 	{
 		.name = "stopwatch",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'w'
 	},
 	{
 		.name = "format",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'f'
 	},
 	{
 		.name = "format-spec",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'F'
 	},
-	{
-		.name = NULL,
-		.has_arg = 0,
-		.flag = NULL,
-		.val = 0
-	}
 };
 
 /*
@@ -1453,7 +1447,7 @@ static int do_file(void)
 			pci->cpu = j;
 
 			snprintf(pci->fname, sizeof(pci->fname)-1,
-				 "%s_out.%d", pdi->name, j);
+				 "%s.%d", pdi->name, j);
 			if (stat(pci->fname, &st) < 0)
 				break;
 			if (!st.st_size)

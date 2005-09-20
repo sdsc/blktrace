@@ -73,52 +73,46 @@ struct mask_map mask_maps[] = {
 static struct option l_opts[] = {
 	{
 		.name = "dev",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'd'
 	},
 	{
 		.name = "act-mask",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'a'
 	},
 	{
 		.name = "set-mask",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'A'
 	},
 	{
 		.name = "relay",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'r'
 	},
 	{
 		.name = "output",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'o'
 	},
 	{
 		.name = "kill",
-		.has_arg = 0,
+		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 'k'
 	},
 	{
 		.name = "stopwatch",
-		.has_arg = 1,
+		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'w'
 	},
-	{
-		.name = NULL,
-		.has_arg = 0,
-		.flag = NULL,
-		.val = 0
-	}
 };
 
 struct thread_information {
@@ -413,8 +407,7 @@ static int start_threads(struct device_information *dip)
 			tip->fd_lock = &stdout_mutex;
 		} else {
 			if (output_name)
-				sprintf(op, "%s_%s_out.%d", output_name,
-					dip->buts_name, tip->cpu);
+				sprintf(op, "%s.%d", output_name, tip->cpu);
 			else
 				sprintf(op, "%s_out.%d",
 					dip->buts_name, tip->cpu);
@@ -569,7 +562,7 @@ static void show_stats(void)
 	struct device_information *dip;
 	struct thread_information *tip;
 	unsigned long long events_processed;
-  
+
 	if (output_name && !strcmp(output_name, "-"))
 		return;
 
