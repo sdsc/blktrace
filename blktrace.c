@@ -223,7 +223,7 @@ static int get_data_read(struct thread_information *tip, void *buf, int len)
 	while (!is_done() && bytes_left > 0) {
 		ret = read(tip->fd, p, bytes_left);
 		if (ret == len)
-			break;
+			return 0;
 
 		if (ret < 0) {
 			perror(tip->fn);
@@ -242,7 +242,7 @@ static int get_data_read(struct thread_information *tip, void *buf, int len)
 		usleep(10000);
 	}
 
-	return 0;
+	return -1;
 }
 
 static int get_data_mmap(struct thread_information *tip, void *buf, int len,
@@ -256,7 +256,7 @@ static int get_data_mmap(struct thread_information *tip, void *buf, int len,
 		tip->buf_offset = tip->buf_subbuf * BUF_SIZE;
 	}
 
-	while (!is_done()) {
+	while (1) {
 		struct blk_io_trace *t = buf;
 
 		memcpy(buf, tip->buf + tip->buf_offset, len);
@@ -268,6 +268,9 @@ static int get_data_mmap(struct thread_information *tip, void *buf, int len,
 			tip->sequence = t->sequence;
 			break;
 		}
+	
+		if (is_done())
+			return -1;
 
 		usleep(10000);
 	}
