@@ -34,6 +34,7 @@
 #include <sched.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <sys/mman.h>
 
 #include "blktrace.h"
 
@@ -126,6 +127,10 @@ struct thread_information {
 
 	int fd;
 	char fn[MAXPATHLEN + 64];
+	void *buf;
+	unsigned long buf_offset;
+	unsigned int buf_subbuf;
+	unsigned int sequence;
 
 	pthread_mutex_t *fd_lock;
 	int ofd;
@@ -152,6 +157,7 @@ static char *relay_path;
 static char *output_name;
 static int act_mask = ~0U;
 static int kill_running_trace;
+static int use_mmap;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -209,32 +215,87 @@ static void stop_all_traces(void)
 		stop_trace(dip);
 }
 
-static void *extract_data(struct thread_information *tip, char *ofn, int nb)
+static int get_data_read(struct thread_information *tip, void *buf, int len)
 {
-	int ret, bytes_left;
-	unsigned char *buf, *p;
+	char *p = buf;
+	int ret, bytes_left = len;
 
-	buf = malloc(nb);
-	p = buf;
-	bytes_left = nb;
-	while (bytes_left > 0) {
+	while (!is_done() && bytes_left > 0) {
 		ret = read(tip->fd, p, bytes_left);
-		if (!ret)
-			usleep(1000);
-		else if (ret < 0) {
+		if (ret == len)
+			break;
+
+		if (ret < 0) {
 			perror(tip->fn);
-			fprintf(stderr, "Thread %d extract_data %s failed\n",
+			fprintf(stderr,"Thread %d failed read of %s\n",
 				tip->cpu, tip->fn);
-			free(buf);
 			exit_trace(1);
-			return NULL;
+		} else if (ret > 0) {
+			fprintf(stderr,"Thread %d misread %s %d,%d\n",
+				tip->cpu, tip->fn, ret, len);
+			exit_trace(1);
 		} else {
 			p += ret;
 			bytes_left -= ret;
 		}
+
+		usleep(10000);
 	}
 
-	return buf;
+	return 0;
+}
+
+static int get_data_mmap(struct thread_information *tip, void *buf, int len,
+			 int check_magic)
+{
+	if (len > (BUF_SIZE * (tip->buf_subbuf + 1)) - tip->buf_offset) {
+		tip->buf_subbuf++;
+		if (tip->buf_subbuf == BUF_NR)
+			tip->buf_subbuf = 0;
+
+		tip->buf_offset = tip->buf_subbuf * BUF_SIZE;
+	}
+
+	while (!is_done()) {
+		struct blk_io_trace *t = buf;
+
+		memcpy(buf, tip->buf + tip->buf_offset, len);
+
+		if (!check_magic)
+			break;
+
+		if (CHECK_MAGIC(t) && t->sequence >= tip->sequence) {
+			tip->sequence = t->sequence;
+			break;
+		}
+
+		usleep(10000);
+	}
+
+	tip->buf_offset += len;
+	return 0;
+}
+
+static int get_data(struct thread_information *tip, void *buf, int len,
+		    int check_magic)
+{
+	if (tip->buf)
+		return get_data_mmap(tip, buf, len, check_magic);
+	else
+		return get_data_read(tip, buf, len);
+}
+
+static void *extract_data(struct thread_information *tip, char *ofn, int nb)
+{
+	unsigned char *buf;
+
+	buf = malloc(nb);
+	if (!get_data(tip, buf, nb, 0))
+		return buf;
+
+	free(buf);
+	exit_trace(1);
+	return NULL;
 }
 
 static inline void tip_fd_unlock(struct thread_information *tip)
@@ -276,24 +337,19 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
+	if (use_mmap) {
+		tip->buf = mmap(NULL, BUF_SIZE * BUF_NR, PROT_READ,
+					MAP_PRIVATE | MAP_POPULATE, tip->fd, 0);
+		if (tip->buf == MAP_FAILED) {
+			perror("mmap");
+			exit_trace(1);
+		}
+	}
+
 	pdu_data = NULL;
 	while (!is_done()) {
-		ret = read(tip->fd, &t, sizeof(t));
-		if (ret != sizeof(t)) {
-			if (ret < 0) {
-				perror(tip->fn);
-				fprintf(stderr,"Thread %d failed read of %s\n",
-					tip->cpu, tip->fn);
-				exit_trace(1);
-			} else if (ret > 0) {
-				fprintf(stderr,"Thread %d misread %s %d,%d\n",
-					tip->cpu, tip->fn, ret, (int)sizeof(t));
-				exit_trace(1);
-			} else {
-				usleep(10000);
-				continue;
-			}
-		}
+		if (get_data(tip, &t, sizeof(t), 1))
+			break;
 
 		if (verify_trace(&t))
 			exit_trace(1);
@@ -322,6 +378,7 @@ static void *extract(void *arg)
 			ret = write(tip->ofd, pdu_data, pdu_len);
 			if (ret != pdu_len) {
 				perror("write pdu data");
+				tip_fd_unlock(tip);
 				exit_trace(1);
 			}
 
@@ -378,10 +435,14 @@ static int start_threads(struct device_information *dip)
 
 static void close_thread(struct thread_information *tip)
 {
+	if (tip->buf)
+		munmap(tip->buf, BUF_SIZE * BUF_NR);
+
 	if (tip->fd != -1)
 		close(tip->fd);
 	if (tip->ofd != -1)
 		close(tip->ofd);
+
 	tip->fd = tip->ofd = -1;
 }
 
