@@ -406,11 +406,13 @@ static int start_threads(struct device_information *dip)
 			tip->ofd = dup(STDOUT_FILENO);
 			tip->fd_lock = &stdout_mutex;
 		} else {
-			if (output_name)
-				sprintf(op, "%s.%d", output_name, tip->cpu);
-			else
-				sprintf(op, "%s_out.%d",
+			if (output_name) {
+				sprintf(op, "%s.blktrace.%d", output_name,
+					tip->cpu);
+			} else {
+				sprintf(op, "%s.blktrace.%d",
 					dip->buts_name, tip->cpu);
+			}
 			tip->ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
 		}
 

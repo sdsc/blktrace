@@ -1494,7 +1494,7 @@ static int do_file(void)
 			pci->cpu = j;
 
 			snprintf(pci->fname, sizeof(pci->fname)-1,
-				 "%s.%d", pdi->name, j);
+				 "%s.blktrace.%d", pdi->name, j);
 			if (stat(pci->fname, &st) < 0)
 				break;
 			if (!st.st_size)
