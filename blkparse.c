@@ -98,6 +98,7 @@ struct per_process_info {
 #define PPI_HASH_SHIFT	(8)
 static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
+static int ppi_list_entries;
 
 #define S_OPTS	"i:o:b:stqw:f:F:"
 static struct option l_opts[] = {
@@ -234,6 +235,7 @@ static inline void add_process_to_list(struct per_process_info *ppi)
 {
 	ppi->list_next = ppi_list;
 	ppi_list = ppi;
+	ppi_list_entries++;
 }
 
 static struct per_process_info *find_process_by_pid(__u32 pid)
@@ -1188,9 +1190,51 @@ static void dump_wait_stats(struct per_process_info *ppi)
 	fprintf(ofp, " Completion wait:  %'8lu\n", wcwait);
 }
 
+static int ppi_name_compare(const void *p1, const void *p2)
+{
+	struct per_process_info *ppi1 = *((struct per_process_info **) p1);
+	struct per_process_info *ppi2 = *((struct per_process_info **) p2);
+	int res;
+
+	res = strverscmp(ppi1->name, ppi2->name);
+	if (!res)
+		res = ppi1->pid < ppi2->pid;
+
+	return res;
+}
+
+static void sort_process_list(void)
+{
+	struct per_process_info **ppis;
+	struct per_process_info *ppi;
+	int i = 0;
+
+	ppis = malloc(ppi_list_entries * sizeof(struct per_process_info *));
+
+	ppi = ppi_list;
+	while (ppi) {
+		ppis[i] = ppi;
+		ppi = ppi->list_next;
+	}
+
+	qsort(ppis, ppi_list_entries, sizeof(*ppi), ppi_name_compare);
+
+	i = ppi_list_entries - 1;
+	ppi_list = NULL;
+	while (i >= 0) {
+		ppi = ppis[i];
+
+		ppi->list_next = ppi_list;
+		ppi_list = ppi;
+		i--;
+	}
+}
+
 static void show_process_stats(void)
 {
 	struct per_process_info *ppi;
+
+	sort_process_list();
 
 	ppi = ppi_list;
 	while (ppi) {
