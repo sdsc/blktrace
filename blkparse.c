@@ -1251,6 +1251,8 @@ static void sort_process_list(void)
 		ppi_list = ppi;
 		i--;
 	}
+
+	free(ppis);
 }
 
 static void show_process_stats(void)
