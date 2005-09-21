@@ -399,9 +399,9 @@ static void log_track_getrq(struct blk_io_trace *t)
 
 
 /*
- * return time between rq allocation and queue
+ * return time between rq allocation and insertion
  */
-static unsigned long long log_track_queue(struct blk_io_trace *t)
+static unsigned long long log_track_insert(struct blk_io_trace *t)
 {
 	unsigned long long elapsed;
 	struct io_track *iot;
@@ -626,8 +626,8 @@ static inline void account_m(struct blk_io_trace *t, struct per_cpu_info *pci,
 	}
 }
 
-static inline void __account_q(struct io_stats *ios, struct blk_io_trace *t,
-			       int rw)
+static inline void __account_queue(struct io_stats *ios, struct blk_io_trace *t,
+				   int rw)
 {
 	if (rw) {
 		ios->qwrites++;
@@ -638,15 +638,15 @@ static inline void __account_q(struct io_stats *ios, struct blk_io_trace *t,
 	}
 }
 
-static inline void account_q(struct blk_io_trace *t, struct per_cpu_info *pci,
-			     int rw)
+static inline void account_queue(struct blk_io_trace *t,
+				 struct per_cpu_info *pci, int rw)
 {
-	__account_q(&pci->io_stats, t, rw);
+	__account_queue(&pci->io_stats, t, rw);
 
 	if (per_process_stats) {
 		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
 
-		__account_q(ios, t, rw);
+		__account_queue(ios, t, rw);
 	}
 }
 
@@ -673,7 +673,8 @@ static inline void account_c(struct blk_io_trace *t, struct per_cpu_info *pci,
 	}
 }
 
-static inline void __account_i(struct io_stats *ios, int rw, unsigned int bytes)
+static inline void __account_issue(struct io_stats *ios, int rw,
+				   unsigned int bytes)
 {
 	if (rw) {
 		ios->iwrites++;
@@ -684,15 +685,15 @@ static inline void __account_i(struct io_stats *ios, int rw, unsigned int bytes)
 	}
 }
 
-static inline void account_i(struct blk_io_trace *t, struct per_cpu_info *pci,
-			     int rw)
+static inline void account_issue(struct blk_io_trace *t,
+				 struct per_cpu_info *pci, int rw)
 {
-	__account_i(&pci->io_stats, rw, t->bytes);
+	__account_issue(&pci->io_stats, rw, t->bytes);
 
 	if (per_process_stats) {
 		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
 
-		__account_i(ios, rw, t->bytes);
+		__account_issue(ios, rw, t->bytes);
 	}
 }
 
@@ -926,6 +927,19 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 		fmt = scratch_format;
 		break;
 
+	case 'I': 	/* Insert */
+		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
+			strcpy(scratch_format, HEADER);
+			strcat(scratch_format, "%P");
+		} else {
+			strcpy(scratch_format, HEADER "%S + %n ");
+			if (elapsed != -1ULL)
+				strcat(scratch_format, "(%8u) ");
+		}
+		strcat(scratch_format,"[%C]\n");
+		fmt = scratch_format;
+		break;
+
 	case 'Q': 	/* Queue */
 		strcpy(scratch_format, HEADER "%S + %n ");
 		if (elapsed != -1ULL)
@@ -1010,10 +1024,16 @@ static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
 	process_fmt(act, pci, t, log_track_complete(t), 0, NULL);
 }
 
+static void log_insert(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char *act)
+{
+	process_fmt(act, pci, t, log_track_insert(t), 0, NULL);
+}
+
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 		      char *act)
 {
-	process_fmt(act, pci, t, log_track_queue(t), 0, NULL);
+	process_fmt(act, pci, t, -1, 0, NULL);
 }
 
 static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
@@ -1095,8 +1115,11 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 
 	switch (act) {
 		case __BLK_TA_QUEUE:
-			account_q(t, pci, w);
+			account_queue(t, pci, w);
 			log_queue(pci, t, "Q");
+			break;
+		case __BLK_TA_INSERT:
+			log_insert(pci, t, "I");
 			break;
 		case __BLK_TA_BACKMERGE:
 			account_m(t, pci, w);
@@ -1118,7 +1141,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_queue(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
-			account_i(t, pci, w);
+			account_issue(t, pci, w);
 			log_issue(pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:

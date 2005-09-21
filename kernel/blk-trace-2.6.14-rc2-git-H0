@@ -40,7 +40,7 @@ diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
  void __elv_add_request(request_queue_t *q, struct request *rq, int where,
  		       int plug)
  {
-+	blk_add_trace_rq(q, rq, BLK_TA_QUEUE);
++	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
 +
  	/*
  	 * barriers implicitly indicate back insertion
@@ -181,18 +181,16 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -3030,6 +3054,10 @@ end_io:
+@@ -3029,6 +3053,8 @@ end_io:
+ 		 */
  		blk_partition_remap(bio);
  
++		blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
++
  		ret = q->make_request_fn(q, bio);
-+
-+		if (ret)
-+			blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
-+
  	} while (ret);
  }
- 
-@@ -3148,6 +3176,8 @@ static int __end_that_request_first(stru
+@@ -3148,6 +3174,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -233,8 +231,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
---- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-15 14:13:03.000000000 +0200
+--- /dev/null	2004-06-30 22:03:36.000000000 +0200
++++ linux-2.6/drivers/block/blktrace.c	2005-09-21 12:19:09.000000000 +0200
 @@ -0,0 +1,224 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
@@ -460,9 +458,9 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +
 +module_init(blk_trace_init);
 +
---- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-16 09:32:03.000000000 +0200
-@@ -0,0 +1,172 @@
+--- /dev/null	2004-06-30 22:03:36.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-09-21 16:22:55.000000000 +0200
+@@ -0,0 +1,173 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -506,7 +504,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	__BLK_TA_PLUG,			/* queue was plugged */
 +	__BLK_TA_UNPLUG_IO,		/* queue was unplugged by io */
 +	__BLK_TA_UNPLUG_TIMER,		/* queue was unplugged by timer */
-+	__BLK_TA_IOSCHED,		/* some io scheduler defined action */
++	__BLK_TA_INSERT,		/* insert request */
 +};
 +
 +/*
@@ -523,6 +521,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +#define BLK_TA_PLUG		(__BLK_TA_PLUG | BLK_TC_ACT(BLK_TC_QUEUE))
 +#define BLK_TA_UNPLUG_IO	(__BLK_TA_UNPLUG_IO | BLK_TC_ACT(BLK_TC_QUEUE))
 +#define BLK_TA_UNPLUG_TIMER	(__BLK_TA_UNPLUG_TIMER | BLK_TC_ACT(BLK_TC_QUEUE))
++#define BLK_TA_INSERT		(__BLK_TA_INSERT | BLK_TC_ACT(BLK_TC_QUEUE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
 +#define BLK_IO_TRACE_VERSION	0x05
