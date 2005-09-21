@@ -1238,7 +1238,10 @@ static void show_process_stats(void)
 
 	ppi = ppi_list;
 	while (ppi) {
-		dump_io_stats(&ppi->io_stats, ppi->name);
+		char name[64];
+
+		snprintf(name, sizeof(name)-1, "%s (%u)", ppi->name, ppi->pid);
+		dump_io_stats(&ppi->io_stats, name);
 		dump_wait_stats(ppi);
 		ppi = ppi->list_next;
 	}
