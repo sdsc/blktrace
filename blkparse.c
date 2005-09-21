@@ -1076,10 +1076,8 @@ static void log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
 	process_fmt(act, pci, t, -1ULL, t->pdu_len, buf);
 }
 
-static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
+static void dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
-	int ret = 0;
-
 	switch (t->action & 0xffff) {
 		case __BLK_TA_QUEUE:
 			log_generic(pci, t, "Q");
@@ -1101,11 +1099,8 @@ static int dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 			break;
 		default:
 			fprintf(stderr, "Bad pc action %x\n", t->action);
-			ret = 1;
 			break;
 	}
-	
-	return 0;
 }
 
 static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
@@ -1165,18 +1160,15 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 	}
 }
 
-static int dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
-			struct per_dev_info *pdi)
+static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
+		       struct per_dev_info *pdi)
 {
-	int ret = 0;
-
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
-		ret = dump_trace_pc(t, pci);
+		dump_trace_pc(t, pci);
 	else
 		dump_trace_fs(t, pci);
 
 	pdi->events++;
-	return ret;
 }
 
 static void dump_io_stats(struct io_stats *ios, char *msg)
@@ -1431,8 +1423,7 @@ static void show_entries_rb(int piped)
 
 		check_time(pdi, bit);
 
-		if (dump_trace(bit, &pdi->cpus[cpu], pdi))
-			break;
+		dump_trace(bit, &pdi->cpus[cpu], pdi);
 
 		rb_erase(&t->rb_node, &rb_sort_root);
 
