@@ -1198,7 +1198,7 @@ static int ppi_name_compare(const void *p1, const void *p2)
 
 	res = strverscmp(ppi1->name, ppi2->name);
 	if (!res)
-		res = ppi1->pid < ppi2->pid;
+		res = ppi1->pid > ppi2->pid;
 
 	return res;
 }
@@ -1213,11 +1213,11 @@ static void sort_process_list(void)
 
 	ppi = ppi_list;
 	while (ppi) {
-		ppis[i] = ppi;
+		ppis[i++] = ppi;
 		ppi = ppi->list_next;
 	}
 
-	qsort(ppis, ppi_list_entries, sizeof(*ppi), ppi_name_compare);
+	qsort(ppis, ppi_list_entries, sizeof(ppi), ppi_name_compare);
 
 	i = ppi_list_entries - 1;
 	ppi_list = NULL;
