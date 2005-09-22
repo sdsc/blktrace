@@ -828,8 +828,12 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		if ((pdu_len > 0) && (pdu_buf != NULL)) {
 			int i;
 			unsigned char *p = pdu_buf;
-			for (i = 0; i < pdu_len; i++)
-				fprintf(ofp, "%02x ", *p++);
+			for (i = 0; i < pdu_len; i++) {
+				if (i)
+					fprintf(ofp, " ");
+
+				fprintf(ofp, "%02x", *p++);
+			}
 		}
 		break;
 	case 's':
@@ -904,7 +908,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 	case 'C': 	/* Complete */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "%P");
+			strcat(scratch_format, "(%P) ");
 		} else {
 			strcpy(scratch_format, HEADER "%S + %n ");
 			if (elapsed != -1ULL)
@@ -917,7 +921,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 	case 'D': 	/* Issue */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "%P");
+			strcat(scratch_format, "%n (%P) ");
 		} else {
 			strcpy(scratch_format, HEADER "%S + %n ");
 			if (elapsed != -1ULL)
@@ -930,7 +934,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 	case 'I': 	/* Insert */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "%P");
+			strcat(scratch_format, "%n (%P) ");
 		} else {
 			strcpy(scratch_format, HEADER "%S + %n ");
 			if (elapsed != -1ULL)
