@@ -182,6 +182,12 @@ static struct rb_root rb_track_root;
 static struct trace *trace_list;
 
 /*
+ * allocation cache
+ */
+static struct blk_io_trace *bit_alloc_list;
+static struct trace *t_alloc_list;
+
+/*
  * for tracking individual ios
  */
 struct io_track {
@@ -918,50 +924,50 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 
 	switch (fmt_spec) {
 	case 'C': 	/* Complete */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
-			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "(%P) ");
-		} else {
-			strcpy(scratch_format, HEADER "%S + %n ");
-			if (elapsed != -1ULL)
-				strcat(scratch_format, "(%8u) ");
+		if (t->action & BLK_TC_ACT(BLK_TC_PC))
+			strcpy(scratch_format, HEADER "(%P) [%e]\n");
+		else {
+			if (elapsed != -1ULL) {
+				strcpy(scratch_format,
+					HEADER "%S +%n (%8u) [%e]\n");
+			} else
+				strcpy(scratch_format, HEADER "%S + %n [%e]\n");
 		}
-		strcat(scratch_format, "[%e]\n");
 		fmt = scratch_format;
 		break;
 
 	case 'D': 	/* Issue */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
-			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "%n (%P) ");
-		} else {
-			strcpy(scratch_format, HEADER "%S + %n ");
-			if (elapsed != -1ULL)
-				strcat(scratch_format, "(%8u) ");
+		if (t->action & BLK_TC_ACT(BLK_TC_PC))
+			strcpy(scratch_format, HEADER "%n (%P) [%C]\n");
+		else {
+			if (elapsed != -1ULL) {
+				strcpy(scratch_format,
+					HEADER "%S + %n (%8u) [%C]\n");
+			} else
+				strcpy(scratch_format, HEADER "%S + %n [%C]\n");
 		}
-		strcat(scratch_format,"[%C]\n");
 		fmt = scratch_format;
 		break;
 
 	case 'I': 	/* Insert */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
-			strcpy(scratch_format, HEADER);
-			strcat(scratch_format, "%n (%P) ");
-		} else {
-			strcpy(scratch_format, HEADER "%S + %n ");
-			if (elapsed != -1ULL)
-				strcat(scratch_format, "(%8u) ");
+		if (t->action & BLK_TC_ACT(BLK_TC_PC))
+			strcpy(scratch_format, HEADER "%n (%P) [%C]\n");
+		else {
+			if (elapsed != -1ULL) {
+				strcpy(scratch_format,
+					HEADER "%S + %n (%8u) [%C]\n");
+			} else
+				strcpy(scratch_format, HEADER "%S + %n [%C]\n");
 		}
-		strcat(scratch_format,"[%C]\n");
 		fmt = scratch_format;
 		break;
 
 	case 'Q': 	/* Queue */
 	case 'W':	/* Bounce */
-		strcpy(scratch_format, HEADER "%S + %n ");
-		if (elapsed != -1ULL)
-			strcat(scratch_format, "(%8u) ");
-		strcat(scratch_format,"[%C]\n");
+		if (elapsed != -1ULL) {
+			strcpy(scratch_format, HEADER "%S + %n (%8u) [%C]\n");
+		} else
+			strcpy(scratch_format, HEADER "%S + %n [%C]\n");
 		fmt = scratch_format;
 		break;
 
@@ -986,8 +992,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 		break;
 
 	case 'X': 	/* Split */
-		strcpy(scratch_format, HEADER "%S / %U ");
-		strcat(scratch_format,"[%C]\n");
+		strcpy(scratch_format, HEADER "%S / %U [%C]\n");
 		fmt = scratch_format;
 		break;
 
@@ -1364,16 +1369,6 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
-static inline int verify_and_add_trace(struct trace *t)
-{
-	if (verify_trace(t->bit))
-		return 1;
-	if (trace_rb_insert(t))
-		return 1;
-
-	return 0;
-}
-
 static int sort_entries(void)
 {
 	struct trace *t;
@@ -1381,12 +1376,59 @@ static int sort_entries(void)
 
 	while ((t = trace_list) != NULL) {
 		trace_list = t->next;
-		if (verify_and_add_trace(t))
-			printf("oops\n");
+
+		if (verify_trace(t->bit))
+			continue;
+		if (trace_rb_insert(t))
+			break;
 		nr++;
 	}
 
 	return nr;
+}
+
+/*
+ * struct trace and blktrace allocation cache, we do potentially
+ * millions of mallocs for these structures while only using at most
+ * a few thousand at the time
+ */
+static inline void t_free(struct trace *t)
+{
+	t->next = t_alloc_list;
+	t_alloc_list = t;
+}
+
+static inline struct trace *t_alloc(void)
+{
+	struct trace *t = t_alloc_list;
+
+	if (t) {
+		t_alloc_list = t->next;
+		return t;
+	}
+
+	return malloc(sizeof(*t));
+}
+
+static inline void bit_free(struct blk_io_trace *bit)
+{
+	/*
+	 * abuse a 64-bit field for a next pointer for the free item
+	 */
+	bit->time = (__u64) bit_alloc_list;
+	bit_alloc_list = (struct blk_io_trace *) bit;
+}
+
+static inline struct blk_io_trace *bit_alloc(void)
+{
+	struct blk_io_trace *bit = bit_alloc_list;
+
+	if (bit) {
+		bit_alloc_list = (struct blk_io_trace *) bit->time;
+		return bit;
+	}
+
+	return malloc(sizeof(*bit));
 }
 
 static void show_entries_rb(void)
@@ -1459,8 +1501,8 @@ static void show_entries_rb(void)
 		}
 
 		rb_erase(&t->rb_node, &rb_sort_root);
-		free(bit);
-		free(t);
+		bit_free(bit);
+		t_free(t);
 	}
 }
 
@@ -1505,7 +1547,7 @@ static int read_sort_events(int fd)
 		int pdu_len;
 		__u32 magic;
 
-		bit = malloc(sizeof(*bit));
+		bit = bit_alloc();
 
 		if (read_data(fd, bit, sizeof(*bit), !events))
 			break;
@@ -1526,7 +1568,7 @@ static int read_sort_events(int fd)
 			bit = ptr;
 		}
 
-		t = malloc(sizeof(*t));
+		t = t_alloc();
 		memset(t, 0, sizeof(*t));
 		t->bit = bit;
 
