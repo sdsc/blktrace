@@ -1585,13 +1585,16 @@ static int read_sort_events(int fd)
 static int do_file(void)
 {
 	struct per_cpu_info *pci;
-	int i, j, nfiles = 0, events, events_added;
+	int i, j, *nfiles, events, events_added;
+
+	nfiles = malloc(ndevices * sizeof(int));
 
 	/*
 	 * first prepare all files for reading
 	 */
 	for (i = 0; i < ndevices; i++) {
-		for (j = 0;; j++, nfiles++) {
+		nfiles[i] = 0;
+		for (j = 0;; j++) {
 			struct per_dev_info *pdi;
 			struct stat st;
 
@@ -1605,16 +1608,16 @@ static int do_file(void)
 				 "%s.blktrace.%d", pdi->name, pci->cpu);
 			if (stat(pci->fname, &st) < 0)
 				break;
-			if (!st.st_size)
-				continue;
-
-			pci->fd = open(pci->fname, O_RDONLY);
-			if (pci->fd < 0) {
-				perror(pci->fname);
-				continue;
+			if (st.st_size) {
+				pci->fd = open(pci->fname, O_RDONLY);
+				if (pci->fd < 0) {
+					perror(pci->fname);
+					continue;
+				}
 			}
 
 			printf("Input file %s added\n", pci->fname);
+			nfiles[i] += 1;
 		}
 	}
 
@@ -1625,7 +1628,7 @@ static int do_file(void)
 		events_added = 0;
 
 		for (i = 0; i < ndevices; i++) {
-			for (j = 0; j < nfiles; j++) {
+			for (j = 0; j < nfiles[i]; j++) {
 
 				pci = get_cpu_info(&devices[i], j);
 
