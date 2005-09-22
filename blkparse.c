@@ -1091,7 +1091,9 @@ static void log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
 
 static void dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 {
-	switch (t->action & 0xffff) {
+	int act = t->action & 0xffff;
+
+	switch (act) {
 		case __BLK_TA_QUEUE:
 			log_generic(pci, t, "Q");
 			break;
@@ -1110,8 +1112,11 @@ static void dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_COMPLETE:
 			log_pc(pci, t, "C");
 			break;
+		case __BLK_TA_INSERT:
+			log_pc(pci, t, "I");
+			break;
 		default:
-			fprintf(stderr, "Bad pc action %x\n", t->action);
+			fprintf(stderr, "Bad pc action %x\n", act);
 			break;
 	}
 }
