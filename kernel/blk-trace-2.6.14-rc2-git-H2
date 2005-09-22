@@ -273,8 +273,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
  	 * slow path
  	 */
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-22 08:34:50.000000000 +0200
-@@ -0,0 +1,224 @@
++++ linux-2.6/drivers/block/blktrace.c	2005-09-22 16:46:20.000000000 +0200
+@@ -0,0 +1,226 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -329,6 +329,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +		__relay_write(bt->rchan, pdu_data, pdu_len);
 +	local_irq_restore(flags);
 +}
++
++EXPORT_SYMBOL_GPL(__blk_add_trace);
 +
 +static struct dentry *blk_tree_root;
 +static DECLARE_MUTEX(blk_tree_mutex);
