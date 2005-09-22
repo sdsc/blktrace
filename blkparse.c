@@ -1379,30 +1379,24 @@ static struct blk_io_trace *find_trace(void *p, unsigned long offset)
 	return NULL;
 }
 
+static inline int verify_and_add_trace(struct trace *t)
+{
+	if (verify_trace(t->bit))
+		return 1;
+	if (trace_rb_insert(t))
+		return 1;
+
+	return 0;
+}
+
 static int sort_entries(void)
 {
-	struct per_dev_info *pdi;
-	struct per_cpu_info *pci;
-	struct blk_io_trace *bit;
 	struct trace *t;
 	int nr = 0;
 
 	while ((t = trace_list) != NULL) {
-
 		trace_list = t->next;
-		bit = t->bit;
-
-		memset(&t->rb_node, 0, sizeof(t->rb_node));
-
-		if (verify_trace(bit))
-			break;
-		if (trace_rb_insert(t))
-			return -1;
-
-		pdi = get_dev_info(bit->device);
-		pci = get_cpu_info(pdi, bit->cpu);
-		pci->nelems++;
-
+		verify_and_add_trace(t);
 		nr++;
 	}
 
@@ -1411,28 +1405,43 @@ static int sort_entries(void)
 
 static void show_entries_rb(int piped)
 {
-	struct per_dev_info *pdi;
+	struct per_dev_info *pdi = NULL;
+	struct per_cpu_info *pci = NULL;
 	struct blk_io_trace *bit;
 	struct rb_node *n;
 	struct trace *t;
-	int cpu;
+	__u32 device = 0;
+	int cpu = 0;
 
-	while ((n = rb_first(&rb_sort_root)) != NULL) {
+	n = rb_first(&rb_sort_root);
+	while (n != NULL) {
+
+		if (done)
+			break;
 
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		pdi = get_dev_info(bit->device);
+		if (!pdi || device != bit->device) {
+			device = bit->device;
+			pdi = get_dev_info(device);
+		}
+
 		if (!pdi) {
 			fprintf(stderr, "Unknown device ID? (%d,%d)\n",
 				MAJOR(bit->device), MINOR(bit->device));
 			break;
 		}
-		cpu = bit->cpu;
-		if (cpu > pdi->ncpus) {
+
+		if (bit->cpu > pdi->ncpus) {
 			fprintf(stderr, "Unknown CPU ID? (%d, device %d,%d)\n",
 				cpu, MAJOR(bit->device), MINOR(bit->device));
 			break;
+		}
+
+		if (!pci || cpu != bit->cpu) {
+			cpu = bit->cpu;
+			pci = get_cpu_info(pdi, cpu);
 		}
 
 		/*
@@ -1460,15 +1469,16 @@ static void show_entries_rb(int piped)
 		if (bit->time >= stopwatch_start) {
 			check_time(pdi, bit);
 
-			dump_trace(bit, &pdi->cpus[cpu], pdi);
+			dump_trace(bit, pci, pdi);
 		}
-
-		rb_erase(&t->rb_node, &rb_sort_root);
 
 		if (piped) {
+			rb_erase(&t->rb_node, &rb_sort_root);
 			free(bit);
 			free(t);
-		}
+			n = rb_first(&rb_sort_root);		
+		} else
+			n = rb_next(n);
 	}
 }
 
@@ -1507,11 +1517,12 @@ static int read_data(int fd, void *buffer, int bytes, int block)
  * Find the traces in 'tb' and add them to the list for sorting and
  * displaying
  */
-static int find_entries(void *tb, unsigned long size)
+static int find_sort_entries(void *tb, unsigned long size)
 {
 	struct blk_io_trace *bit;
 	struct trace *t;
 	void *start = tb;
+	int nr = 0;
 
 	while (tb - start <= size - sizeof(*bit)) {
 		bit = find_trace(tb, size - (tb - start));
@@ -1523,18 +1534,19 @@ static int find_entries(void *tb, unsigned long size)
 		t->bit = bit;
 
 		trace_to_cpu(bit);
-		t->next = trace_list;
-		trace_list = t;
+
+		verify_and_add_trace(t);
 
 		tb += sizeof(*bit) + bit->pdu_len;
+		nr++;
 	}
 
-	return 0;
+	return nr;
 }
 
 static int do_file(void)
 {
-	int i, j, nfiles = 0, nelems;
+	int i, j, nfiles = 0;
 
 	for (i = 0; i < ndevices; i++) {
 		for (j = 0;; j++, nfiles++) {
@@ -1577,20 +1589,10 @@ static int do_file(void)
 				continue;
 			}
 
-			if (find_entries(tb, st.st_size)) {
-				close(pci->fd);
-				free(tb);
-			}
-
-			nelems = sort_entries();
-			if (nelems == -1) {
-				close(pci->fd);
-				free(tb);
-				continue;
-			}
+			pci->nelems = find_sort_entries(tb, st.st_size);
 
 			printf("Completed %s (CPU%d %d, entries)\n",
-				pci->fname, j, nelems);
+				pci->fname, j, pci->nelems);
 			close(pci->fd);
 		}
 	}
