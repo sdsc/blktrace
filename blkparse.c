@@ -1433,12 +1433,6 @@ static void show_entries_rb(int piped)
 			break;
 		}
 
-		if (bit->cpu > pdi->ncpus) {
-			fprintf(stderr, "Unknown CPU ID? (%d, device %d,%d)\n",
-				cpu, MAJOR(bit->device), MINOR(bit->device));
-			break;
-		}
-
 		if (!pci || cpu != bit->cpu) {
 			cpu = bit->cpu;
 			pci = get_cpu_info(pdi, cpu);
