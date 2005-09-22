@@ -581,6 +581,7 @@ static struct per_dev_info *get_dev_info(dev_t id)
 
 	pdi = &devices[ndevices - 1];
 	pdi->id = id;
+	pdi->last_sequence = -1;
 	return pdi;
 }
 
@@ -1431,7 +1432,8 @@ static void show_entries_rb(int piped)
 		 * on SMP systems. to prevent stalling on lost events,
 		 * only allow an event to us a few times
 		 */
-		if (bit->sequence != (pdi->last_sequence + 1)) {
+		if (bit->sequence != (pdi->last_sequence + 1)
+		    && pdi->last_sequence != -1) {
 			if (piped && t->skipped < 5) {
 				t->skipped++;
 				break;
@@ -1444,14 +1446,14 @@ static void show_entries_rb(int piped)
 		pdi->last_sequence = bit->sequence;
 
 		bit->time -= genesis_time;
-		if (bit->time < stopwatch_start)
-			continue;
 		if (bit->time >= stopwatch_end)
 			break;
 
-		check_time(pdi, bit);
+		if (bit->time >= stopwatch_start) {
+			check_time(pdi, bit);
 
-		dump_trace(bit, &pdi->cpus[cpu], pdi);
+			dump_trace(bit, &pdi->cpus[cpu], pdi);
+		}
 
 		rb_erase(&t->rb_node, &rb_sort_root);
 
@@ -1534,6 +1536,7 @@ static int do_file(void)
 			void *tb;
 
 			pdi = &devices[i];
+			pdi->last_sequence = -1;
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 
@@ -1699,7 +1702,13 @@ static int find_stopwatch_interval(char *string)
 		fprintf(stderr,"Invalid stopwatch start timer: %s\n", string);
 		return 1;
 	}
-	stopwatch_end = stopwatch_start + DOUBLE_TO_NANO_ULL(value);
+	stopwatch_end = DOUBLE_TO_NANO_ULL(value);
+	if (stopwatch_end <= stopwatch_start) {
+		fprintf(stderr, "Invalid stopwatch interval: %Lu -> %Lu\n",
+			stopwatch_start, stopwatch_end);
+		return 1;
+	}
+
 	return 0;
 }
 
