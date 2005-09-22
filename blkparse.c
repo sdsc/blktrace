@@ -210,7 +210,7 @@ static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 static int per_process_stats;
 static int track_ios;
 
-#define RB_BATCH_DEFAULT	(1024)
+#define RB_BATCH_DEFAULT	(512)
 static int rb_batch = RB_BATCH_DEFAULT;
 
 static int pipeline;
@@ -580,9 +580,12 @@ static struct per_dev_info *get_dev_info(dev_t id)
 	struct per_dev_info *pdi;
 	int i;
 
-	for (i = 0; i < ndevices; i++)
+	for (i = 0; i < ndevices; i++) {
+		if (!devices[i].id)
+			devices[i].id = id;
 		if (devices[i].id == id)
 			return &devices[i];
+	}
 
 	if (resize_devices(NULL) != 0)
 		return NULL;
@@ -1361,24 +1364,6 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
-static struct blk_io_trace *find_trace(void *p, unsigned long offset)
-{
-	unsigned long max_offset = offset;
-	unsigned long off;
-	struct blk_io_trace *bit;
-	__u32 magic;
-
-	for (off = 0; off < max_offset; off++) {
-		bit = p + off;
-
-		magic = be32_to_cpu(bit->magic);
-		if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
-			return bit;
-	}
-
-	return NULL;
-}
-
 static inline int verify_and_add_trace(struct trace *t)
 {
 	if (verify_trace(t->bit))
@@ -1396,14 +1381,15 @@ static int sort_entries(void)
 
 	while ((t = trace_list) != NULL) {
 		trace_list = t->next;
-		verify_and_add_trace(t);
+		if (verify_and_add_trace(t))
+			printf("oops\n");
 		nr++;
 	}
 
 	return nr;
 }
 
-static void show_entries_rb(int piped)
+static void show_entries_rb(void)
 {
 	struct per_dev_info *pdi = NULL;
 	struct per_cpu_info *pci = NULL;
@@ -1413,8 +1399,7 @@ static void show_entries_rb(int piped)
 	__u32 device = 0;
 	int cpu = 0;
 
-	n = rb_first(&rb_sort_root);
-	while (n != NULL) {
+	while ((n = rb_first(&rb_sort_root)) != NULL) {
 
 		if (done)
 			break;
@@ -1435,7 +1420,8 @@ static void show_entries_rb(int piped)
 
 		if (bit->cpu > pdi->ncpus) {
 			fprintf(stderr, "Unknown CPU ID? (%d, device %d,%d)\n",
-				cpu, MAJOR(bit->device), MINOR(bit->device));
+				bit->cpu, MAJOR(bit->device),
+				MINOR(bit->device));
 			break;
 		}
 
@@ -1451,7 +1437,7 @@ static void show_entries_rb(int piped)
 		 */
 		if (bit->sequence != (pdi->last_sequence + 1)
 		    && pdi->last_sequence != -1) {
-			if (piped && t->skipped < 5) {
+			if (t->skipped < 5) {
 				t->skipped++;
 				break;
 			} else {
@@ -1472,13 +1458,9 @@ static void show_entries_rb(int piped)
 			dump_trace(bit, pci, pdi);
 		}
 
-		if (piped) {
-			rb_erase(&t->rb_node, &rb_sort_root);
-			free(bit);
-			free(t);
-			n = rb_first(&rb_sort_root);		
-		} else
-			n = rb_next(n);
+		rb_erase(&t->rb_node, &rb_sort_root);
+		free(bit);
+		free(t);
 	}
 }
 
@@ -1513,104 +1495,11 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 	return 0;
 }
 
-/*
- * Find the traces in 'tb' and add them to the list for sorting and
- * displaying
- */
-static int find_sort_entries(void *tb, unsigned long size)
-{
-	struct blk_io_trace *bit;
-	struct trace *t;
-	void *start = tb;
-	int nr = 0;
-
-	while (tb - start <= size - sizeof(*bit)) {
-		bit = find_trace(tb, size - (tb - start));
-		if (!bit)
-			break;
-
-		t = malloc(sizeof(*t));
-		memset(t, 0, sizeof(*t));
-		t->bit = bit;
-
-		trace_to_cpu(bit);
-
-		verify_and_add_trace(t);
-
-		tb += sizeof(*bit) + bit->pdu_len;
-		nr++;
-	}
-
-	return nr;
-}
-
-static int do_file(void)
-{
-	int i, j, nfiles = 0;
-
-	for (i = 0; i < ndevices; i++) {
-		for (j = 0;; j++, nfiles++) {
-			struct per_dev_info *pdi;
-			struct per_cpu_info *pci;
-			struct stat st;
-			void *tb;
-
-			pdi = &devices[i];
-			pdi->last_sequence = -1;
-			pci = get_cpu_info(pdi, j);
-			pci->cpu = j;
-
-			snprintf(pci->fname, sizeof(pci->fname)-1,
-				 "%s.blktrace.%d", pdi->name, j);
-			if (stat(pci->fname, &st) < 0)
-				break;
-			if (!st.st_size)
-				continue;
-
-			printf("Processing %s\n", pci->fname);
-
-			tb = malloc(st.st_size);
-			if (!tb) {
-				fprintf(stderr, "Out of memory, skip file %s\n",
-					pci->fname);
-				continue;
-			}
-
-			pci->fd = open(pci->fname, O_RDONLY);
-			if (pci->fd < 0) {
-				perror(pci->fname);
-				free(tb);
-				continue;
-			}
-
-			if (read_data(pci->fd, tb, st.st_size, 1)) {
-				close(pci->fd);
-				free(tb);
-				continue;
-			}
-
-			pci->nelems = find_sort_entries(tb, st.st_size);
-
-			printf("Completed %s (CPU%d %d, entries)\n",
-				pci->fname, j, pci->nelems);
-			close(pci->fd);
-		}
-	}
-
-	if (!nfiles) {
-		fprintf(stderr, "No files found\n");
-		return 1;
-	}
-
-	show_entries_rb(0);
-	return 0;
-}
-
 static int read_sort_events(int fd)
 {
 	int events = 0;
 
-	do {
+	while (!is_done() && events < rb_batch) {
 		struct blk_io_trace *bit;
 		struct trace *t;
 		int pdu_len;
@@ -1646,9 +1535,80 @@ static int read_sort_events(int fd)
 		trace_list = t;
 
 		events++;
-	} while (!is_done() && events < rb_batch);
+	}
 
 	return events;
+}
+
+static int do_file(void)
+{
+	struct per_cpu_info *pci;
+	int i, j, nfiles = 0, events, events_added;
+
+	/*
+	 * first prepare all files for reading
+	 */
+	for (i = 0; i < ndevices; i++) {
+		for (j = 0;; j++, nfiles++) {
+			struct per_dev_info *pdi;
+			struct stat st;
+
+			pdi = &devices[i];
+			pdi->last_sequence = -1;
+			pci = get_cpu_info(pdi, j);
+			pci->cpu = j;
+			pci->fd = -1;
+
+			snprintf(pci->fname, sizeof(pci->fname)-1,
+				 "%s.blktrace.%d", pdi->name, pci->cpu);
+			if (stat(pci->fname, &st) < 0)
+				break;
+			if (!st.st_size)
+				continue;
+
+			pci->fd = open(pci->fname, O_RDONLY);
+			if (pci->fd < 0) {
+				perror(pci->fname);
+				continue;
+			}
+
+			printf("Input file %s added\n", pci->fname);
+		}
+	}
+
+	/*
+	 * now loop over the files reading in the data
+	 */
+	do {
+		events_added = 0;
+
+		for (i = 0; i < ndevices; i++) {
+			for (j = 0; j < nfiles; j++) {
+
+				pci = get_cpu_info(&devices[i], j);
+
+				if (pci->fd == -1)
+					continue;
+
+				events = read_sort_events(pci->fd);
+				if (!events) {
+					close(pci->fd);
+					pci->fd = -1;
+					continue;
+				}
+
+				if (sort_entries() == -1)
+					continue;
+
+				events_added += events;
+			}
+		}
+
+		show_entries_rb();
+
+	} while (events_added);
+
+	return 0;
 }
 
 static int do_stdin(void)
@@ -1666,7 +1626,7 @@ static int do_stdin(void)
 		if (sort_entries() == -1)
 			break;
 
-		show_entries_rb(1);
+		show_entries_rb();
 	} while (1);
 
 	close(fd);
