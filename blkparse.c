@@ -35,6 +35,8 @@
 #include "blktrace.h"
 #include "rbtree.h"
 
+static char blkparse_version[] = "0.90";
+
 #define SECONDS(x) 		((unsigned long long)(x) / 1000000000)
 #define NANO_SECONDS(x)		((unsigned long long)(x) % 1000000000)
 #define DOUBLE_TO_NANO_ULL(d)	((unsigned long long)((d) * 1000000000))
@@ -100,7 +102,7 @@ static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"i:o:b:stqw:f:F:"
+#define S_OPTS	"i:o:b:stqw:f:F:v"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -155,6 +157,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'F'
+	},
+	{
+		.name = "version",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'v'
 	},
 };
 
@@ -1712,11 +1720,26 @@ static int find_stopwatch_interval(char *string)
 	return 0;
 }
 
+static char usage_str[] = \
+	"[ -i <input name> ] [-o <output name> [ -s ] [ -t ] [ -q ]\n" \
+	"[ -w start:stop ] [ -f output format ] [ -F format spec ] [ -v] \n\n" \
+	"\t-i Input file containing trace data, or '-' for stdin\n" \
+	"\t-o Output file. If not given, output is stdout\n" \
+	"\t-b stdin read batching\n" \
+	"\t-s Show per-program io statistics\n" \
+	"\t-t Track individual ios. Will tell you the time a request took\n" \
+	"\t   to get queued, to get dispatched, and to get completed\n" \
+	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
+	"\t-w Only parse data between the given time interval in seconds.\n" \
+	"\t   If 'start' isn't given, blkparse defaults the start time to 0\n" \
+	"\t -f Output format. Customize the output format. The format field\n" \
+	"\t    identifies can be found in the documentation\n" \
+	"\t-F Format specification. Can be found in the documentation\n" \
+	"\t-v Print program version info\n\n";
+
 static void usage(char *prog)
 {
-	fprintf(stderr, "Usage: %s "
-		"[-i <name>] [-o <output>] [-s] [-w N[:n]] <name>...\n",
-		prog);
+	fprintf(stderr, "Usage: %s %s %s", prog, blkparse_version, usage_str);
 }
 
 int main(int argc, char *argv[])
@@ -1761,6 +1784,9 @@ int main(int argc, char *argv[])
 			if (add_format_spec(optarg) != 0)
 				return 1;
 			break;
+		case 'v':
+			printf("%s version %s\n", argv[0], blkparse_version);
+			return 0;
 		default:
 			usage(argv[0]);
 			return 1;

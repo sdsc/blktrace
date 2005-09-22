@@ -38,6 +38,8 @@
 
 #include "blktrace.h"
 
+static char blktrace_version[] = "0.90";
+
 #define BUF_SIZE	(128 *1024)
 #define BUF_NR		(4)
 
@@ -69,7 +71,7 @@ struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:o:kw:"
+#define S_OPTS	"d:a:A:r:o:kw:v"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -112,6 +114,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'w'
+	},
+	{
+		.name = "version",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'v'
 	},
 };
 
@@ -579,12 +587,22 @@ static void show_stats(void)
 		printf("  Total:  %20lld events\n", events_processed);
 	}
 }
-  
+
+static char usage_str[] = \
+	"-d <dev> [ -r relay path ] [ -o <output> ] [-k ] [ -w time ]\n" \
+	"[ -a action ] [ -A action mask ] [ -v ]\n\n" \
+	"\t-d Use specified device. May also be given last after options\n" \
+	"\t-r Path to mounted relayfs, defaults to /relay\n" \
+	"\t-o File(s) to send output to\n" \
+	"\t-k Kill a running trace\n" \
+	"\t-w Stop after defined time, in seconds\n" \
+	"\t-a Only trace specified actions. See documentation\n" \
+	"\t-A Give trace mask as a single value. See documentation\n" \
+	"\t-v Print program version info\n\n";
+
 static void show_usage(char *program)
 {
-	fprintf(stderr,"Usage: %s [-d <dev>] "
-		       "[-a <trace> [-a <trace>]] <dev>\n",
-		program);
+	fprintf(stderr, "Usage: %s %s %s",program, blktrace_version, usage_str);
 }
 
 static void handle_sigint(int sig)
@@ -646,7 +664,9 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 			break;
-
+		case 'v':
+			printf("%s version %s\n", argv[0], blktrace_version);
+			return 0;
 		default:
 			show_usage(argv[0]);
 			return 1;
