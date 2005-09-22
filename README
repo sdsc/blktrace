@@ -9,7 +9,7 @@ Nathan Scott <nathans@sgi.com> (bug fixes, process names, multiple devices)
 Requirements
 ------------
 
-You need to be running a 2.6.14-rc1 kernel or newer, with the blk-trace patch
+You need to be running a 2.6.14-rc2 kernel or newer, with the blk-trace patch
 included in this repository. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
@@ -18,7 +18,11 @@ If you don't have git, you can get hourly snapshots from:
 
 http://www.kernel.org/pub/linux/kernel/people/axboe/blktrace/
 
-The snapshots include the full git object database as well.
+The snapshots include the full git object database as well. kernel.org has
+excessively long mirror times, so if you have git installed, you can pull
+the master tree from:
+
+git://brick.kernel.dk/data/git/blktrace.git
 
 
 Usage
