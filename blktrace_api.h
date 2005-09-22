@@ -40,6 +40,8 @@ enum {
 	__BLK_TA_UNPLUG_IO,		/* queue was unplugged by io */
 	__BLK_TA_UNPLUG_TIMER,		/* queue was unplugged by timer */
 	__BLK_TA_INSERT,		/* insert request */
+	__BLK_TA_SPLIT,			/* bio was split */
+	__BLK_TA_BOUNCE,		/* bio was bounced */
 };
 
 /*
@@ -57,6 +59,8 @@ enum {
 #define BLK_TA_UNPLUG_IO	(__BLK_TA_UNPLUG_IO | BLK_TC_ACT(BLK_TC_QUEUE))
 #define BLK_TA_UNPLUG_TIMER	(__BLK_TA_UNPLUG_TIMER | BLK_TC_ACT(BLK_TC_QUEUE))
 #define BLK_TA_INSERT		(__BLK_TA_INSERT | BLK_TC_ACT(BLK_TC_QUEUE))
+#define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
+#define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
 #define BLK_IO_TRACE_VERSION	0x05

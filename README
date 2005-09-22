@@ -96,6 +96,8 @@ $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 		S	- Sleep requests
 		T	- Unplug timer
 		U	- Unplug IO
+		W	- Bounce
+		X	- Split
 
 
 If you want to do live tracing, you can pipe the data between blktrace

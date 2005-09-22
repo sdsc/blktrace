@@ -941,6 +941,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 		break;
 
 	case 'Q': 	/* Queue */
+	case 'W':	/* Bounce */
 		strcpy(scratch_format, HEADER "%S + %n ");
 		if (elapsed != -1ULL)
 			strcat(scratch_format, "(%8u) ");
@@ -966,6 +967,12 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 	case 'U':	/* Unplug IO */
 	case 'T':	/* Unplug timer */
 		fmt = HEADER "[%C] %U\n";
+		break;
+
+	case 'X': 	/* Split */
+		strcpy(scratch_format, HEADER "%S / %U ");
+		strcat(scratch_format,"[%C]\n");
+		fmt = scratch_format;
 		break;
 
 	default:
@@ -1069,6 +1076,12 @@ static void log_unplug(struct per_cpu_info *pci, struct blk_io_trace *t,
 	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
 
+static void log_split(struct per_cpu_info *pci, struct blk_io_trace *t,
+		      char *act)
+{
+	process_fmt(act, pci, t, -1ULL, 0, NULL);
+}
+
 static void log_pc(struct per_cpu_info *pci, struct blk_io_trace *t, char *act)
 {
 	unsigned char *buf = (unsigned char *) t + sizeof(*t);
@@ -1153,6 +1166,12 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 		case __BLK_TA_UNPLUG_TIMER:
 			account_unplug(t, pci, 1);
 			log_unplug(pci, t, "UT");
+			break;
+		case __BLK_TA_SPLIT:
+			log_split(pci, t, "X");
+			break;
+		case __BLK_TA_BOUNCE:
+			log_generic(pci, t, "B");
 			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);

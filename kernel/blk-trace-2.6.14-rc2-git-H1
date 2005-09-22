@@ -108,7 +108,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
 +	if (q->unplug_fn) {
 +		int nrq = q->rq.count[READ] + q->rq.count[WRITE];
 +
-+		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, nrq);
++		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL, nrq);
  		q->unplug_fn(q);
 +	}
  }
@@ -120,7 +120,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	request_queue_t *q = (request_queue_t *)data;
 +	int nrq = q->rq.count[READ] + q->rq.count[WRITE];
  
-+	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, nrq);
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, NULL, nrq);
  	kblockd_schedule_work(&q->unplug_work);
  }
  
@@ -163,7 +163,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	if (blk_rq_tagged(rq))
  		blk_queue_end_tag(q, rq);
  
-@@ -2714,6 +2734,8 @@ static int __make_request(request_queue_
+@@ -2676,6 +2696,8 @@ static int __make_request(request_queue_
  			if (!q->back_merge_fn(q, req, bio))
  				break;
  
@@ -172,7 +172,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			req->biotail->bi_next = bio;
  			req->biotail = bio;
  			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2729,6 +2751,8 @@ static int __make_request(request_queue_
+@@ -2691,6 +2713,8 @@ static int __make_request(request_queue_
  			if (!q->front_merge_fn(q, req, bio))
  				break;
  
@@ -181,7 +181,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -3029,6 +3053,8 @@ end_io:
+@@ -2991,6 +3015,8 @@ end_io:
  		 */
  		blk_partition_remap(bio);
  
@@ -190,7 +190,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  		ret = q->make_request_fn(q, bio);
  	} while (ret);
  }
-@@ -3148,6 +3174,8 @@ static int __end_that_request_first(stru
+@@ -3110,6 +3136,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -199,6 +199,27 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
+diff --git a/fs/bio.c b/fs/bio.c
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -25,6 +25,7 @@
+ #include <linux/module.h>
+ #include <linux/mempool.h>
+ #include <linux/workqueue.h>
++#include <linux/blktrace.h>
+ #include <scsi/sg.h>		/* for struct sg_iovec */
+ 
+ #define BIO_POOL_SIZE 256
+@@ -1050,6 +1051,9 @@ struct bio_pair *bio_split(struct bio *b
+ 	if (!bp)
+ 		return bp;
+ 
++	blk_add_trace_pdu_int(bdev_get_queue(bi->bi_bdev), BLK_TA_SPLIT, bi,
++				bi->bi_sector + first_sectors);
++
+ 	BUG_ON(bi->bi_vcnt != 1);
+ 	BUG_ON(bi->bi_idx != 0);
+ 	atomic_set(&bp->cnt, 3);
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
@@ -231,8 +252,28 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
---- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-21 12:19:09.000000000 +0200
+diff --git a/mm/highmem.c b/mm/highmem.c
+--- a/mm/highmem.c
++++ b/mm/highmem.c
+@@ -26,6 +26,7 @@
+ #include <linux/init.h>
+ #include <linux/hash.h>
+ #include <linux/highmem.h>
++#include <linux/blktrace.h>
+ #include <asm/tlbflush.h>
+ 
+ static mempool_t *page_pool, *isa_page_pool;
+@@ -479,6 +480,8 @@ void blk_queue_bounce(request_queue_t *q
+ 		pool = isa_page_pool;
+ 	}
+ 
++	blk_add_trace_bio(q, *bio_orig, BLK_TA_BOUNCE);
++
+ 	/*
+ 	 * slow path
+ 	 */
+--- /dev/null	2005-09-09 21:24:12.000000000 +0200
++++ linux-2.6/drivers/block/blktrace.c	2005-09-22 08:34:50.000000000 +0200
 @@ -0,0 +1,224 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
@@ -458,9 +499,9 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +
 +module_init(blk_trace_init);
 +
---- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-21 16:22:55.000000000 +0200
-@@ -0,0 +1,173 @@
+--- /dev/null	2005-09-09 21:24:12.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-09-22 08:47:50.000000000 +0200
+@@ -0,0 +1,180 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -505,6 +546,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	__BLK_TA_UNPLUG_IO,		/* queue was unplugged by io */
 +	__BLK_TA_UNPLUG_TIMER,		/* queue was unplugged by timer */
 +	__BLK_TA_INSERT,		/* insert request */
++	__BLK_TA_SPLIT,			/* bio was split */
++	__BLK_TA_BOUNCE,		/* bio was bounced */
 +};
 +
 +/*
@@ -522,6 +565,8 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +#define BLK_TA_UNPLUG_IO	(__BLK_TA_UNPLUG_IO | BLK_TC_ACT(BLK_TC_QUEUE))
 +#define BLK_TA_UNPLUG_TIMER	(__BLK_TA_UNPLUG_TIMER | BLK_TC_ACT(BLK_TC_QUEUE))
 +#define BLK_TA_INSERT		(__BLK_TA_INSERT | BLK_TC_ACT(BLK_TC_QUEUE))
++#define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
++#define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
 +#define BLK_IO_TRACE_VERSION	0x05
@@ -612,7 +657,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +}
 +
 +static inline void blk_add_trace_pdu_int(struct request_queue *q, u32 what,
-+					 unsigned int pdu)
++					 struct bio *bio, unsigned int pdu)
 +{
 +	struct blk_trace *bt = q->blk_trace;
 +	u64 rpdu = cpu_to_be64(pdu);
@@ -620,7 +665,10 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +	if (likely(!bt))
 +		return;
 +
-+	__blk_add_trace(bt, 0, 0, 0, what, 0, sizeof(rpdu), &rpdu);
++	if (bio)
++		__blk_add_trace(bt, bio->bi_sector, bio->bi_size, bio->bi_rw, what, !bio_flagged(bio, BIO_UPTODATE), sizeof(rpdu), &rpdu);
++	else
++		__blk_add_trace(bt, 0, 0, 0, what, 0, sizeof(rpdu), &rpdu);
 +}
 +
 +#else /* !CONFIG_BLK_DEV_IO_TRACE */
@@ -630,7 +678,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
 +#define blk_add_trace_rq(q, rq, what)		do { } while (0)
 +#define blk_add_trace_bio(q, rq, what)		do { } while (0)
 +#define blk_add_trace_generic(q, rq, rw, what)	do { } while (0)
-+#define blk_add_trace_pdu_int(q, what, pdul, pdu)	do { } while (0)
++#define blk_add_trace_pdu_int(q, what, bio, pdu)	do { } while (0)
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif
