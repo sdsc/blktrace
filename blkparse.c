@@ -79,6 +79,7 @@ struct per_dev_info {
 	unsigned long last_sequence;
 	unsigned long skips;
 
+	int nfiles;
 	int ncpus;
 	struct per_cpu_info *cpus;
 };
@@ -1586,21 +1587,20 @@ static int read_sort_events(int fd)
 static int do_file(void)
 {
 	struct per_cpu_info *pci;
-	int i, j, *nfiles, events, events_added;
-
-	nfiles = malloc(ndevices * sizeof(int));
+	struct per_dev_info *pdi;
+	int i, j, events, events_added;
 
 	/*
 	 * first prepare all files for reading
 	 */
 	for (i = 0; i < ndevices; i++) {
-		nfiles[i] = 0;
+		pdi = &devices[i];
+		pdi->nfiles = 0;
+		pdi->last_sequence = -1;
+
 		for (j = 0;; j++) {
-			struct per_dev_info *pdi;
 			struct stat st;
 
-			pdi = &devices[i];
-			pdi->last_sequence = -1;
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 			pci->fd = -1;
@@ -1618,7 +1618,7 @@ static int do_file(void)
 			}
 
 			printf("Input file %s added\n", pci->fname);
-			nfiles[i] += 1;
+			pdi->nfiles++;
 		}
 	}
 
@@ -1629,9 +1629,11 @@ static int do_file(void)
 		events_added = 0;
 
 		for (i = 0; i < ndevices; i++) {
-			for (j = 0; j < nfiles[i]; j++) {
+			pdi = &devices[i];
 
-				pci = get_cpu_info(&devices[i], j);
+			for (j = 0; j < pdi->nfiles; j++) {
+
+				pci = get_cpu_info(pdi, j);
 
 				if (pci->fd == -1)
 					continue;
