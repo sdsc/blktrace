@@ -1415,7 +1415,7 @@ static inline void bit_free(struct blk_io_trace *bit)
 	/*
 	 * abuse a 64-bit field for a next pointer for the free item
 	 */
-	bit->time = (__u64) bit_alloc_list;
+	bit->time = (__u64) (unsigned long) bit_alloc_list;
 	bit_alloc_list = (struct blk_io_trace *) bit;
 }
 
@@ -1424,7 +1424,8 @@ static inline struct blk_io_trace *bit_alloc(void)
 	struct blk_io_trace *bit = bit_alloc_list;
 
 	if (bit) {
-		bit_alloc_list = (struct blk_io_trace *) bit->time;
+		bit_alloc_list = (struct blk_io_trace *) (unsigned long) \
+				 bit->time;
 		return bit;
 	}
 
