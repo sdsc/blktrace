@@ -75,6 +75,7 @@ struct per_dev_info {
 	int backwards;
 	unsigned long long events;
 	unsigned long long last_reported_time;
+	unsigned long long last_read_time;
 	struct io_stats io_stats;
 	unsigned long last_sequence;
 	unsigned long skips;
@@ -211,6 +212,7 @@ static FILE *ofp;
 static char *output_name;
 
 static unsigned long long genesis_time;
+static unsigned long long last_allowed_time;
 static unsigned long long stopwatch_start;	/* start from zero by default */
 static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 
@@ -274,9 +276,6 @@ static inline int trace_rb_insert(struct trace *t)
 	struct rb_node **p = &rb_sort_root.rb_node;
 	struct rb_node *parent = NULL;
 	struct trace *__t;
-
-	if (genesis_time == 0 || t->bit->time < genesis_time)
-		genesis_time = t->bit->time;
 
 	while (*p) {
 		parent = *p;
@@ -600,6 +599,7 @@ static struct per_dev_info *get_dev_info(dev_t id)
 	pdi = &devices[ndevices - 1];
 	pdi->id = id;
 	pdi->last_sequence = -1;
+	pdi->last_read_time = 0;
 	return pdi;
 }
 
@@ -1440,8 +1440,6 @@ static void show_entries_rb(void)
 	struct blk_io_trace *bit;
 	struct rb_node *n;
 	struct trace *t;
-	__u32 device = 0;
-	int cpu = 0;
 
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
 
@@ -1451,10 +1449,8 @@ static void show_entries_rb(void)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		if (!pdi || device != bit->device) {
-			device = bit->device;
-			pdi = get_dev_info(device);
-		}
+		if (!pdi || pdi->id != bit->device)
+			pdi = get_dev_info(bit->device);
 
 		if (!pdi) {
 			fprintf(stderr, "Unknown device ID? (%d,%d)\n",
@@ -1469,15 +1465,10 @@ static void show_entries_rb(void)
 			break;
 		}
 
-		if (!pci || cpu != bit->cpu) {
-			cpu = bit->cpu;
-			pci = get_cpu_info(pdi, cpu);
-		}
-
 		/*
 		 * back off displaying more info if we are out of sync
 		 * on SMP systems. to prevent stalling on lost events,
-		 * only allow an event to us a few times
+		 * only allow an event to skip us a few times
 		 */
 		if (bit->sequence != (pdi->last_sequence + 1)
 		    && pdi->last_sequence != -1) {
@@ -1492,12 +1483,14 @@ static void show_entries_rb(void)
 
 		pdi->last_sequence = bit->sequence;
 
-		bit->time -= genesis_time;
-		if (bit->time >= stopwatch_end)
+		if (bit->time >= stopwatch_end || bit->time > last_allowed_time)
 			break;
 
 		if (bit->time >= stopwatch_start) {
 			check_time(pdi, bit);
+
+			if (!pci || pci->cpu != bit->cpu)
+				pci = get_cpu_info(pdi, bit->cpu);
 
 			dump_trace(bit, pci, pdi);
 		}
@@ -1539,8 +1532,9 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 	return 0;
 }
 
-static int read_sort_events(int fd)
+static int read_events(int fd)
 {
+	struct per_dev_info *pdi = NULL;
 	int events = 0;
 
 	while (!is_done() && events < rb_batch) {
@@ -1577,6 +1571,17 @@ static int read_sort_events(int fd)
 		trace_to_cpu(bit);
 		t->next = trace_list;
 		trace_list = t;
+
+		if (genesis_time == 0 || t->bit->time < genesis_time)
+			genesis_time = t->bit->time;
+
+		bit->time -= genesis_time;
+
+		if (!pdi || pdi->id != bit->device)
+			pdi = get_dev_info(bit->device);
+
+		if (bit->time > pdi->last_read_time)
+			pdi->last_read_time = bit->time;
 
 		events++;
 	}
@@ -1627,6 +1632,7 @@ static int do_file(void)
 	 */
 	do {
 		events_added = 0;
+		last_allowed_time = -1ULL;
 
 		for (i = 0; i < ndevices; i++) {
 			pdi = &devices[i];
@@ -1638,19 +1644,22 @@ static int do_file(void)
 				if (pci->fd == -1)
 					continue;
 
-				events = read_sort_events(pci->fd);
+				events = read_events(pci->fd);
 				if (!events) {
 					close(pci->fd);
 					pci->fd = -1;
 					continue;
 				}
 
-				if (sort_entries() == -1)
-					continue;
+				if (pdi->last_read_time < last_allowed_time)
+					last_allowed_time = pdi->last_read_time;
 
 				events_added += events;
 			}
 		}
+
+		if (sort_entries() == -1)
+			break;
 
 		show_entries_rb();
 
@@ -1667,7 +1676,7 @@ static int do_stdin(void)
 	do {
 		int events;
 
-		events = read_sort_events(fd);
+		events = read_events(fd);
 		if (!events)
 			break;
 	
