@@ -123,5 +123,15 @@ Which will send the traces from tracehost to parsehost over the network on
 the defined port number.
 
 
+Resources
+---------
+
+vger hosts a mailing list dedicated to btrace discussion and development.
+The list is called linux-btrace@vger.kernel.org, subscribe by sending
+a mail to majordomo@vger.kernel.org with 'subscribe linux-btrace' in
+the mail body.
+
+
+
 20050906, Jens Axboe <axboe@suse.de>
 
