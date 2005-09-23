@@ -918,7 +918,7 @@ static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
 			unsigned long long elapsed)
 {
 	char *fmt;
-	char scratch_format[1024];
+	static char scratch_format[1024];
 
 	if (override_format[fmt_spec] != NULL)
 		return override_format[fmt_spec];
