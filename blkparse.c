@@ -1481,10 +1481,10 @@ static void show_entries_rb(void)
 			}
 		}
 
-		pdi->last_sequence = bit->sequence;
-
 		if (bit->time >= stopwatch_end || bit->time > last_allowed_time)
 			break;
+
+		pdi->last_sequence = bit->sequence;
 
 		if (bit->time >= stopwatch_start) {
 			check_time(pdi, bit);
@@ -1672,6 +1672,7 @@ static int do_stdin(void)
 {
 	int fd;
 
+	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
 	do {
 		int events;
