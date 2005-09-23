@@ -77,7 +77,7 @@ struct per_dev_info {
 	unsigned long long last_reported_time;
 	struct io_stats io_stats;
 	unsigned long last_sequence;
-	unsigned long skips, skipped_events;
+	unsigned long skips;
 
 	int nfiles;
 	int ncpus;
@@ -282,17 +282,17 @@ static inline int trace_rb_insert(struct trace *t)
 		parent = *p;
 		__t = rb_entry(parent, struct trace, rb_node);
 
-		if (t->bit->sequence < __t->bit->sequence)
-			p = &(*p)->rb_left;
-		else if (t->bit->sequence > __t->bit->sequence)
-			p = &(*p)->rb_right;
-		else if (t->bit->time < __t->bit->time)
+		if (t->bit->time < __t->bit->time)
 			p = &(*p)->rb_left;
 		else if (t->bit->time > __t->bit->time)
 			p = &(*p)->rb_right;
 		else if (t->bit->device < __t->bit->device)
 			p = &(*p)->rb_left;
 		else if (t->bit->device > __t->bit->device)
+			p = &(*p)->rb_right;
+		else if (t->bit->sequence < __t->bit->sequence)
+			p = &(*p)->rb_left;
+		else if (t->bit->sequence > __t->bit->sequence)
 			p = &(*p)->rb_right;
 		else if (t->bit->device == __t->bit->device) {
 			fprintf(stderr,
@@ -1364,9 +1364,9 @@ static void show_device_and_cpu_stats(void)
 			dump_io_stats(&total, line);
 		}
 
-		fprintf(ofp, "\n%s: %'Lu entries, %'lu skips (%'lu events)\n",
+		fprintf(ofp, "\nEvents (%s): %'Lu entries, %'lu skips\n",
 			get_dev_name(pdi, line, sizeof(line)), pdi->events,
-			pdi->skips, pdi->skipped_events);
+			pdi->skips);
 	}
 }
 
@@ -1485,10 +1485,7 @@ static void show_entries_rb(void)
 				t->skipped++;
 				break;
 			} else {
-				fprintf(stderr, "skipping from %lu to %u\n",
-					pdi->last_sequence, bit->sequence);
-				pdi->skipped_events += bit->sequence -
-							pdi->last_sequence;
+				fprintf(stderr, "skipping from %lu to %u\n", pdi->last_sequence, bit->sequence);
 				pdi->skips++;
 			}
 		}
