@@ -1831,7 +1831,7 @@ int main(int argc, char *argv[])
 	} else {
 		char ofname[128];
 
-		snprintf(ofname, sizeof(ofname) - 1, "%s.log", output_name);
+		snprintf(ofname, sizeof(ofname) - 1, "%s", output_name);
 		ofp = fopen(ofname, "w");
 		mode = _IOFBF;
 	}
