@@ -71,7 +71,7 @@ struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:o:kw:v"
+#define S_OPTS	"d:a:A:r:o:kw:vb:n:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -121,6 +121,18 @@ static struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'v'
 	},
+	{
+		.name = "buffer size",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'b'
+	},
+	{
+		.name = "nr of sub buffers",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'n'
+	},
 };
 
 struct thread_information {
@@ -160,6 +172,8 @@ static char *output_name;
 static int act_mask = ~0U;
 static int kill_running_trace;
 static int use_mmap;
+static int buf_size = BUF_SIZE;
+static int buf_nr = BUF_NR;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -184,8 +198,8 @@ static int start_trace(struct device_information *dip)
 	struct blk_user_trace_setup buts;
 
 	memset(&buts, 0, sizeof(buts));
-	buts.buf_size = BUF_SIZE;
-	buts.buf_nr = BUF_NR;
+	buts.buf_size = buf_size;
+	buts.buf_nr = buf_nr;
 	buts.act_mask = act_mask;
 
 	if (ioctl(dip->fd, BLKSTARTTRACE, &buts) < 0) {
@@ -250,12 +264,12 @@ static int get_data_read(struct thread_information *tip, void *buf, int len)
 static int get_data_mmap(struct thread_information *tip, void *buf, int len,
 			 int check_magic)
 {
-	if (len > (BUF_SIZE * (tip->buf_subbuf + 1)) - tip->buf_offset) {
+	if (len > (buf_size * (tip->buf_subbuf + 1)) - tip->buf_offset) {
 		tip->buf_subbuf++;
-		if (tip->buf_subbuf == BUF_NR)
+		if (tip->buf_subbuf == buf_nr)
 			tip->buf_subbuf = 0;
 
-		tip->buf_offset = tip->buf_subbuf * BUF_SIZE;
+		tip->buf_offset = tip->buf_subbuf * buf_size;
 	}
 
 	while (1) {
@@ -343,7 +357,7 @@ static void *extract(void *arg)
 	}
 
 	if (use_mmap) {
-		tip->buf = mmap(NULL, BUF_SIZE * BUF_NR, PROT_READ,
+		tip->buf = mmap(NULL, buf_size * buf_nr, PROT_READ,
 					MAP_PRIVATE | MAP_POPULATE, tip->fd, 0);
 		if (tip->buf == MAP_FAILED) {
 			perror("mmap");
@@ -442,7 +456,7 @@ static int start_threads(struct device_information *dip)
 static void close_thread(struct thread_information *tip)
 {
 	if (tip->buf)
-		munmap(tip->buf, BUF_SIZE * BUF_NR);
+		munmap(tip->buf, buf_size * buf_nr);
 
 	if (tip->fd != -1)
 		close(tip->fd);
@@ -598,6 +612,8 @@ static char usage_str[] = \
 	"\t-w Stop after defined time, in seconds\n" \
 	"\t-a Only trace specified actions. See documentation\n" \
 	"\t-A Give trace mask as a single value. See documentation\n" \
+	"\t-b Sub buffer size in KiB\n" \
+	"\t-n Number of sub buffers\n" \
 	"\t-v Print program version info\n\n";
 
 static void show_usage(char *program)
@@ -667,6 +683,23 @@ int main(int argc, char *argv[])
 		case 'v':
 			printf("%s version %s\n", argv[0], blktrace_version);
 			return 0;
+		case 'b':
+			buf_size = atoi(optarg);
+			if (buf_size <= 0) {
+				fprintf(stderr,
+					"Invalid buffer size (%d)\n", buf_size);
+				return 1;
+			}
+			buf_size <<= 10;
+			break;
+		case 'n':
+			buf_nr = atoi(optarg);
+			if (buf_nr <= 0) {
+				fprintf(stderr,
+					"Invalid buffer nr (%d)\n", buf_nr);
+				return 1;
+			}
+			break;
 		default:
 			show_usage(argv[0]);
 			return 1;
