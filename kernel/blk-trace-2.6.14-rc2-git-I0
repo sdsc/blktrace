@@ -273,8 +273,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
  	 * slow path
  	 */
 --- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-23 17:22:55.000000000 +0200
-@@ -0,0 +1,227 @@
++++ linux-2.6/drivers/block/blktrace.c	2005-09-23 17:17:32.000000000 +0200
+@@ -0,0 +1,230 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -290,6 +290,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +		     int rw, u32 what, int error, int pdu_len, void *pdu_data)
 +{
 +	struct blk_io_trace *t;
++	unsigned long flags;
 +	int cpu;
 +
 +	if (rw & (1 << BIO_RW_BARRIER))
@@ -324,9 +325,11 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +	t->pid		= current->pid;
 +	memcpy(t->comm, current->comm, sizeof(t->comm));
 +
++	local_irq_save(flags);
 +	__relay_write(bt->rchan, t, sizeof(*t));
 +	if (pdu_len)
 +		__relay_write(bt->rchan, pdu_data, pdu_len);
++	local_irq_restore(flags);
 +
 +	put_cpu();
 +}
@@ -503,7 +506,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +module_init(blk_trace_init);
 +
 --- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-23 17:20:00.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-09-23 17:17:02.000000000 +0200
 @@ -0,0 +1,180 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
