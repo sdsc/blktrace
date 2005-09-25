@@ -272,9 +272,9 @@ diff --git a/mm/highmem.c b/mm/highmem.c
  	/*
  	 * slow path
  	 */
---- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-23 17:17:32.000000000 +0200
-@@ -0,0 +1,230 @@
+--- /dev/null	2005-09-09 21:24:12.000000000 +0200
++++ linux-2.6/drivers/block/blktrace.c	2005-09-22 16:46:20.000000000 +0200
+@@ -0,0 +1,226 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -284,12 +284,11 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +#include <asm/uaccess.h>
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
-+static DEFINE_PER_CPU(struct blk_io_trace, cpu_trace) = { 0, };
 +
 +void __blk_add_trace(struct blk_trace *bt, sector_t sector, int bytes,
 +		     int rw, u32 what, int error, int pdu_len, void *pdu_data)
 +{
-+	struct blk_io_trace *t;
++	struct blk_io_trace t;
 +	unsigned long flags;
 +	int cpu;
 +
@@ -306,32 +305,29 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +	if (((bt->act_mask << BLK_TC_SHIFT) & what) == 0)
 +		return;
 +
++	t.magic		= BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
++	t.sequence	= atomic_add_return(1, &bt->sequence);
++
 +	cpu = get_cpu();
-+	t = &per_cpu(cpu_trace, cpu);
++	t.cpu		= cpu;
++	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
++	put_cpu();
 +
-+	t->magic	= BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
-+	t->sequence	= atomic_add_return(1, &bt->sequence);
++	t.device	= bt->dev;
++	t.sector	= sector;
++	t.bytes		= bytes;
++	t.action	= what;
++	t.error		= error;
++	t.pdu_len	= pdu_len;
 +
-+	t->cpu		= cpu;
-+	t->time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
-+
-+	t->device	= bt->dev;
-+	t->sector	= sector;
-+	t->bytes	= bytes;
-+	t->action	= what;
-+	t->error	= error;
-+	t->pdu_len	= pdu_len;
-+
-+	t->pid		= current->pid;
-+	memcpy(t->comm, current->comm, sizeof(t->comm));
++	t.pid		= current->pid;
++	memcpy(t.comm, current->comm, sizeof(t.comm));
 +
 +	local_irq_save(flags);
-+	__relay_write(bt->rchan, t, sizeof(*t));
++	__relay_write(bt->rchan, &t, sizeof(t));
 +	if (pdu_len)
 +		__relay_write(bt->rchan, pdu_data, pdu_len);
 +	local_irq_restore(flags);
-+
-+	put_cpu();
 +}
 +
 +EXPORT_SYMBOL_GPL(__blk_add_trace);
@@ -505,8 +501,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +
 +module_init(blk_trace_init);
 +
---- /dev/null	2004-06-30 22:03:36.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-23 17:17:02.000000000 +0200
+--- /dev/null	2005-09-09 21:24:12.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-09-22 08:47:50.000000000 +0200
 @@ -0,0 +1,180 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
