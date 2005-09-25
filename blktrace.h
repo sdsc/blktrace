@@ -6,6 +6,37 @@
 #include <asm/byteorder.h>
 #include "blktrace_api.h"
 
+#define MINORBITS	20
+#define MINORMASK	((1U << MINORBITS) - 1)
+#define MAJOR(dev)	((unsigned int) ((dev) >> MINORBITS))
+#define MINOR(dev)	((unsigned int) ((dev) & MINORMASK))
+
+#define SECONDS(x) 		((unsigned long long)(x) / 1000000000)
+#define NANO_SECONDS(x)		((unsigned long long)(x) % 1000000000)
+#define DOUBLE_TO_NANO_ULL(d)	((unsigned long long)((d) * 1000000000))
+
+#define min(a, b)	((a) < (b) ? (a) : (b))
+
+struct io_stats {
+	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
+	unsigned long ireads, iwrites;
+	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
+	unsigned long long iread_kb, iwrite_kb;
+	unsigned long io_unplugs, timer_unplugs;
+};
+
+struct per_cpu_info {
+	int cpu;
+	int nelems;
+
+	int fd;
+	char fname[128];
+
+	struct io_stats io_stats;
+};
+
+extern FILE *ofp;
+
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 #define SUPPORTED_VERSION	(0x05)
 
@@ -73,5 +104,10 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 	t->device	= be32_to_cpu(t->device);
 	/* t->comm is a string (endian neutral) */
 }
+
+extern void set_all_format_specs(char *);
+extern int add_format_spec(char *);
+extern void process_fmt(char *, struct per_cpu_info *, struct blk_io_trace *,
+			unsigned long long, int, unsigned char *);
 
 #endif
