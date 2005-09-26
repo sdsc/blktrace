@@ -1444,6 +1444,15 @@ static int do_file(void)
 
 		show_entries_rb(0);
 
+		/*
+		 * we check this a little late, since we want to make
+		 * sure that all files have had a chance to be read
+		 * before deciding there are definitely no further
+		 * entries before the stop time
+		 */
+		if (last_allowed_time > stopwatch_end)
+			break;
+
 	} while (events_added);
 
 	if (rb_sort_entries)
