@@ -151,6 +151,9 @@ static void print_field(char *act, struct per_cpu_info *pci,
 	case 'n':
 		fprintf(ofp, strcat(format, "u"), t->bytes >> 9);
 		break;
+	case 'N':
+		fprintf(ofp, strcat(format, "u"), t->bytes);
+		break;
 	case 'p':
 		fprintf(ofp, strcat(format, "u"), t->pid);
 		break;
@@ -259,7 +262,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	case 'W':	/* Bounce */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			char *p;
-			fprintf(ofp, "%u ", t->bytes >> 9);
+			fprintf(ofp, "%u ", t->bytes);
 			p = dump_pdu(pdu_buf, pdu_len);
 			if (p)
 				fprintf(ofp, "(%s) ", p);
