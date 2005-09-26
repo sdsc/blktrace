@@ -60,6 +60,50 @@ int add_format_spec(char *optarg)
 	return 0;
 }
 
+static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
+{
+	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
+	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
+	int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
+	int i = 0;
+
+	if (w)
+		rwbs[i++] = 'W';
+	else
+		rwbs[i++] = 'R';
+	if (b)
+		rwbs[i++] = 'B';
+	if (s)
+		rwbs[i++] = 'S';
+
+	rwbs[i] = '\0';
+}
+
+static char *dump_pdu(unsigned char *pdu_buf, int pdu_len)
+{
+	static char p[4096];
+	int i, len;
+
+	if (!pdu_buf || !pdu_len)
+		return NULL;
+
+	for (len = 0, i = 0; i < pdu_len; i++) {
+		if (i)
+			len += sprintf(p + len, " ");
+
+		len += sprintf(p + len, "%02x", pdu_buf[i]);
+	}
+
+	return p;
+}
+
+static unsigned int get_pdu_int(struct blk_io_trace *t)
+{
+	__u64 *val = (__u64 *) ((char *) t + sizeof(*t));
+
+	return be64_to_cpu(*val);
+}
+
 static void print_field(char *act, struct per_cpu_info *pci,
 			struct blk_io_trace *t, unsigned long long elapsed,
 			int pdu_len, unsigned char *pdu_buf, char field,
@@ -87,19 +131,8 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		break;
 	case 'd': {
 		char rwbs[4];
-		int i = 0;
-		int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
-		int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
-		int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
-		if (w)
-			rwbs[i++] = 'W';
-		else
-			rwbs[i++] = 'R';
-		if (b)
-			rwbs[i++] = 'B';
-		if (s)
-			rwbs[i++] = 'S';
-		rwbs[i] = '\0';
+
+		fill_rwbs(rwbs, t);
 		fprintf(ofp, strcat(format, "s"), rwbs);
 		break;
 	}
@@ -121,18 +154,12 @@ static void print_field(char *act, struct per_cpu_info *pci,
 	case 'p':
 		fprintf(ofp, strcat(format, "u"), t->pid);
 		break;
-	case 'P':	/* format width ignored */
-		if ((pdu_len > 0) && (pdu_buf != NULL)) {
-			int i;
-			unsigned char *p = pdu_buf;
-			for (i = 0; i < pdu_len; i++) {
-				if (i)
-					fprintf(ofp, " ");
-
-				fprintf(ofp, "%02x", *p++);
-			}
-		}
+	case 'P': { /* format width ignored */
+		char *p = dump_pdu(pdu_buf, pdu_len);
+		if (p)
+			fprintf(ofp, "%s", p);
 		break;
+	}
 	case 's':
 		fprintf(ofp, strcat(format, "ld"), t->sequence);
 		break;
@@ -154,9 +181,7 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		fprintf(ofp, strcat(format, "llu"), elapsed / 1000);
 		break;
 	case 'U': {
-		__u64 *depth = (__u64 *) ((char *) t + sizeof(*t));
-		fprintf(ofp, strcat(format, "u"),
-					(unsigned int) be64_to_cpu(*depth));
+		fprintf(ofp, strcat(format, "u"), get_pdu_int(t));
 		break;
 	}
 	default:
@@ -165,9 +190,9 @@ static void print_field(char *act, struct per_cpu_info *pci,
 	}
 }
 
-static char *parse_field(char *act, struct per_cpu_info *pci, 
-			 struct blk_io_trace *t, unsigned long long elapsed, 
-			 int pdu_len, unsigned char *pdu_buf, 
+static char *parse_field(char *act, struct per_cpu_info *pci,
+			 struct blk_io_trace *t, unsigned long long elapsed,
+			 int pdu_len, unsigned char *pdu_buf,
 			 char *master_format)
 {
 	int minus = 0;
@@ -192,103 +217,107 @@ static char *parse_field(char *act, struct per_cpu_info *pci,
 	return p;
 }
 
-static char *fmt_select(int fmt_spec, struct blk_io_trace *t,
-			unsigned long long elapsed)
+static void process_default(char *act, struct per_cpu_info *pci,
+			    struct blk_io_trace *t, unsigned long long elapsed,
+			    int pdu_len, unsigned char *pdu_buf)
 {
-	char *fmt;
-	static char scratch_format[1024];
+	char rwbs[4];
 
-	if (override_format[fmt_spec] != NULL)
-		return override_format[fmt_spec];
+	fill_rwbs(rwbs, t);
 
-	switch (fmt_spec) {
+	/*
+	 * The header is always the same
+	 */
+	fprintf(ofp, "%3d,%-3d %2d %8d %5d.%09lu %5u %2s %3s ",
+		MAJOR(t->device), MINOR(t->device), pci->cpu, t->sequence,
+		(int) SECONDS(t->time), (unsigned long) NANO_SECONDS(t->time),
+		t->pid, act, rwbs);
+
+	switch (act[0]) {
 	case 'C': 	/* Complete */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC))
-			strcpy(scratch_format, HEADER "(%P) [%e]\n");
-		else {
+		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
+			char *p = dump_pdu(pdu_buf, pdu_len);
+			if (p)
+				fprintf(ofp, "(%s) ", p);
+			fprintf(ofp, "[%d]\n", t->error);
+		} else {
 			if (elapsed != -1ULL) {
-				strcpy(scratch_format,
-					HEADER "%S +%n (%8u) [%e]\n");
-			} else
-				strcpy(scratch_format, HEADER "%S + %n [%e]\n");
+				fprintf(ofp, "%llu + %u (%8llu) [%d]\n",
+					(unsigned long long) t->sector,
+					t->bytes >> 9, elapsed, t->error);
+			} else {
+				fprintf(ofp, "%llu + %u [%d]\n",
+					(unsigned long long) t->sector,
+					t->bytes >> 9, t->error);
+			}
 		}
-		fmt = scratch_format;
 		break;
 
 	case 'D': 	/* Issue */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC))
-			strcpy(scratch_format, HEADER "%n (%P) [%C]\n");
-		else {
-			if (elapsed != -1ULL) {
-				strcpy(scratch_format,
-					HEADER "%S + %n (%8u) [%C]\n");
-			} else
-				strcpy(scratch_format, HEADER "%S + %n [%C]\n");
-		}
-		fmt = scratch_format;
-		break;
-
 	case 'I': 	/* Insert */
-		if (t->action & BLK_TC_ACT(BLK_TC_PC))
-			strcpy(scratch_format, HEADER "%n (%P) [%C]\n");
-		else {
-			if (elapsed != -1ULL) {
-				strcpy(scratch_format,
-					HEADER "%S + %n (%8u) [%C]\n");
-			} else
-				strcpy(scratch_format, HEADER "%S + %n [%C]\n");
-		}
-		fmt = scratch_format;
-		break;
-
 	case 'Q': 	/* Queue */
 	case 'W':	/* Bounce */
-		if (elapsed != -1ULL) {
-			strcpy(scratch_format, HEADER "%S + %n (%8u) [%C]\n");
-		} else
-			strcpy(scratch_format, HEADER "%S + %n [%C]\n");
-		fmt = scratch_format;
+		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
+			char *p;
+			fprintf(ofp, "%u ", t->bytes >> 9);
+			p = dump_pdu(pdu_buf, pdu_len);
+			if (p)
+				fprintf(ofp, "(%s) ", p);
+			fprintf(ofp, "[%s]\n", t->comm);
+		} else {
+			if (elapsed != -1ULL) {
+				fprintf(ofp, "%llu + %u (%8llu) [%s]\n",
+					(unsigned long long) t->sector,
+					t->bytes >> 9, elapsed, t->comm);
+			} else {
+				fprintf(ofp, "%llu + %u [%s]\n",
+					(unsigned long long) t->sector,
+					t->bytes >> 9, t->comm);
+			}
+		}
 		break;
 
 	case 'B':	/* Back merge */
 	case 'F':	/* Front merge */
 	case 'M':	/* Front or back merge */
-		fmt = HEADER "%S + %n [%C]\n";
+	case 'G':	/* Get request */
+	case 'S':	/* Sleep request */
+		fprintf(ofp, "%llu + %u [%s]\n", (unsigned long long) t->sector,
+			t->bytes >> 9, t->comm);
 		break;
 
 	case 'P':	/* Plug */
-		fmt = HEADER "[%C]\n";
-		break;
-
-	case 'G':	/* Get request */
-	case 'S':	/* Sleep request */
-		fmt = HEADER "%S + %n [%C]\n";
+		fprintf(ofp, "[%s]\n", t->comm);
 		break;
 
 	case 'U':	/* Unplug IO */
-	case 'T':	/* Unplug timer */
-		fmt = HEADER "[%C] %U\n";
+	case 'T': {	/* Unplug timer */
+		fprintf(ofp, "[%s] %u\n", t->comm, get_pdu_int(t));
 		break;
+	}
 
 	case 'X': 	/* Split */
-		strcpy(scratch_format, HEADER "%S / %U [%C]\n");
-		fmt = scratch_format;
+		fprintf(ofp, "%llu / %u [%s]\n", (unsigned long long) t->sector,
+			get_pdu_int(t), t->comm);
 		break;
 
 	default:
-		fprintf(stderr,"FATAL: Invalid format spec %c\n", fmt_spec);
-		exit(1);
-		/*NOTREACHED*/
+		fprintf(stderr, "Unknown action %c\n", act[0]);
+		break;
 	}
 
-	return fmt;
 }
 
 void process_fmt(char *act, struct per_cpu_info *pci, struct blk_io_trace *t,
 		 unsigned long long elapsed, int pdu_len,
 		 unsigned char *pdu_buf)
 {
-	char *p = fmt_select(act[0], t, elapsed);
+	char *p = override_format[(int) *act];
+
+	if (!p) {
+		process_default(act, pci, t, elapsed, pdu_len, pdu_buf);
+		return;
+	}
 
 	while (*p) {
 		switch (*p) {
