@@ -147,6 +147,8 @@ struct trace {
 };
 
 static struct rb_root rb_sort_root;
+static unsigned long rb_sort_entries;
+
 static struct rb_root rb_track_root;
 
 static struct trace *trace_list;
@@ -270,6 +272,7 @@ static inline int trace_rb_insert(struct trace *t)
 		}
 	}
 
+	rb_sort_entries++;
 	rb_link_node(&t->rb_node, parent, p);
 	rb_insert_color(&t->rb_node, &rb_sort_root);
 	return 0;
@@ -1090,7 +1093,7 @@ static inline struct blk_io_trace *bit_alloc(void)
 	return malloc(sizeof(*bit));
 }
 
-static void show_entries_rb(void)
+static void show_entries_rb(int force)
 {
 	struct per_dev_info *pdi = NULL;
 	struct per_cpu_info *pci = NULL;
@@ -1128,7 +1131,7 @@ static void show_entries_rb(void)
 		 * only allow an event to skip us a few times
 		 */
 		if (bit->sequence != (pdi->last_sequence + 1)
-		    && pdi->last_sequence != -1) {
+		    && pdi->last_sequence != -1 && !force) {
 			if (t->skipped < 5) {
 				t->skipped++;
 				break;
@@ -1138,7 +1141,10 @@ static void show_entries_rb(void)
 			}
 		}
 
-		if (bit->time >= stopwatch_end || bit->time > last_allowed_time)
+		if (bit->time >= stopwatch_end)
+			break;
+
+		if (!force && bit->time > last_allowed_time)
 			break;
 
 		pdi->last_sequence = bit->sequence;
@@ -1153,6 +1159,7 @@ static void show_entries_rb(void)
 		}
 
 		rb_erase(&t->rb_node, &rb_sort_root);
+		rb_sort_entries--;
 		bit_free(bit);
 		t_free(t);
 	}
@@ -1179,6 +1186,7 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 		else if (ret < 0) {
 			if (errno != EAGAIN)
 				perror("read");
+
 			return -1;
 		} else {
 			p += ret;
@@ -1189,7 +1197,7 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 	return 0;
 }
 
-static int read_events(int fd)
+static int read_events(int fd, int always_block)
 {
 	struct per_dev_info *pdi = NULL;
 	int events = 0;
@@ -1202,7 +1210,7 @@ static int read_events(int fd)
 
 		bit = bit_alloc();
 
-		if (read_data(fd, bit, sizeof(*bit), !events))
+		if (read_data(fd, bit, sizeof(*bit), !events || always_block))
 			break;
 
 		magic = be32_to_cpu(bit->magic);
@@ -1301,7 +1309,7 @@ static int do_file(void)
 				if (pci->fd == -1)
 					continue;
 
-				events = read_events(pci->fd);
+				events = read_events(pci->fd, 1);
 				if (!events) {
 					close(pci->fd);
 					pci->fd = -1;
@@ -1318,9 +1326,12 @@ static int do_file(void)
 		if (sort_entries() == -1)
 			break;
 
-		show_entries_rb();
+		show_entries_rb(0);
 
 	} while (events_added);
+
+	if (rb_sort_entries)
+		show_entries_rb(1);
 
 	return 0;
 }
@@ -1334,15 +1345,18 @@ static int do_stdin(void)
 	do {
 		int events;
 
-		events = read_events(fd);
+		events = read_events(fd, 0);
 		if (!events)
 			break;
 	
 		if (sort_entries() == -1)
 			break;
 
-		show_entries_rb();
+		show_entries_rb(0);
 	} while (1);
+
+	if (rb_sort_entries)
+		show_entries_rb(1);
 
 	close(fd);
 	return 0;
