@@ -1167,10 +1167,10 @@ static void find_genesis(void)
 	}
 }
 
-static inline int check_stopwatch(struct trace *t)
+static inline int check_stopwatch(struct blk_io_trace *bit)
 {
-	if (t->bit->time < stopwatch_end &&
-	    t->bit->time >= stopwatch_start)
+	if (bit->time < stopwatch_end &&
+	    bit->time >= stopwatch_start)
 		return 0;
 
 	return 1;
@@ -1192,9 +1192,9 @@ static int sort_entries(void)
 		if (verify_trace(bit))
 			continue;
 
-		t->bit->time -= genesis_time;
+		bit->time -= genesis_time;
 
-		if (check_stopwatch(t)) {
+		if (check_stopwatch(bit)) {
 			bit_free(bit);
 			t_free(t);
 			continue;
