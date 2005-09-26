@@ -59,6 +59,7 @@ struct per_process_info {
 	__u32 pid;
 	struct io_stats io_stats;
 	struct per_process_info *hash_next, *list_next;
+	int more_than_one;
 
 	/*
 	 * individual io stats
@@ -277,10 +278,16 @@ static struct per_process_info *find_process_by_pid(__u32 pid)
 
 static struct per_process_info *find_process(__u32 pid, char *name)
 {
+	struct per_process_info *ppi;
+
 	if (ppi_hash_by_pid)
 		return find_process_by_pid(pid);
 
-	return find_process_by_name(name);
+	ppi = find_process_by_name(name);
+	if (ppi && ppi->pid != pid)
+		ppi->more_than_one = 1;
+
+	return ppi;
 }
 
 static inline int trace_rb_insert(struct trace *t)
@@ -1031,10 +1038,10 @@ static void show_process_stats(void)
 	while (ppi) {
 		char name[64];
 
-		if (ppi_hash_by_pid)
-			sprintf(name, "%s (%u)", ppi->name, ppi->pid);
-		else
+		if (ppi->more_than_one)
 			sprintf(name, "%s (%u, ...)", ppi->name, ppi->pid);
+		else
+			sprintf(name, "%s (%u)", ppi->name, ppi->pid);
 
 		dump_io_stats(&ppi->io_stats, name);
 		dump_wait_stats(ppi);
@@ -1572,7 +1579,7 @@ int main(int argc, char *argv[])
 				return 1;
 			break;
 		case 'n':
-			ppi_hash_by_pid = 1;
+			ppi_hash_by_pid = 0;
 			break;
 		case 'v':
 			printf("%s version %s\n", argv[0], blkparse_version);
