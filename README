@@ -63,6 +63,7 @@ $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 	-o Output file. If not given, output is stdout.
 	-b stdin read batching.
 	-s Show per-program io statistics.
+	-n Hash processes by name, not pid.
 	-t Track individual ios. Will tell you the time a request took to
 	   get queued, to get dispatched, and to get completed.
 	-q Quiet. Don't display any stats at the end of the trace.

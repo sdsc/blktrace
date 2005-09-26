@@ -33,6 +33,7 @@
 
 #include "blktrace.h"
 #include "rbtree.h"
+#include "jhash.h"
 
 static char blkparse_version[] = "0.90";
 
@@ -68,11 +69,13 @@ struct per_process_info {
 };
 
 #define PPI_HASH_SHIFT	(8)
-static struct per_process_info *ppi_hash[1 << PPI_HASH_SHIFT];
+#define PPI_HASH_SIZE	(1 << PPI_HASH_SHIFT)
+#define PPI_HASH_MASK	(PPI_HASH_SIZE - 1)
+static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"i:o:b:stqw:f:F:v"
+#define S_OPTS	"i:o:b:stqw:f:F:vn"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -129,6 +132,12 @@ static struct option l_opts[] = {
 		.val = 'F'
 	},
 	{
+		.name = "hash by name",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'n'
+	},
+	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -168,6 +177,7 @@ struct io_track {
 	dev_t device;
 	__u64 sector;
 	__u32 pid;
+	char comm[16];
 	unsigned long long allocation_time;
 	unsigned long long queue_time;
 	unsigned long long dispatch_time;
@@ -188,6 +198,7 @@ static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 
 static int per_process_stats;
 static int track_ios;
+static int ppi_hash_by_pid = 1;
 
 #define RB_BATCH_DEFAULT	(512)
 static int rb_batch = RB_BATCH_DEFAULT;
@@ -197,25 +208,35 @@ static int pipeline;
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
 
-static inline unsigned long hash_long(unsigned long val)
-{
-#if __WORDSIZE == 32
-	val *= 0x9e370001UL;
-#elif __WORDSIZE == 64
-	val *= 0x9e37fffffffc0001UL;
-#else
-#error unknown word size
-#endif
+#define JHASH_RANDOM	(0x3af5f2ee)
 
-	return val >> (__WORDSIZE - PPI_HASH_SHIFT);
+static inline int ppi_hash_pid(__u32 pid)
+{
+	return jhash_1word(pid, JHASH_RANDOM) & PPI_HASH_MASK;
+}
+
+static inline int ppi_hash_name(const char *name)
+{
+	return jhash(name, 16, JHASH_RANDOM) & PPI_HASH_MASK;
+}
+
+static inline int ppi_hash(struct per_process_info *ppi)
+{
+	if (ppi_hash_by_pid)
+		return ppi_hash_pid(ppi->pid);
+
+	if (ppi->name[0] == 0)
+		fprintf(stderr, "bad\n");
+
+	return ppi_hash_name(ppi->name);
 }
 
 static inline void add_process_to_hash(struct per_process_info *ppi)
 {
-	const int hash_idx = hash_long(ppi->pid);
+	const int hash_idx = ppi_hash(ppi);
 
-	ppi->hash_next = ppi_hash[hash_idx];
-	ppi_hash[hash_idx] = ppi;
+	ppi->hash_next = ppi_hash_table[hash_idx];
+	ppi_hash_table[hash_idx] = ppi;
 }
 
 static inline void add_process_to_list(struct per_process_info *ppi)
@@ -225,12 +246,28 @@ static inline void add_process_to_list(struct per_process_info *ppi)
 	ppi_list_entries++;
 }
 
-static struct per_process_info *find_process_by_pid(__u32 pid)
+static struct per_process_info *find_process_by_name(char *name)
 {
-	const int hash_idx = hash_long(pid);
+	const int hash_idx = ppi_hash_name(name);
 	struct per_process_info *ppi;
 
-	ppi = ppi_hash[hash_idx];
+	ppi = ppi_hash_table[hash_idx];
+	while (ppi) {
+		if (!strcmp(ppi->name, name))
+			return ppi;
+
+		ppi = ppi->hash_next;
+	}
+
+	return NULL;
+}
+
+static struct per_process_info *find_process_by_pid(__u32 pid)
+{
+	const int hash_idx = ppi_hash_pid(pid);
+	struct per_process_info *ppi;
+
+	ppi = ppi_hash_table[hash_idx];
 	while (ppi) {
 		if (ppi->pid == pid)
 			return ppi;
@@ -239,6 +276,14 @@ static struct per_process_info *find_process_by_pid(__u32 pid)
 	}
 
 	return NULL;
+}
+
+static struct per_process_info *find_process(__u32 pid, char *name)
+{
+	if (ppi_hash_by_pid)
+		return find_process_by_pid(pid);
+
+	return find_process_by_name(name);
 }
 
 static inline int trace_rb_insert(struct trace *t)
@@ -362,7 +407,8 @@ static struct io_track *__find_track(dev_t device, __u64 sector)
 	return NULL;
 }
 
-static struct io_track *find_track(__u32 pid, dev_t device, __u64 sector)
+static struct io_track *find_track(__u32 pid, char *comm, dev_t device,
+				   __u64 sector)
 {
 	struct io_track *iot;
 
@@ -370,6 +416,7 @@ static struct io_track *find_track(__u32 pid, dev_t device, __u64 sector)
 	if (!iot) {
 		iot = malloc(sizeof(*iot));
 		iot->pid = pid;
+		memcpy(iot->comm, comm, sizeof(iot->comm));
 		iot->device = device;
 		iot->sector = sector;
 		track_rb_insert(iot);
@@ -403,7 +450,7 @@ static void log_track_getrq(struct blk_io_trace *t)
 	if (!track_ios)
 		return;
 
-	iot = find_track(t->pid, t->device, t->sector);
+	iot = find_track(t->pid, t->comm, t->device, t->sector);
 	iot->allocation_time = t->time;
 }
 
@@ -419,12 +466,12 @@ static unsigned long long log_track_insert(struct blk_io_trace *t)
 	if (!track_ios)
 		return -1;
 
-	iot = find_track(t->pid, t->device, t->sector);
+	iot = find_track(t->pid, t->comm, t->device, t->sector);
 	iot->queue_time = t->time;
 	elapsed = iot->queue_time - iot->allocation_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_allocation_wait[w])
@@ -457,7 +504,7 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	elapsed = iot->dispatch_time - iot->queue_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_dispatch_wait[w])
@@ -490,7 +537,7 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 	elapsed = iot->completion_time - iot->dispatch_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process_by_pid(iot->pid);
+		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_completion_wait[w])
@@ -509,12 +556,12 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 
 static struct io_stats *find_process_io_stats(__u32 pid, char *name)
 {
-	struct per_process_info *ppi = find_process_by_pid(pid);
+	struct per_process_info *ppi = find_process(pid, name);
 
 	if (!ppi) {
 		ppi = malloc(sizeof(*ppi));
 		memset(ppi, 0, sizeof(*ppi));
-		strncpy(ppi->name, name, sizeof(ppi->name));
+		memcpy(ppi->name, name, 16);
 		ppi->pid = pid;
 		add_process_to_hash(ppi);
 		add_process_to_list(ppi);
@@ -522,7 +569,6 @@ static struct io_stats *find_process_io_stats(__u32 pid, char *name)
 
 	return &ppi->io_stats;
 }
-
 
 static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
 {
@@ -988,7 +1034,11 @@ static void show_process_stats(void)
 	while (ppi) {
 		char name[64];
 
-		snprintf(name, sizeof(name)-1, "%s (%u)", ppi->name, ppi->pid);
+		if (ppi_hash_by_pid)
+			sprintf(name, "%s (%u)", ppi->name, ppi->pid);
+		else
+			sprintf(name, "%s (%u, ...)", ppi->name, ppi->pid);
+
 		dump_io_stats(&ppi->io_stats, name);
 		dump_wait_stats(ppi);
 		ppi = ppi->list_next;
@@ -1466,6 +1516,7 @@ static char usage_str[] = \
 	"\t-o Output file. If not given, output is stdout\n" \
 	"\t-b stdin read batching\n" \
 	"\t-s Show per-program io statistics\n" \
+	"\t-n Hash processes by name, not pid\n" \
 	"\t-t Track individual ios. Will tell you the time a request took\n" \
 	"\t   to get queued, to get dispatched, and to get completed\n" \
 	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
@@ -1522,6 +1573,9 @@ int main(int argc, char *argv[])
 		case 'F':
 			if (add_format_spec(optarg) != 0)
 				return 1;
+			break;
+		case 'n':
+			ppi_hash_by_pid = 1;
 			break;
 		case 'v':
 			printf("%s version %s\n", argv[0], blkparse_version);

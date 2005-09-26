@@ -17,6 +17,9 @@
 
 #define min(a, b)	((a) < (b) ? (a) : (b))
 
+typedef __u32 u32;
+typedef __u8 u8;
+
 struct io_stats {
 	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
 	unsigned long ireads, iwrites;
