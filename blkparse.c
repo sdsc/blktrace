@@ -225,9 +225,6 @@ static inline int ppi_hash(struct per_process_info *ppi)
 	if (ppi_hash_by_pid)
 		return ppi_hash_pid(ppi->pid);
 
-	if (ppi->name[0] == 0)
-		fprintf(stderr, "bad\n");
-
 	return ppi_hash_name(ppi->name);
 }
 
