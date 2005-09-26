@@ -1109,43 +1109,6 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
-static void find_genesis(void)
-{
-	struct trace *t = trace_list;
-
-	genesis_time = -1ULL;
-	while (t != NULL) {
-		if (t->bit->time < genesis_time)
-			genesis_time = t->bit->time;
-
-		t = t->next;
-	}
-}
-
-static int sort_entries(void)
-{
-	struct trace *t;
-	int nr = 0;
-
-	if (!genesis_time)
-		find_genesis();
-
-	while ((t = trace_list) != NULL) {
-		trace_list = t->next;
-
-		if (verify_trace(t->bit))
-			continue;
-
-		t->bit->time -= genesis_time;
-
-		if (trace_rb_insert(t))
-			break;
-		nr++;
-	}
-
-	return nr;
-}
-
 /*
  * struct trace and blktrace allocation cache, we do potentially
  * millions of mallocs for these structures while only using at most
@@ -1189,6 +1152,61 @@ static inline struct blk_io_trace *bit_alloc(void)
 	}
 
 	return malloc(sizeof(*bit));
+}
+
+static void find_genesis(void)
+{
+	struct trace *t = trace_list;
+
+	genesis_time = -1ULL;
+	while (t != NULL) {
+		if (t->bit->time < genesis_time)
+			genesis_time = t->bit->time;
+
+		t = t->next;
+	}
+}
+
+static inline int check_stopwatch(struct trace *t)
+{
+	if (t->bit->time < stopwatch_end &&
+	    t->bit->time >= stopwatch_start)
+		return 0;
+
+	return 1;
+}
+
+static int sort_entries(void)
+{
+	struct trace *t;
+	int nr = 0;
+
+	if (!genesis_time)
+		find_genesis();
+
+	while ((t = trace_list) != NULL) {
+		struct blk_io_trace *bit = t->bit;
+
+		trace_list = t->next;
+
+		if (verify_trace(bit))
+			continue;
+
+		t->bit->time -= genesis_time;
+
+		if (check_stopwatch(t)) {
+			bit_free(bit);
+			t_free(t);
+			continue;
+		}
+
+		if (trace_rb_insert(t))
+			break;
+
+		nr++;
+	}
+
+	return nr;
 }
 
 static void show_entries_rb(int force)
@@ -1248,22 +1266,17 @@ static void show_entries_rb(int force)
 		}
 
 ok:
-		if (bit->time >= stopwatch_end)
-			break;
-
 		if (!force && bit->time > last_allowed_time)
 			break;
 
 		pdi->last_sequence = bit->sequence;
 
-		if (bit->time >= stopwatch_start) {
-			check_time(pdi, bit);
+		check_time(pdi, bit);
 
-			if (!pci || pci->cpu != bit->cpu)
-				pci = get_cpu_info(pdi, bit->cpu);
+		if (!pci || pci->cpu != bit->cpu)
+			pci = get_cpu_info(pdi, bit->cpu);
 
-			dump_trace(bit, pci, pdi);
-		}
+		dump_trace(bit, pci, pdi);
 
 		rb_erase(&t->rb_node, &rb_sort_root);
 		rb_sort_entries--;
@@ -1341,6 +1354,7 @@ static int read_events(int fd, int always_block)
 		t->bit = bit;
 
 		trace_to_cpu(bit);
+
 		t->next = trace_list;
 		trace_list = t;
 
