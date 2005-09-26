@@ -278,6 +278,27 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
+static struct trace *trace_rb_find(unsigned long sequence)
+{
+	struct rb_node **p = &rb_sort_root.rb_node;
+	struct rb_node *parent = NULL;
+	struct trace *__t;
+
+	while (*p) {
+		parent = *p;
+		__t = rb_entry(parent, struct trace, rb_node);
+
+		if (sequence < __t->bit->sequence)
+			p = &(*p)->rb_left;
+		else if (sequence > __t->bit->sequence)
+			p = &(*p)->rb_right;
+		else
+			return __t;
+	}
+
+	return NULL;
+}
+
 static inline int track_rb_insert(struct io_track *iot)
 {
 	struct rb_node **p = &rb_track_root.rb_node;
@@ -1030,16 +1051,35 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
+static void find_genesis(void)
+{
+	struct trace *t = trace_list;
+
+	genesis_time = -1ULL;
+	while (t != NULL) {
+		if (t->bit->time < genesis_time)
+			genesis_time = t->bit->time;
+
+		t = t->next;
+	}
+}
+
 static int sort_entries(void)
 {
 	struct trace *t;
 	int nr = 0;
+
+	if (!genesis_time)
+		find_genesis();
 
 	while ((t = trace_list) != NULL) {
 		trace_list = t->next;
 
 		if (verify_trace(t->bit))
 			continue;
+
+		t->bit->time -= genesis_time;
+
 		if (trace_rb_insert(t))
 			break;
 		nr++;
@@ -1132,15 +1172,25 @@ static void show_entries_rb(int force)
 		 */
 		if (bit->sequence != (pdi->last_sequence + 1)
 		    && pdi->last_sequence != -1 && !force) {
+			struct trace *__t;
+
+			/*
+			 * the wanted sequence is really there, continue
+			 * because this means that the log time is earlier
+			 * on the trace we have now
+			 */
+			__t = trace_rb_find(pdi->last_sequence + 1);
+			if (__t)
+				goto ok;
+
 			if (t->skipped < 5) {
 				t->skipped++;
 				break;
-			} else {
-				fprintf(stderr, "skipping from %lu to %u\n", pdi->last_sequence, bit->sequence);
+			} else
 				pdi->skips++;
-			}
 		}
 
+ok:
 		if (bit->time >= stopwatch_end)
 			break;
 
@@ -1236,11 +1286,6 @@ static int read_events(int fd, int always_block)
 		trace_to_cpu(bit);
 		t->next = trace_list;
 		trace_list = t;
-
-		if (genesis_time == 0 || t->bit->time < genesis_time)
-			genesis_time = t->bit->time;
-
-		bit->time -= genesis_time;
 
 		if (!pdi || pdi->id != bit->device)
 			pdi = get_dev_info(bit->device);
