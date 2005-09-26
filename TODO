@@ -1,4 +1,9 @@
 TODO before relasing 1.0
 ------------------------
 
+- Need better logic in show_entries_rb() for knowing when it's ok
+  to have sequence out of order. For SMP traces, we can currently
+  get a huge backlog of entries in the rb tree. This eats memory
+  and slows things down.
+
 - Add full description of the output of blkparse
