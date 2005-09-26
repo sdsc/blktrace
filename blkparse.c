@@ -278,7 +278,7 @@ static inline int trace_rb_insert(struct trace *t)
 	return 0;
 }
 
-static struct trace *trace_rb_find(unsigned long sequence)
+static struct trace *trace_rb_find(dev_t device, unsigned long sequence)
 {
 	struct rb_node **p = &rb_sort_root.rb_node;
 	struct rb_node *parent = NULL;
@@ -288,7 +288,11 @@ static struct trace *trace_rb_find(unsigned long sequence)
 		parent = *p;
 		__t = rb_entry(parent, struct trace, rb_node);
 
-		if (sequence < __t->bit->sequence)
+		if (device < __t->bit->device)
+			p = &(*p)->rb_left;
+		else if (device > __t->bit->device)
+			p = &(*p)->rb_right;
+		else if (sequence < __t->bit->sequence)
 			p = &(*p)->rb_left;
 		else if (sequence > __t->bit->sequence)
 			p = &(*p)->rb_right;
@@ -590,7 +594,7 @@ static struct per_dev_info *get_dev_info(dev_t id)
 
 	pdi = &devices[ndevices - 1];
 	pdi->id = id;
-	pdi->last_sequence = -1;
+	pdi->last_sequence = 0;
 	pdi->last_read_time = 0;
 	return pdi;
 }
@@ -1170,8 +1174,7 @@ static void show_entries_rb(int force)
 		 * on SMP systems. to prevent stalling on lost events,
 		 * only allow an event to skip us a few times
 		 */
-		if (bit->sequence != (pdi->last_sequence + 1)
-		    && pdi->last_sequence != -1 && !force) {
+		if (bit->sequence > (pdi->last_sequence + 1) && !force) {
 			struct trace *__t;
 
 			/*
@@ -1179,7 +1182,7 @@ static void show_entries_rb(int force)
 			 * because this means that the log time is earlier
 			 * on the trace we have now
 			 */
-			__t = trace_rb_find(pdi->last_sequence + 1);
+			__t = trace_rb_find(pdi->id, pdi->last_sequence + 1);
 			if (__t)
 				goto ok;
 
@@ -1311,7 +1314,7 @@ static int do_file(void)
 	for (i = 0; i < ndevices; i++) {
 		pdi = &devices[i];
 		pdi->nfiles = 0;
-		pdi->last_sequence = -1;
+		pdi->last_sequence = 0;
 
 		for (j = 0;; j++) {
 			struct stat st;
