@@ -1176,14 +1176,17 @@ static inline int check_stopwatch(struct blk_io_trace *bit)
 	return 1;
 }
 
-static int sort_entries(void)
+/*
+ * return youngest entry read
+ */
+static int sort_entries(unsigned long long *youngest)
 {
 	struct trace *t;
-	int nr = 0;
 
 	if (!genesis_time)
 		find_genesis();
 
+	*youngest = -1ULL;
 	while ((t = trace_list) != NULL) {
 		struct blk_io_trace *bit = t->bit;
 
@@ -1201,12 +1204,13 @@ static int sort_entries(void)
 		}
 
 		if (trace_rb_insert(t))
-			break;
+			return -1;
 
-		nr++;
+		if (bit->time < *youngest)
+			*youngest = bit->time;
 	}
 
-	return nr;
+	return 0;
 }
 
 static void show_entries_rb(int force)
@@ -1412,6 +1416,8 @@ static int do_file(void)
 	 * now loop over the files reading in the data
 	 */
 	do {
+		unsigned long long youngest;
+
 		events_added = 0;
 		last_allowed_time = -1ULL;
 
@@ -1439,7 +1445,10 @@ static int do_file(void)
 			}
 		}
 
-		if (sort_entries() == -1)
+		if (sort_entries(&youngest))
+			break;
+
+		if (youngest > stopwatch_end)
 			break;
 
 		show_entries_rb(0);
@@ -1454,6 +1463,7 @@ static int do_file(void)
 
 static int do_stdin(void)
 {
+	unsigned long long youngest;
 	int fd;
 
 	last_allowed_time = -1ULL;
@@ -1465,7 +1475,10 @@ static int do_stdin(void)
 		if (!events)
 			break;
 	
-		if (sort_entries() == -1)
+		if (sort_entries(&youngest))
+			break;
+
+		if (youngest > stopwatch_end)
 			break;
 
 		show_entries_rb(0);
