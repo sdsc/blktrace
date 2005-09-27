@@ -153,7 +153,6 @@ struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
 	struct trace *next;
-	int skipped;
 };
 
 static struct rb_root rb_sort_root;
@@ -438,7 +437,9 @@ static void log_track_frontmerge(struct blk_io_trace *t)
 
 	iot = __find_track(t->device, t->sector + (t->bytes >> 9));
 	if (!iot) {
-		fprintf(stderr, "failed to find mergeable event\n");
+		fprintf(stderr, "merge not found for (%d,%d): %llu\n",
+			MAJOR(t->device), MINOR(t->device),
+			t->sector + (t->bytes >> 9));
 		return;
 	}
 
@@ -458,7 +459,6 @@ static void log_track_getrq(struct blk_io_trace *t)
 	iot->allocation_time = t->time;
 }
 
-
 /*
  * return time between rq allocation and insertion
  */
@@ -472,6 +472,10 @@ static unsigned long long log_track_insert(struct blk_io_trace *t)
 
 	iot = find_track(t->pid, t->comm, t->device, t->sector);
 	iot->queue_time = t->time;
+
+	if (!iot->allocation_time)
+		return -1;
+
 	elapsed = iot->queue_time - iot->allocation_time;
 
 	if (per_process_stats) {
@@ -500,7 +504,8 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 
 	iot = __find_track(t->device, t->sector);
 	if (!iot) {
-		fprintf(stderr, "failed to find issue event\n");
+		fprintf(stderr, "issue not found for (%d,%d): %llu\n",
+			MAJOR(t->device), MINOR(t->device), t->sector);
 		return -1;
 	}
 
@@ -533,7 +538,8 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 
 	iot = __find_track(t->device, t->sector);
 	if (!iot) {
-		fprintf(stderr, "failed to find complete event\n");
+		fprintf(stderr, "complete not found for (%d,%d): %llu\n",
+			MAJOR(t->device), MINOR(t->device), t->sector);
 		return -1;
 	}
 
@@ -1250,26 +1256,28 @@ static void show_entries_rb(int force)
 		 * on SMP systems. to prevent stalling on lost events,
 		 * only allow an event to skip us a few times
 		 */
-		if (bit->sequence > (pdi->last_sequence + 1) && !force) {
-			struct trace *__t;
+		if (bit->sequence != (pdi->last_sequence + 1)) {
+			if (!force) {
+				struct trace *__t;
 
-			/*
-			 * the wanted sequence is really there, continue
-			 * because this means that the log time is earlier
-			 * on the trace we have now
-			 */
-			__t = trace_rb_find(pdi->id, pdi->last_sequence + 1);
-			if (__t)
-				goto ok;
-
-			if (t->skipped < 5) {
-				t->skipped++;
-				break;
-			} else
+				/*
+				 * the wanted sequence is really there,
+				 * continue because this means that the
+				 * log time is earlier on the trace we have
+				 * now
+				 */
+				__t = trace_rb_find(pdi->id,
+							pdi->last_sequence + 1);
+				if (__t == NULL)
+					break;
+			} else {
+				fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
+					MAJOR(pdi->id), MINOR(pdi->id),
+					pdi->last_sequence, bit->sequence);
 				pdi->skips++;
+			}
 		}
 
-ok:
 		if (!force && bit->time > last_allowed_time)
 			break;
 
