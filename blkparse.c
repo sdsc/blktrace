@@ -49,6 +49,9 @@ struct per_dev_info {
 	unsigned long last_sequence;
 	unsigned long skips;
 
+	struct rb_root rb_last;
+	unsigned long rb_last_entries;
+
 	int nfiles;
 	int ncpus;
 	struct per_cpu_info *cpus;
@@ -289,14 +292,15 @@ static struct per_process_info *find_process(__u32 pid, char *name)
 	return ppi;
 }
 
-static inline int trace_rb_insert(struct trace *t)
+static inline int trace_rb_insert(struct trace *t, struct rb_root *root)
 {
-	struct rb_node **p = &rb_sort_root.rb_node;
+	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
 	struct trace *__t;
 
 	while (*p) {
 		parent = *p;
+
 		__t = rb_entry(parent, struct trace, rb_node);
 
 		if (t->bit->time < __t->bit->time)
@@ -320,35 +324,87 @@ static inline int trace_rb_insert(struct trace *t)
 		}
 	}
 
-	rb_sort_entries++;
 	rb_link_node(&t->rb_node, parent, p);
-	rb_insert_color(&t->rb_node, &rb_sort_root);
+	rb_insert_color(&t->rb_node, root);
 	return 0;
 }
 
-static struct trace *trace_rb_find(dev_t device, unsigned long sequence)
+static inline int trace_rb_insert_sort(struct trace *t)
 {
-	struct rb_node **p = &rb_sort_root.rb_node;
-	struct rb_node *parent = NULL;
+	if (!trace_rb_insert(t, &rb_sort_root)) {
+		rb_sort_entries++;
+		return 0;
+	}
+
+	return 1;
+}
+
+static inline int trace_rb_insert_last(struct per_dev_info *pdi,struct trace *t)
+{
+	if (!trace_rb_insert(t, &pdi->rb_last)) {
+		pdi->rb_last_entries++;
+		return 0;
+	}
+
+	return 1;
+}
+
+static struct trace *trace_rb_find(dev_t device, unsigned long sequence,
+				   struct rb_root *root, int order)
+{
+	struct rb_node *n = root->rb_node;
+	struct rb_node *prev = NULL;
 	struct trace *__t;
 
-	while (*p) {
-		parent = *p;
-		__t = rb_entry(parent, struct trace, rb_node);
+	while (n) {
+		__t = rb_entry(n, struct trace, rb_node);
+		prev = n;
 
 		if (device < __t->bit->device)
-			p = &(*p)->rb_left;
+			n = n->rb_left;
 		else if (device > __t->bit->device)
-			p = &(*p)->rb_right;
+			n = n->rb_right;
 		else if (sequence < __t->bit->sequence)
-			p = &(*p)->rb_left;
+			n = n->rb_left;
 		else if (sequence > __t->bit->sequence)
-			p = &(*p)->rb_right;
+			n = n->rb_right;
 		else
 			return __t;
 	}
 
+	/*
+	 * hack - the list may not be sequence ordered because some
+	 * events don't have sequence and time matched. so we end up
+	 * being a little off in the rb lookup here, because we don't
+	 * know the time we are looking for. compensate by browsing
+	 * a little ahead from the last entry to find the match
+	 */
+	if (order && prev) {
+		int max = 5;
+
+		while (((n = rb_next(prev)) != NULL) && max--) {
+			__t = rb_entry(n, struct trace, rb_node);
+			
+			if (__t->bit->device == device &&
+			    __t->bit->sequence == sequence)
+				return __t;
+
+			prev = n;
+		}
+	}
+			
 	return NULL;
+}
+
+static inline struct trace *trace_rb_find_sort(dev_t dev, unsigned long seq)
+{
+	return trace_rb_find(dev, seq, &rb_sort_root, 1);
+}
+
+static inline struct trace *trace_rb_find_last(struct per_dev_info *pdi,
+					       unsigned long seq)
+{
+	return trace_rb_find(pdi->id, seq, &pdi->rb_last, 0);
 }
 
 static inline int track_rb_insert(struct io_track *iot)
@@ -359,7 +415,6 @@ static inline int track_rb_insert(struct io_track *iot)
 
 	while (*p) {
 		parent = *p;
-
 		__iot = rb_entry(parent, struct io_track, rb_node);
 
 		if (iot->device < __iot->device)
@@ -386,23 +441,20 @@ static inline int track_rb_insert(struct io_track *iot)
 
 static struct io_track *__find_track(dev_t device, __u64 sector)
 {
-	struct rb_node **p = &rb_track_root.rb_node;
-	struct rb_node *parent = NULL;
+	struct rb_node *n = rb_track_root.rb_node;
 	struct io_track *__iot;
 
-	while (*p) {
-		parent = *p;
-		
-		__iot = rb_entry(parent, struct io_track, rb_node);
+	while (n) {
+		__iot = rb_entry(n, struct io_track, rb_node);
 
 		if (device < __iot->device)
-			p = &(*p)->rb_left;
+			n = n->rb_left;
 		else if (device > __iot->device)
-			p = &(*p)->rb_right;
+			n = n->rb_right;
 		else if (sector < __iot->sector)
-			p = &(*p)->rb_left;
+			n = n->rb_left;
 		else if (sector > __iot->sector)
-			p = &(*p)->rb_right;
+			n = n->rb_right;
 		else
 			return __iot;
 	}
@@ -645,13 +697,15 @@ static struct per_dev_info *get_dev_info(dev_t id)
 			return &devices[i];
 	}
 
-	if (resize_devices(NULL) != 0)
+	if (resize_devices(NULL))
 		return NULL;
 
 	pdi = &devices[ndevices - 1];
 	pdi->id = id;
 	pdi->last_sequence = 0;
 	pdi->last_read_time = 0;
+	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
+	pdi->rb_last_entries = 0;
 	return pdi;
 }
 
@@ -1209,13 +1263,69 @@ static int sort_entries(unsigned long long *youngest)
 			continue;
 		}
 
-		if (trace_rb_insert(t))
+		if (trace_rb_insert_sort(t))
 			return -1;
 
 		if (bit->time < *youngest)
 			*youngest = bit->time;
 	}
 
+	return 0;
+}
+
+static inline void put_trace(struct per_dev_info *pdi, struct trace *t)
+{
+	rb_erase(&t->rb_node, &rb_sort_root);
+	rb_sort_entries--;
+
+	trace_rb_insert_last(pdi, t);
+
+	if (pdi->rb_last_entries > 1024) {
+		struct rb_node *n = rb_first(&pdi->rb_last);
+
+		t = rb_entry(n, struct trace, rb_node);
+		rb_erase(n, &pdi->rb_last);
+		pdi->rb_last_entries--;
+	
+		bit_free(t->bit);
+		t_free(t);
+	}
+}
+
+static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
+			  int force)
+{
+	unsigned long expected_sequence = pdi->last_sequence + 1;
+	struct trace *t;
+
+	if (bit->sequence == expected_sequence)
+		return 0;
+
+	if (bit->sequence < expected_sequence &&
+	    bit->time > pdi->last_reported_time)
+		return 0;
+
+	/*
+	 * the wanted sequence is really there, continue
+	 * because this means that the log time is earlier
+	 * on the trace we have now */
+	t = trace_rb_find_sort(pdi->id, expected_sequence);
+	if (t)
+		return 0;
+
+	t = trace_rb_find_last(pdi, expected_sequence);
+	if (t)
+		return 0;
+
+	/*
+	 * unless this is the last run, break and wait for more entries
+	 */
+	if (!force)
+		return 1;
+
+	fprintf(stderr, "(%d,%d): skipping %lu -> %u\n", MAJOR(pdi->id),
+			MINOR(pdi->id), pdi->last_sequence, bit->sequence);
+	pdi->skips++;
 	return 0;
 }
 
@@ -1228,7 +1338,6 @@ static void show_entries_rb(int force)
 	struct trace *t;
 
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
-
 		if (done)
 			break;
 
@@ -1251,32 +1360,8 @@ static void show_entries_rb(int force)
 			break;
 		}
 
-		/*
-		 * back off displaying more info if we are out of sync
-		 * on SMP systems. to prevent stalling on lost events,
-		 * only allow an event to skip us a few times
-		 */
-		if (bit->sequence != (pdi->last_sequence + 1)) {
-			if (!force) {
-				struct trace *__t;
-
-				/*
-				 * the wanted sequence is really there,
-				 * continue because this means that the
-				 * log time is earlier on the trace we have
-				 * now
-				 */
-				__t = trace_rb_find(pdi->id,
-							pdi->last_sequence + 1);
-				if (__t == NULL)
-					break;
-			} else {
-				fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
-					MAJOR(pdi->id), MINOR(pdi->id),
-					pdi->last_sequence, bit->sequence);
-				pdi->skips++;
-			}
-		}
+		if (check_sequence(pdi, bit, force))
+			break;
 
 		if (!force && bit->time > last_allowed_time)
 			break;
@@ -1290,10 +1375,7 @@ static void show_entries_rb(int force)
 
 		dump_trace(bit, pci, pdi);
 
-		rb_erase(&t->rb_node, &rb_sort_root);
-		rb_sort_entries--;
-		bit_free(bit);
-		t_free(t);
+		put_trace(pdi, t);
 	}
 }
 
