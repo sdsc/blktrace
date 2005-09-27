@@ -58,7 +58,7 @@ struct mask_map {
 	char *long_form;
 };
 
-struct mask_map mask_maps[] = {
+static struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(READ),
 	DECLARE_MASK_MAP(WRITE),
 	DECLARE_MASK_MAP(BARRIER),
