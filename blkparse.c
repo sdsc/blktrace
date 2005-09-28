@@ -1271,22 +1271,27 @@ static int sort_entries(unsigned long long *youngest)
 	return 0;
 }
 
-static inline void put_trace(struct per_dev_info *pdi, struct trace *t)
+static inline void __put_trace_last(struct per_dev_info *pdi, struct trace *t)
+{
+	rb_erase(&t->rb_node, &pdi->rb_last);
+	pdi->rb_last_entries--;
+
+	bit_free(t->bit);
+	t_free(t);
+}
+
+static void put_trace(struct per_dev_info *pdi, struct trace *t)
 {
 	rb_erase(&t->rb_node, &rb_sort_root);
 	rb_sort_entries--;
 
 	trace_rb_insert_last(pdi, t);
 
-	if (pdi->rb_last_entries > 1024) {
+	if (pdi->rb_last_entries > rb_batch * pdi->nfiles) {
 		struct rb_node *n = rb_first(&pdi->rb_last);
 
 		t = rb_entry(n, struct trace, rb_node);
-		rb_erase(n, &pdi->rb_last);
-		pdi->rb_last_entries--;
-	
-		bit_free(t->bit);
-		t_free(t);
+		__put_trace_last(pdi, t);
 	}
 }
 
@@ -1312,14 +1317,21 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 	/*
 	 * the wanted sequence is really there, continue
 	 * because this means that the log time is earlier
-	 * on the trace we have now */
+	 * on the trace we have now
+	 */
 	t = trace_rb_find_sort(pdi->dev, expected_sequence);
 	if (t)
 		return 0;
 
+	/*
+	 * we already displayed this entry, it's ok to continue.
+	 * kill old entry now
+	 */
 	t = trace_rb_find_last(pdi, expected_sequence);
-	if (t)
+	if (t) {
+		__put_trace_last(pdi, t);
 		return 0;
+	}
 
 	/*
 	 * unless this is the last run, break and wait for more entries
