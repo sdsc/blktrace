@@ -22,11 +22,14 @@ if (!is_readable($file)) {
 $lastnum = false;
 $fp = fopen($file, 'r');
 while ($line = fgets($fp, 200)) {
-	if (trim($line) == '') {
+	$line = trim($line);
+	if ($line == '') {
 		break;
 	}
-	$data = preg_split("/[\s]+/", $line); 
-	$num = $data[4];
+
+	$data = preg_split("/[\s]+/", $line);
+
+	$num = $data[3];
 	settype($num, 'float');
 
 	if ($lastnum && $num < $lastnum) {
