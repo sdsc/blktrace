@@ -5,6 +5,10 @@
 // Parse time correctness of blkparse output
 // Thomas Kenne <thomas@2ndfloor.dk>
 
+if (!isset($argv[1])) {
+	die("need file as argument\n");
+}
+
 $file = $argv[1];
 
 if (!is_file($file)) {
