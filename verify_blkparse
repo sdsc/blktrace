@@ -1,0 +1,34 @@
+#!/usr/bin/php -q
+
+<?php
+
+// Parse time correctness of blkparse output
+// Thomas Kenne <thomas@2ndfloor.dk>
+
+$file = $argv[1];
+
+if (!is_file($file)) {
+	die("invalid file\n");
+}
+
+$lastnum = false;
+$fp = fopen($file, 'r');
+while ($line = fgets($fp, 200)) {
+	if (trim($line) == '') {
+		break;
+	}
+	$data = preg_split("/[\s]+/", $line); 
+	$num = $data[4];
+	settype($num, 'float');
+
+	if ($lastnum && $num < $lastnum) {
+		echo $line;
+		flush();
+	} else { 	
+		$lastnum = $num;
+	}
+}
+
+fclose($fp);
+
+?>

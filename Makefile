@@ -2,7 +2,7 @@ CC	= gcc
 CFLAGS	= -Wall -O2 -g -D_GNU_SOURCE
 PROGS	= blkparse blktrace
 LIBS	= -lpthread
-SCRIPTS	= btrace
+SCRIPTS	= btrace verify_blkparse
 
 all: $(PROGS) $(SCRIPTS)
 
