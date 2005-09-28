@@ -291,7 +291,8 @@ static struct per_process_info *find_process(__u32 pid, char *name)
 	return ppi;
 }
 
-static inline int trace_rb_insert(struct trace *t, struct rb_root *root)
+static inline int trace_rb_insert(struct trace *t, struct rb_root *root,
+				  int check_time)
 {
 	struct rb_node **p = &root->rb_node;
 	struct rb_node *parent = NULL;
@@ -302,11 +303,16 @@ static inline int trace_rb_insert(struct trace *t, struct rb_root *root)
 
 		__t = rb_entry(parent, struct trace, rb_node);
 
-		if (t->bit->time < __t->bit->time)
-			p = &(*p)->rb_left;
-		else if (t->bit->time > __t->bit->time)
-			p = &(*p)->rb_right;
-		else if (t->bit->device < __t->bit->device)
+		if (check_time) {
+			if (t->bit->time < __t->bit->time) {
+				p = &(*p)->rb_left;
+				continue;
+			} else if (t->bit->time > __t->bit->time) {
+				p = &(*p)->rb_right;
+				continue;
+			}
+		}
+		if (t->bit->device < __t->bit->device)
 			p = &(*p)->rb_left;
 		else if (t->bit->device > __t->bit->device)
 			p = &(*p)->rb_right;
@@ -330,7 +336,7 @@ static inline int trace_rb_insert(struct trace *t, struct rb_root *root)
 
 static inline int trace_rb_insert_sort(struct trace *t)
 {
-	if (!trace_rb_insert(t, &rb_sort_root)) {
+	if (!trace_rb_insert(t, &rb_sort_root, 1)) {
 		rb_sort_entries++;
 		return 0;
 	}
@@ -340,7 +346,7 @@ static inline int trace_rb_insert_sort(struct trace *t)
 
 static inline int trace_rb_insert_last(struct per_dev_info *pdi,struct trace *t)
 {
-	if (!trace_rb_insert(t, &pdi->rb_last)) {
+	if (!trace_rb_insert(t, &pdi->rb_last, 1)) {
 		pdi->rb_last_entries++;
 		return 0;
 	}
