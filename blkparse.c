@@ -702,7 +702,7 @@ static struct per_dev_info *get_dev_info(dev_t id)
 
 	pdi = &devices[ndevices - 1];
 	pdi->id = id;
-	pdi->last_sequence = 0;
+	pdi->last_sequence = -1;
 	pdi->last_read_time = 0;
 	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
 	pdi->rb_last_entries = 0;
@@ -1246,16 +1246,16 @@ static int sort_entries(unsigned long long *youngest)
 	if (!genesis_time)
 		find_genesis();
 
-	*youngest = -1ULL;
+	*youngest = 0;
 	while ((t = trace_list) != NULL) {
 		struct blk_io_trace *bit = t->bit;
 
 		trace_list = t->next;
 
-		if (verify_trace(bit))
-			continue;
-
 		bit->time -= genesis_time;
+
+		if (bit->time < *youngest || !*youngest)
+			*youngest = bit->time;
 
 		if (check_stopwatch(bit)) {
 			bit_free(bit);
@@ -1265,9 +1265,6 @@ static int sort_entries(unsigned long long *youngest)
 
 		if (trace_rb_insert_sort(t))
 			return -1;
-
-		if (bit->time < *youngest)
-			*youngest = bit->time;
 	}
 
 	return 0;
@@ -1297,6 +1294,12 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
 	struct trace *t;
+	
+	/*
+	 * first entry, always ok
+	 */
+	if (!expected_sequence)
+		return 0;
 
 	if (bit->sequence == expected_sequence)
 		return 0;
@@ -1350,13 +1353,6 @@ static void show_entries_rb(int force)
 		if (!pdi) {
 			fprintf(stderr, "Unknown device ID? (%d,%d)\n",
 				MAJOR(bit->device), MINOR(bit->device));
-			break;
-		}
-
-		if (bit->cpu > pdi->ncpus) {
-			fprintf(stderr, "Unknown CPU ID? (%d, device %d,%d)\n",
-				bit->cpu, MAJOR(bit->device),
-				MINOR(bit->device));
 			break;
 		}
 
@@ -1443,11 +1439,16 @@ static int read_events(int fd, int always_block)
 			bit = ptr;
 		}
 
+		trace_to_cpu(bit);
+
+		if (verify_trace(bit)) {
+			bit_free(bit);
+			continue;
+		}
+
 		t = t_alloc();
 		memset(t, 0, sizeof(*t));
 		t->bit = bit;
-
-		trace_to_cpu(bit);
 
 		t->next = trace_list;
 		trace_list = t;
@@ -1476,7 +1477,7 @@ static int do_file(void)
 	for (i = 0; i < ndevices; i++) {
 		pdi = &devices[i];
 		pdi->nfiles = 0;
-		pdi->last_sequence = 0;
+		pdi->last_sequence = -1;
 
 		for (j = 0;; j++) {
 			struct stat st;
