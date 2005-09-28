@@ -33,7 +33,7 @@ while ($line = fgets($fp, 200)) {
 	settype($num, 'float');
 
 	if ($lastnum && $num < $lastnum) {
-		echo $line;
+		echo "$line\n";
 		flush();
 	} else { 	
 		$lastnum = $num;
