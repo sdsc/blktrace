@@ -15,6 +15,10 @@ if (!is_file($file)) {
 	die("invalid file\n");
 }
 
+if (!is_readable($file)) {
+	die("file not readable\n");
+}
+
 $lastnum = false;
 $fp = fopen($file, 'r');
 while ($line = fgets($fp, 200)) {
