@@ -38,7 +38,7 @@
 static char blkparse_version[] = "0.90";
 
 struct per_dev_info {
-	dev_t id;
+	dev_t dev;
 	char *name;
 
 	int backwards;
@@ -51,6 +51,8 @@ struct per_dev_info {
 
 	struct rb_root rb_last;
 	unsigned long rb_last_entries;
+
+	struct rb_root rb_track;
 
 	int nfiles;
 	int ncpus;
@@ -161,8 +163,6 @@ struct trace {
 static struct rb_root rb_sort_root;
 static unsigned long rb_sort_entries;
 
-static struct rb_root rb_track_root;
-
 static struct trace *trace_list;
 
 /*
@@ -177,7 +177,6 @@ static struct trace *t_alloc_list;
 struct io_track {
 	struct rb_node rb_node;
 
-	dev_t device;
 	__u64 sector;
 	__u32 pid;
 	char comm[16];
@@ -404,12 +403,12 @@ static inline struct trace *trace_rb_find_sort(dev_t dev, unsigned long seq)
 static inline struct trace *trace_rb_find_last(struct per_dev_info *pdi,
 					       unsigned long seq)
 {
-	return trace_rb_find(pdi->id, seq, &pdi->rb_last, 0);
+	return trace_rb_find(pdi->dev, seq, &pdi->rb_last, 0);
 }
 
-static inline int track_rb_insert(struct io_track *iot)
+static inline int track_rb_insert(struct per_dev_info *pdi,struct io_track *iot)
 {
-	struct rb_node **p = &rb_track_root.rb_node;
+	struct rb_node **p = &pdi->rb_track.rb_node;
 	struct rb_node *parent = NULL;
 	struct io_track *__iot;
 
@@ -417,11 +416,7 @@ static inline int track_rb_insert(struct io_track *iot)
 		parent = *p;
 		__iot = rb_entry(parent, struct io_track, rb_node);
 
-		if (iot->device < __iot->device)
-			p = &(*p)->rb_left;
-		else if (iot->device > __iot->device)
-			p = &(*p)->rb_right;
-		else if (iot->sector < __iot->sector)
+		if (iot->sector < __iot->sector)
 			p = &(*p)->rb_left;
 		else if (iot->sector > __iot->sector)
 			p = &(*p)->rb_right;
@@ -429,29 +424,25 @@ static inline int track_rb_insert(struct io_track *iot)
 			fprintf(stderr,
 				"sector alias (%Lu) on device %d,%d!\n",
 				(unsigned long long) iot->sector,
-				MAJOR(iot->device), MINOR(iot->device));
+				MAJOR(pdi->dev), MINOR(pdi->dev));
 			return 1;
 		}
 	}
 
 	rb_link_node(&iot->rb_node, parent, p);
-	rb_insert_color(&iot->rb_node, &rb_track_root);
+	rb_insert_color(&iot->rb_node, &pdi->rb_track);
 	return 0;
 }
 
-static struct io_track *__find_track(dev_t device, __u64 sector)
+static struct io_track *__find_track(struct per_dev_info *pdi, __u64 sector)
 {
-	struct rb_node *n = rb_track_root.rb_node;
+	struct rb_node *n = pdi->rb_track.rb_node;
 	struct io_track *__iot;
 
 	while (n) {
 		__iot = rb_entry(n, struct io_track, rb_node);
 
-		if (device < __iot->device)
-			n = n->rb_left;
-		else if (device > __iot->device)
-			n = n->rb_right;
-		else if (sector < __iot->sector)
+		if (sector < __iot->sector)
 			n = n->rb_left;
 		else if (sector > __iot->sector)
 			n = n->rb_right;
@@ -462,59 +453,60 @@ static struct io_track *__find_track(dev_t device, __u64 sector)
 	return NULL;
 }
 
-static struct io_track *find_track(__u32 pid, char *comm, dev_t device,
-				   __u64 sector)
+static struct io_track *find_track(struct per_dev_info *pdi, __u32 pid,
+				   char *comm, __u64 sector)
 {
 	struct io_track *iot;
 
-	iot = __find_track(device, sector);
+	iot = __find_track(pdi, sector);
 	if (!iot) {
 		iot = malloc(sizeof(*iot));
 		iot->pid = pid;
 		memcpy(iot->comm, comm, sizeof(iot->comm));
-		iot->device = device;
 		iot->sector = sector;
-		track_rb_insert(iot);
+		track_rb_insert(pdi, iot);
 	}
 
 	return iot;
 }
 
-static void log_track_frontmerge(struct blk_io_trace *t)
+static void log_track_frontmerge(struct per_dev_info *pdi,
+				 struct blk_io_trace *t)
 {
 	struct io_track *iot;
 
 	if (!track_ios)
 		return;
 
-	iot = __find_track(t->device, t->sector + (t->bytes >> 9));
+	iot = __find_track(pdi, t->sector + (t->bytes >> 9));
 	if (!iot) {
 		fprintf(stderr, "merge not found for (%d,%d): %llu\n",
-			MAJOR(t->device), MINOR(t->device),
+			MAJOR(pdi->dev), MINOR(pdi->dev),
 			t->sector + (t->bytes >> 9));
 		return;
 	}
 
-	rb_erase(&iot->rb_node, &rb_track_root);
+	rb_erase(&iot->rb_node, &pdi->rb_track);
 	iot->sector -= t->bytes >> 9;
-	track_rb_insert(iot);
+	track_rb_insert(pdi, iot);
 }
 
-static void log_track_getrq(struct blk_io_trace *t)
+static void log_track_getrq(struct per_dev_info *pdi, struct blk_io_trace *t)
 {
 	struct io_track *iot;
 
 	if (!track_ios)
 		return;
 
-	iot = find_track(t->pid, t->comm, t->device, t->sector);
+	iot = find_track(pdi, t->pid, t->comm, t->sector);
 	iot->allocation_time = t->time;
 }
 
 /*
  * return time between rq allocation and insertion
  */
-static unsigned long long log_track_insert(struct blk_io_trace *t)
+static unsigned long long log_track_insert(struct per_dev_info *pdi,
+					   struct blk_io_trace *t)
 {
 	unsigned long long elapsed;
 	struct io_track *iot;
@@ -522,7 +514,7 @@ static unsigned long long log_track_insert(struct blk_io_trace *t)
 	if (!track_ios)
 		return -1;
 
-	iot = find_track(t->pid, t->comm, t->device, t->sector);
+	iot = find_track(pdi, t->pid, t->comm, t->sector);
 	iot->queue_time = t->time;
 
 	if (!iot->allocation_time)
@@ -544,7 +536,8 @@ static unsigned long long log_track_insert(struct blk_io_trace *t)
 /*
  * return time between queue and issue
  */
-static unsigned long long log_track_issue(struct blk_io_trace *t)
+static unsigned long long log_track_issue(struct per_dev_info *pdi,
+					  struct blk_io_trace *t)
 {
 	unsigned long long elapsed;
 	struct io_track *iot;
@@ -554,10 +547,10 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return -1;
 
-	iot = __find_track(t->device, t->sector);
+	iot = __find_track(pdi, t->sector);
 	if (!iot) {
 		fprintf(stderr, "issue not found for (%d,%d): %llu\n",
-			MAJOR(t->device), MINOR(t->device), t->sector);
+			MAJOR(pdi->dev), MINOR(pdi->dev), t->sector);
 		return -1;
 	}
 
@@ -578,7 +571,8 @@ static unsigned long long log_track_issue(struct blk_io_trace *t)
 /*
  * return time between dispatch and complete
  */
-static unsigned long long log_track_complete(struct blk_io_trace *t)
+static unsigned long long log_track_complete(struct per_dev_info *pdi,
+					     struct blk_io_trace *t)
 {
 	unsigned long long elapsed;
 	struct io_track *iot;
@@ -588,10 +582,10 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return -1;
 
-	iot = __find_track(t->device, t->sector);
+	iot = __find_track(pdi, t->sector);
 	if (!iot) {
 		fprintf(stderr, "complete not found for (%d,%d): %llu\n",
-			MAJOR(t->device), MINOR(t->device), t->sector);
+			MAJOR(pdi->dev), MINOR(pdi->dev), t->sector);
 		return -1;
 	}
 
@@ -609,7 +603,7 @@ static unsigned long long log_track_complete(struct blk_io_trace *t)
 	/*
 	 * kill the trace, we don't need it after completion
 	 */
-	rb_erase(&iot->rb_node, &rb_track_root);
+	rb_erase(&iot->rb_node, &pdi->rb_track);
 	free(iot);
 
 	return elapsed;
@@ -685,15 +679,15 @@ static int resize_devices(char *name)
 	return 0;
 }
 
-static struct per_dev_info *get_dev_info(dev_t id)
+static struct per_dev_info *get_dev_info(dev_t dev)
 {
 	struct per_dev_info *pdi;
 	int i;
 
 	for (i = 0; i < ndevices; i++) {
-		if (!devices[i].id)
-			devices[i].id = id;
-		if (devices[i].id == id)
+		if (!devices[i].dev)
+			devices[i].dev = dev;
+		if (devices[i].dev == dev)
 			return &devices[i];
 	}
 
@@ -701,7 +695,7 @@ static struct per_dev_info *get_dev_info(dev_t id)
 		return NULL;
 
 	pdi = &devices[ndevices - 1];
-	pdi->id = id;
+	pdi->dev = dev;
 	pdi->last_sequence = -1;
 	pdi->last_read_time = 0;
 	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
@@ -714,7 +708,7 @@ static char *get_dev_name(struct per_dev_info *pdi, char *buffer, int size)
 	if (pdi->name)
 		snprintf(buffer, size, "%s", pdi->name);
 	else
-		snprintf(buffer, size, "%d,%d", MAJOR(pdi->id), MINOR(pdi->id));
+		snprintf(buffer, size, "%d,%d",MAJOR(pdi->dev),MINOR(pdi->dev));
 	return buffer;
 }
 
@@ -842,16 +836,16 @@ static inline void account_unplug(struct blk_io_trace *t,
 	}
 }
 
-static void log_complete(struct per_cpu_info *pci, struct blk_io_trace *t,
-			 char *act)
+static void log_complete(struct per_dev_info *pdi, struct per_cpu_info *pci,
+			 struct blk_io_trace *t, char *act)
 {
-	process_fmt(act, pci, t, log_track_complete(t), 0, NULL);
+	process_fmt(act, pci, t, log_track_complete(pdi, t), 0, NULL);
 }
 
-static void log_insert(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char *act)
+static void log_insert(struct per_dev_info *pdi, struct per_cpu_info *pci,
+		       struct blk_io_trace *t, char *act)
 {
-	process_fmt(act, pci, t, log_track_insert(t), 0, NULL);
+	process_fmt(act, pci, t, log_track_insert(pdi, t), 0, NULL);
 }
 
 static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
@@ -860,17 +854,17 @@ static void log_queue(struct per_cpu_info *pci, struct blk_io_trace *t,
 	process_fmt(act, pci, t, -1, 0, NULL);
 }
 
-static void log_issue(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char *act)
+static void log_issue(struct per_dev_info *pdi, struct per_cpu_info *pci,
+		      struct blk_io_trace *t, char *act)
 {
-	process_fmt(act, pci, t, log_track_issue(t), 0, NULL);
+	process_fmt(act, pci, t, log_track_issue(pdi, t), 0, NULL);
 }
 
-static void log_merge(struct per_cpu_info *pci, struct blk_io_trace *t,
-		      char *act)
+static void log_merge(struct per_dev_info *pdi, struct per_cpu_info *pci,
+		      struct blk_io_trace *t, char *act)
 {
 	if (act[0] == 'F')
-		log_track_frontmerge(t);
+		log_track_frontmerge(pdi, t);
 
 	process_fmt(act, pci, t, -1ULL, 0, NULL);
 }
@@ -938,7 +932,8 @@ static void dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 	}
 }
 
-static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
+static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
+			  struct per_cpu_info *pci)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
 	int act = t->action & 0xffff;
@@ -949,18 +944,18 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			log_queue(pci, t, "Q");
 			break;
 		case __BLK_TA_INSERT:
-			log_insert(pci, t, "I");
+			log_insert(pdi, pci, t, "I");
 			break;
 		case __BLK_TA_BACKMERGE:
 			account_m(t, pci, w);
-			log_merge(pci, t, "M");
+			log_merge(pdi, pci, t, "M");
 			break;
 		case __BLK_TA_FRONTMERGE:
 			account_m(t, pci, w);
-			log_merge(pci, t, "F");
+			log_merge(pdi, pci, t, "F");
 			break;
 		case __BLK_TA_GETRQ:
-			log_track_getrq(t);
+			log_track_getrq(pdi, t);
 			log_generic(pci, t, "G");
 			break;
 		case __BLK_TA_SLEEPRQ:
@@ -972,11 +967,11 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_cpu_info *pci)
 			break;
 		case __BLK_TA_ISSUE:
 			account_issue(t, pci, w);
-			log_issue(pci, t, "D");
+			log_issue(pdi, pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
 			account_c(t, pci, w, t->bytes);
-			log_complete(pci, t, "C");
+			log_complete(pdi, pci, t, "C");
 			break;
 		case __BLK_TA_PLUG:
 			log_action(pci, t, "P");
@@ -1007,7 +1002,7 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 	if (t->action & BLK_TC_ACT(BLK_TC_PC))
 		dump_trace_pc(t, pci);
 	else
-		dump_trace_fs(t, pci);
+		dump_trace_fs(t, pdi, pci);
 
 	pdi->events++;
 }
@@ -1312,7 +1307,7 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 	 * the wanted sequence is really there, continue
 	 * because this means that the log time is earlier
 	 * on the trace we have now */
-	t = trace_rb_find_sort(pdi->id, expected_sequence);
+	t = trace_rb_find_sort(pdi->dev, expected_sequence);
 	if (t)
 		return 0;
 
@@ -1326,8 +1321,8 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 	if (!force)
 		return 1;
 
-	fprintf(stderr, "(%d,%d): skipping %lu -> %u\n", MAJOR(pdi->id),
-			MINOR(pdi->id), pdi->last_sequence, bit->sequence);
+	fprintf(stderr, "(%d,%d): skipping %lu -> %u\n", MAJOR(pdi->dev),
+			MINOR(pdi->dev), pdi->last_sequence, bit->sequence);
 	pdi->skips++;
 	return 0;
 }
@@ -1347,7 +1342,7 @@ static void show_entries_rb(int force)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		if (!pdi || pdi->id != bit->device)
+		if (!pdi || pdi->dev != bit->device)
 			pdi = get_dev_info(bit->device);
 
 		if (!pdi) {
@@ -1453,7 +1448,7 @@ static int read_events(int fd, int always_block)
 		t->next = trace_list;
 		trace_list = t;
 
-		if (!pdi || pdi->id != bit->device)
+		if (!pdi || pdi->dev != bit->device)
 			pdi = get_dev_info(bit->device);
 
 		if (bit->time > pdi->last_read_time)
@@ -1722,7 +1717,6 @@ int main(int argc, char *argv[])
 	}
 
 	memset(&rb_sort_root, 0, sizeof(rb_sort_root));
-	memset(&rb_track_root, 0, sizeof(rb_track_root));
 
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
