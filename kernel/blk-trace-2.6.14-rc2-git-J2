@@ -104,7 +104,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	if (!test_and_clear_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags))
  		return 0;
  
-+	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, NULL,
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
 +				q->rq.count[READ] + q->rq.count[WRITE]);
 +
  	del_timer(&q->unplug_timer);
@@ -124,7 +124,17 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  }
  
  static void blk_unplug_work(void *data)
-@@ -1624,6 +1634,11 @@ void blk_cleanup_queue(request_queue_t *
+@@ -1502,6 +1512,9 @@ static void blk_unplug_timeout(unsigned 
+ {
+ 	request_queue_t *q = (request_queue_t *)data;
+ 
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, NULL,
++				q->rq.count[READ] + q->rq.count[WRITE]);
++
+ 	kblockd_schedule_work(&q->unplug_work);
+ }
+ 
+@@ -1624,6 +1637,11 @@ void blk_cleanup_queue(request_queue_t *
  	if (q->queue_tags)
  		__blk_queue_free_tags(q);
  
@@ -136,7 +146,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	blk_queue_ordered(q, QUEUE_ORDERED_NONE);
  
  	kmem_cache_free(requestq_cachep, q);
-@@ -1970,6 +1985,8 @@ rq_starved:
+@@ -1970,6 +1988,8 @@ rq_starved:
  	
  	rq_init(q, rq);
  	rq->rl = rl;
@@ -145,7 +155,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  out:
  	return rq;
  }
-@@ -1998,6 +2015,8 @@ static struct request *get_request_wait(
+@@ -1998,6 +2018,8 @@ static struct request *get_request_wait(
  		if (!rq) {
  			struct io_context *ioc;
  
@@ -154,7 +164,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			__generic_unplug_device(q);
  			spin_unlock_irq(q->queue_lock);
  			io_schedule();
-@@ -2051,6 +2070,8 @@ EXPORT_SYMBOL(blk_get_request);
+@@ -2051,6 +2073,8 @@ EXPORT_SYMBOL(blk_get_request);
   */
  void blk_requeue_request(request_queue_t *q, struct request *rq)
  {
@@ -163,7 +173,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	if (blk_rq_tagged(rq))
  		blk_queue_end_tag(q, rq);
  
-@@ -2676,6 +2697,8 @@ static int __make_request(request_queue_
+@@ -2676,6 +2700,8 @@ static int __make_request(request_queue_
  			if (!q->back_merge_fn(q, req, bio))
  				break;
  
@@ -172,7 +182,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			req->biotail->bi_next = bio;
  			req->biotail = bio;
  			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2691,6 +2714,8 @@ static int __make_request(request_queue_
+@@ -2691,6 +2717,8 @@ static int __make_request(request_queue_
  			if (!q->front_merge_fn(q, req, bio))
  				break;
  
@@ -181,7 +191,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -2991,6 +3016,8 @@ end_io:
+@@ -2991,6 +3019,8 @@ end_io:
  		 */
  		blk_partition_remap(bio);
  
@@ -190,7 +200,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  		ret = q->make_request_fn(q, bio);
  	} while (ret);
  }
-@@ -3110,6 +3137,8 @@ static int __end_that_request_first(stru
+@@ -3110,6 +3140,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -273,7 +283,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
  	 * slow path
  	 */
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-27 11:58:06.000000000 +0200
++++ linux-2.6/drivers/block/blktrace.c	2005-09-28 08:46:33.000000000 +0200
 @@ -0,0 +1,232 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
@@ -508,7 +518,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +module_init(blk_trace_init);
 +
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-25 14:29:23.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-09-28 08:46:33.000000000 +0200
 @@ -0,0 +1,180 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
