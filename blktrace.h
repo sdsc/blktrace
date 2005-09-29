@@ -29,8 +29,8 @@ struct io_stats {
 };
 
 struct per_cpu_info {
-	int cpu;
-	int nelems;
+	unsigned int cpu;
+	unsigned int nelems;
 
 	int fd;
 	char fname[128];

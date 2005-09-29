@@ -203,7 +203,7 @@ static int track_ios;
 static int ppi_hash_by_pid = 1;
 
 #define RB_BATCH_DEFAULT	(512)
-static int rb_batch = RB_BATCH_DEFAULT;
+static unsigned int rb_batch = RB_BATCH_DEFAULT;
 
 static int pipeline;
 
@@ -1423,7 +1423,7 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 static int read_events(int fd, int always_block)
 {
 	struct per_dev_info *pdi = NULL;
-	int events = 0;
+	unsigned int events = 0;
 
 	while (!is_done() && events < rb_batch) {
 		struct blk_io_trace *bit;
@@ -1600,7 +1600,7 @@ static void flush_output(void)
 	fflush(ofp);
 }
 
-static void handle_sigint(int sig)
+static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
 	flush_output();

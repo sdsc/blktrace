@@ -21,16 +21,16 @@ static inline int valid_spec(int spec)
 	return strchr(VALID_SPECS, spec) != NULL;
 }
 
-void set_all_format_specs(char *optarg)
+void set_all_format_specs(char *option)
 {
 	char *p;
 
 	for (p = VALID_SPECS; *p; p++)
 		if (override_format[(int)(*p)] == NULL)
-			override_format[(int)(*p)] = strdup(optarg);
+			override_format[(int)(*p)] = strdup(option);
 }
 
-int add_format_spec(char *optarg)
+int add_format_spec(char *option)
 {
 	int spec = optarg[0];
 
@@ -39,12 +39,12 @@ int add_format_spec(char *optarg)
 		return 1;
 	}
 	if (optarg[1] != ',') {
-		fprintf(stderr,"Bad format specifier - need ',' %s\n", optarg);
+		fprintf(stderr,"Bad format specifier - need ',' %s\n", option);
 		return 1;
 	}
-	optarg += 2;
-	if (*optarg == '\0') {
-		fprintf(stderr,"Bad format specifier - need fmt %s\n", optarg);
+	option += 2;
+	if (*option == '\0') {
+		fprintf(stderr,"Bad format specifier - need fmt %s\n", option);
 		return 1;
 	}
 
@@ -52,10 +52,10 @@ int add_format_spec(char *optarg)
 	 * Set both merges (front and back)
 	 */
 	if (spec == 'M') {
-		override_format['B'] = strdup(optarg);
-		override_format['M'] = strdup(optarg);
+		override_format['B'] = strdup(option);
+		override_format['M'] = strdup(option);
 	} else
-		override_format[spec] = strdup(optarg);
+		override_format[spec] = strdup(option);
 
 	return 0;
 }

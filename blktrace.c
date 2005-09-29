@@ -172,8 +172,8 @@ static char *output_name;
 static int act_mask = ~0U;
 static int kill_running_trace;
 static int use_mmap;
-static int buf_size = BUF_SIZE;
-static int buf_nr = BUF_NR;
+static unsigned int buf_size = BUF_SIZE;
+static unsigned int buf_nr = BUF_NR;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -184,7 +184,7 @@ static void exit_trace(int status);
 
 static int find_mask_map(char *string)
 {
-	int i;
+	unsigned int i;
 
 	for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
 		if (COMPARE_MASK_MAP(&mask_maps[i], string))
@@ -261,8 +261,8 @@ static int get_data_read(struct thread_information *tip, void *buf, int len)
 	return -1;
 }
 
-static int get_data_mmap(struct thread_information *tip, void *buf, int len,
-			 int check_magic)
+static int get_data_mmap(struct thread_information *tip, void *buf,
+			 unsigned int len, int check_magic)
 {
 	if (len > (buf_size * (tip->buf_subbuf + 1)) - tip->buf_offset) {
 		tip->buf_subbuf++;
@@ -304,7 +304,7 @@ static int get_data(struct thread_information *tip, void *buf, int len,
 		return get_data_read(tip, buf, len);
 }
 
-static void *extract_data(struct thread_information *tip, char *ofn, int nb)
+static void *extract_data(struct thread_information *tip, int nb)
 {
 	unsigned char *buf;
 
@@ -333,7 +333,7 @@ static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
 	int ret, pdu_len;
-	char dp[64], *pdu_data;
+	char *pdu_data;
 	struct blk_io_trace t;
 	pid_t pid = getpid();
 	cpu_set_t cpu_mask;
@@ -378,7 +378,7 @@ static void *extract(void *arg)
 		trace_to_be(&t);
 
 		if (pdu_len)
-			pdu_data = extract_data(tip, dp, pdu_len);
+			pdu_data = extract_data(tip, pdu_len);
 
 		/*
 		 * now we have both trace and payload, get a lock on the
@@ -621,7 +621,7 @@ static void show_usage(char *program)
 	fprintf(stderr, "Usage: %s %s %s",program, blktrace_version, usage_str);
 }
 
-static void handle_sigint(int sig)
+static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
 }
