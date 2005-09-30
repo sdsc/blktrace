@@ -488,7 +488,7 @@ static void log_track_frontmerge(struct per_dev_info *pdi,
 	if (!iot) {
 		fprintf(stderr, "merge not found for (%d,%d): %llu\n",
 			MAJOR(pdi->dev), MINOR(pdi->dev),
-			t->sector + (t->bytes >> 9));
+			(unsigned long long) t->sector + (t->bytes >> 9));
 		return;
 	}
 
@@ -556,7 +556,8 @@ static unsigned long long log_track_issue(struct per_dev_info *pdi,
 	iot = __find_track(pdi, t->sector);
 	if (!iot) {
 		fprintf(stderr, "issue not found for (%d,%d): %llu\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev), t->sector);
+			MAJOR(pdi->dev), MINOR(pdi->dev),
+			(unsigned long long) t->sector);
 		return -1;
 	}
 
@@ -591,7 +592,8 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 	iot = __find_track(pdi, t->sector);
 	if (!iot) {
 		fprintf(stderr, "complete not found for (%d,%d): %llu\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev), t->sector);
+			MAJOR(pdi->dev), MINOR(pdi->dev),
+			(unsigned long long) t->sector);
 		return -1;
 	}
 
