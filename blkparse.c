@@ -158,6 +158,7 @@ struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
 	struct trace *next;
+	unsigned int skipped;
 };
 
 static struct rb_root rb_sort_root;
@@ -201,6 +202,12 @@ static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 static int per_process_stats;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
+
+static unsigned long last_skipped;
+static unsigned int skip_runs;
+
+static unsigned int t_alloc_cache;
+static unsigned int bit_alloc_cache;
 
 #define RB_BATCH_DEFAULT	(512)
 static unsigned int rb_batch = RB_BATCH_DEFAULT;
@@ -1179,8 +1186,13 @@ static void show_device_and_cpu_stats(void)
  */
 static inline void t_free(struct trace *t)
 {
-	t->next = t_alloc_list;
-	t_alloc_list = t;
+	if (t_alloc_cache > 1024) {
+		free(t);
+		t_alloc_cache--;
+	} else {
+		t->next = t_alloc_list;
+		t_alloc_list = t;
+	}
 }
 
 static inline struct trace *t_alloc(void)
@@ -1192,16 +1204,22 @@ static inline struct trace *t_alloc(void)
 		return t;
 	}
 
+	t_alloc_cache++;
 	return malloc(sizeof(*t));
 }
 
 static inline void bit_free(struct blk_io_trace *bit)
 {
-	/*
-	 * abuse a 64-bit field for a next pointer for the free item
-	 */
-	bit->time = (__u64) (unsigned long) bit_alloc_list;
-	bit_alloc_list = (struct blk_io_trace *) bit;
+	if (bit_alloc_cache > 1024) {
+		free(bit);
+		bit_alloc_cache--;
+	} else {
+		/*
+		 * abuse a 64-bit field for a next pointer for the free item
+		 */
+		bit->time = (__u64) (unsigned long) bit_alloc_list;
+		bit_alloc_list = (struct blk_io_trace *) bit;
+	}
 }
 
 static inline struct blk_io_trace *bit_alloc(void)
@@ -1214,6 +1232,7 @@ static inline struct blk_io_trace *bit_alloc(void)
 		return bit;
 	}
 
+	bit_alloc_cache++;
 	return malloc(sizeof(*bit));
 }
 
@@ -1297,11 +1316,11 @@ static void put_trace(struct per_dev_info *pdi, struct trace *t)
 	}
 }
 
-static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
-			  int force)
+static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
-	struct trace *t;
+	struct blk_io_trace *bit = t->bit;
+	struct trace *__t;
 	
 	/*
 	 * first entry, always ok
@@ -1321,24 +1340,29 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 	 * because this means that the log time is earlier
 	 * on the trace we have now
 	 */
-	t = trace_rb_find_sort(pdi->dev, expected_sequence);
-	if (t)
+	__t = trace_rb_find_sort(pdi->dev, expected_sequence);
+	if (__t)
 		return 0;
 
 	/*
 	 * we already displayed this entry, it's ok to continue.
 	 * kill old entry now
 	 */
-	t = trace_rb_find_last(pdi, expected_sequence);
-	if (t) {
-		__put_trace_last(pdi, t);
+	__t = trace_rb_find_last(pdi, expected_sequence);
+	if (__t) {
+		__put_trace_last(pdi, __t);
 		return 0;
 	}
+
+	if (last_skipped == expected_sequence)
+		t->skipped++;
+
+	last_skipped = expected_sequence;
 
 	/*
 	 * unless this is the last run, break and wait for more entries
 	 */
-	if (!force)
+	if (!force && t->skipped <= skip_runs)
 		return 1;
 
 	fprintf(stderr, "(%d,%d): skipping %lu -> %u\n", MAJOR(pdi->dev),
@@ -1354,6 +1378,12 @@ static void show_entries_rb(int force)
 	struct blk_io_trace *bit;
 	struct rb_node *n;
 	struct trace *t;
+
+	if (force) {
+		n = rb_first(&rb_sort_root);
+		t = rb_entry(n, struct trace, rb_node);
+		fprintf(stderr, "first force %u\n", t->bit->sequence);
+	}
 
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
 		if (done)
@@ -1371,7 +1401,7 @@ static void show_entries_rb(int force)
 			break;
 		}
 
-		if (check_sequence(pdi, bit, force))
+		if (check_sequence(pdi, t, force))
 			break;
 
 		if (!force && bit->time > last_allowed_time)
@@ -1486,6 +1516,8 @@ static int do_file(void)
 	struct per_dev_info *pdi;
 	int i, j, events, events_added;
 
+	skip_runs = 4;
+
 	/*
 	 * first prepare all files for reading
 	 */
@@ -1572,6 +1604,7 @@ static int do_stdin(void)
 	unsigned long long youngest;
 	int fd;
 
+	skip_runs = -1U;
 	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
 	do {
