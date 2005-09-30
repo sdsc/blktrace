@@ -1186,13 +1186,12 @@ static void show_device_and_cpu_stats(void)
  */
 static inline void t_free(struct trace *t)
 {
-	if (t_alloc_cache > 1024) {
-		free(t);
-		t_alloc_cache--;
-	} else {
+	if (t_alloc_cache < 1024) {
 		t->next = t_alloc_list;
 		t_alloc_list = t;
-	}
+		t_alloc_cache++;
+	} else
+		free(t);
 }
 
 static inline struct trace *t_alloc(void)
@@ -1201,25 +1200,24 @@ static inline struct trace *t_alloc(void)
 
 	if (t) {
 		t_alloc_list = t->next;
+		t_alloc_cache--;
 		return t;
 	}
 
-	t_alloc_cache++;
 	return malloc(sizeof(*t));
 }
 
 static inline void bit_free(struct blk_io_trace *bit)
 {
-	if (bit_alloc_cache > 1024) {
-		free(bit);
-		bit_alloc_cache--;
-	} else {
+	if (bit_alloc_cache < 1024) {
 		/*
 		 * abuse a 64-bit field for a next pointer for the free item
 		 */
 		bit->time = (__u64) (unsigned long) bit_alloc_list;
 		bit_alloc_list = (struct blk_io_trace *) bit;
-	}
+		bit_alloc_cache++;
+	} else
+		free(bit);
 }
 
 static inline struct blk_io_trace *bit_alloc(void)
@@ -1229,10 +1227,10 @@ static inline struct blk_io_trace *bit_alloc(void)
 	if (bit) {
 		bit_alloc_list = (struct blk_io_trace *) (unsigned long) \
 				 bit->time;
+		bit_alloc_cache--;
 		return bit;
 	}
 
-	bit_alloc_cache++;
 	return malloc(sizeof(*bit));
 }
 
