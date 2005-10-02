@@ -81,7 +81,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"i:o:b:stqw:f:F:vn"
+#define S_OPTS	"i:o:b:stqw:f:F:vnm"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -144,6 +144,12 @@ static struct option l_opts[] = {
 		.val = 'n'
 	},
 	{
+		.name = "missing",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'm'
+	},
+	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -202,6 +208,7 @@ static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 static int per_process_stats;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
+static int print_missing;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
@@ -1338,14 +1345,17 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 		if (!t)
 			goto skip;
 
+		__put_trace_last(pdi, t);
 		return 0;
 	} else if (!force)
 		return 1;
 	else {
 skip:
-		fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev),
-			pdi->last_sequence, bit->sequence);
+		if (print_missing) {
+			fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
+				MAJOR(pdi->dev), MINOR(pdi->dev),
+				pdi->last_sequence, bit->sequence);
+		}
 		pdi->skips++;
 		return 0;
 	}
@@ -1673,6 +1683,7 @@ static char usage_str[] = \
 	"\t -f Output format. Customize the output format. The format field\n" \
 	"\t    identifies can be found in the documentation\n" \
 	"\t-F Format specification. Can be found in the documentation\n" \
+	"\t-m Print missing entries\n" \
 	"\t-v Print program version info\n\n";
 
 static void usage(char *prog)
@@ -1724,6 +1735,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'n':
 			ppi_hash_by_pid = 0;
+			break;
+		case 'm':
+			print_missing = 1;
 			break;
 		case 'v':
 			printf("%s version %s\n", argv[0], blkparse_version);
