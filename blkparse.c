@@ -158,7 +158,6 @@ struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
 	struct trace *next;
-	unsigned int skipped;
 };
 
 static struct rb_root rb_sort_root;
@@ -196,15 +195,13 @@ static char *output_name;
 
 static unsigned long long genesis_time;
 static unsigned long long last_allowed_time;
+static unsigned int smallest_seq_read;
 static unsigned long long stopwatch_start;	/* start from zero by default */
 static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 
 static int per_process_stats;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
-
-static unsigned long last_skipped;
-static unsigned int skip_runs;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
@@ -1285,6 +1282,9 @@ static int sort_entries(unsigned long long *youngest)
 
 		if (trace_rb_insert_sort(t))
 			return -1;
+
+		if (bit->sequence < smallest_seq_read)
+			smallest_seq_read = bit->sequence;
 	}
 
 	return 0;
@@ -1314,11 +1314,11 @@ static void put_trace(struct per_dev_info *pdi, struct trace *t)
 	}
 }
 
-static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
+static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
+			  int force)
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
-	struct blk_io_trace *bit = t->bit;
-	struct trace *__t;
+	struct trace *t;
 	
 	/*
 	 * first entry, always ok
@@ -1329,44 +1329,26 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 	if (bit->sequence == expected_sequence)
 		return 0;
 
-	if (bit->sequence < expected_sequence &&
-	    bit->time > pdi->last_reported_time)
-		return 0;
-
 	/*
-	 * the wanted sequence is really there, continue
-	 * because this means that the log time is earlier
-	 * on the trace we have now
+	 * we may not have seen that sequence yet. if we are not doing
+	 * the final run, break and wait for more entries.
 	 */
-	__t = trace_rb_find_sort(pdi->dev, expected_sequence);
-	if (__t)
-		return 0;
+	if (expected_sequence < smallest_seq_read) {
+		t = trace_rb_find_last(pdi, expected_sequence);
+		if (!t)
+			goto skip;
 
-	/*
-	 * we already displayed this entry, it's ok to continue.
-	 * kill old entry now
-	 */
-	__t = trace_rb_find_last(pdi, expected_sequence);
-	if (__t) {
-		__put_trace_last(pdi, __t);
+		return 0;
+	} else if (!force)
+		return 1;
+	else {
+skip:
+		fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
+			MAJOR(pdi->dev), MINOR(pdi->dev),
+			pdi->last_sequence, bit->sequence);
+		pdi->skips++;
 		return 0;
 	}
-
-	if (last_skipped == expected_sequence)
-		t->skipped++;
-
-	last_skipped = expected_sequence;
-
-	/*
-	 * unless this is the last run, break and wait for more entries
-	 */
-	if (!force && t->skipped <= skip_runs)
-		return 1;
-
-	fprintf(stderr, "(%d,%d): skipping %lu -> %u\n", MAJOR(pdi->dev),
-			MINOR(pdi->dev), pdi->last_sequence, bit->sequence);
-	pdi->skips++;
-	return 0;
 }
 
 static void show_entries_rb(int force)
@@ -1399,7 +1381,7 @@ static void show_entries_rb(int force)
 			break;
 		}
 
-		if (check_sequence(pdi, t, force))
+		if (check_sequence(pdi, bit, force))
 			break;
 
 		if (!force && bit->time > last_allowed_time)
@@ -1514,8 +1496,6 @@ static int do_file(void)
 	struct per_dev_info *pdi;
 	int i, j, events, events_added;
 
-	skip_runs = 4;
-
 	/*
 	 * first prepare all files for reading
 	 */
@@ -1556,6 +1536,7 @@ static int do_file(void)
 
 		events_added = 0;
 		last_allowed_time = -1ULL;
+		smallest_seq_read = -1U;
 
 		for (i = 0; i < ndevices; i++) {
 			pdi = &devices[i];
@@ -1602,7 +1583,6 @@ static int do_stdin(void)
 	unsigned long long youngest;
 	int fd;
 
-	skip_runs = -1U;
 	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
 	do {
