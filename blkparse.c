@@ -1360,7 +1360,7 @@ static void show_entries_rb(int force)
 	struct trace *t;
 
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
-		if (is_done() && !force)
+		if (is_done() && !force && !pipeline)
 			break;
 
 		t = rb_entry(n, struct trace, rb_node);
