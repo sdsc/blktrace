@@ -100,17 +100,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  }
  
  EXPORT_SYMBOL(blk_plug_device);
-@@ -1439,6 +1442,9 @@ int blk_remove_plug(request_queue_t *q)
- 	if (!test_and_clear_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags))
- 		return 0;
- 
-+	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
-+				q->rq.count[READ] + q->rq.count[WRITE]);
-+
- 	del_timer(&q->unplug_timer);
- 	return 1;
- }
-@@ -1487,8 +1493,12 @@ static void blk_backing_dev_unplug(struc
+@@ -1487,14 +1490,21 @@ static void blk_backing_dev_unplug(struc
  	/*
  	 * devices don't necessarily have an ->unplug_fn defined
  	 */
@@ -124,6 +114,15 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  }
  
  static void blk_unplug_work(void *data)
+ {
+ 	request_queue_t *q = data;
+ 
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
++				q->rq.count[READ] + q->rq.count[WRITE]);
++
+ 	q->unplug_fn(q);
+ }
+ 
 @@ -1502,6 +1512,9 @@ static void blk_unplug_timeout(unsigned 
  {
  	request_queue_t *q = (request_queue_t *)data;
