@@ -329,15 +329,8 @@ static inline int trace_rb_insert(struct trace *t, struct rb_root *root,
 			p = &(*p)->rb_right;
 		else if (t->bit->sequence < __t->bit->sequence)
 			p = &(*p)->rb_left;
-		else if (t->bit->sequence > __t->bit->sequence)
+		else	/* >= sequence */
 			p = &(*p)->rb_right;
-		else if (t->bit->device == __t->bit->device) {
-			fprintf(stderr,
-				"sequence alias (%d) on device %d,%d!\n",
-				t->bit->sequence,
-				MAJOR(t->bit->device), MINOR(t->bit->device));
-			return 1;
-		}
 	}
 
 	rb_link_node(&t->rb_node, parent, p);
@@ -1321,8 +1314,7 @@ static void put_trace(struct per_dev_info *pdi, struct trace *t)
 	}
 }
 
-static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
-			  int force)
+static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit)
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
 	struct trace *t;
@@ -1347,9 +1339,7 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit,
 
 		__put_trace_last(pdi, t);
 		return 0;
-	} else if (!force)
-		return 1;
-	else {
+	} else {
 skip:
 		if (print_missing) {
 			fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
@@ -1370,7 +1360,7 @@ static void show_entries_rb(int force)
 	struct trace *t;
 
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
-		if (done)
+		if (is_done() && !force)
 			break;
 
 		t = rb_entry(n, struct trace, rb_node);
@@ -1385,11 +1375,13 @@ static void show_entries_rb(int force)
 			break;
 		}
 
-		if (check_sequence(pdi, bit, force))
-			break;
+		if (!force) {
+			if (check_sequence(pdi, bit))
+				break;
 
-		if (!force && bit->time > last_allowed_time)
-			break;
+			if (bit->time > last_allowed_time)
+				break;
+		}
 
 		pdi->last_sequence = bit->sequence;
 
@@ -1585,25 +1577,29 @@ static int do_file(void)
 static int do_stdin(void)
 {
 	unsigned long long youngest;
-	int fd;
+	int fd, events, loops;
 
 	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
-	do {
-		int events;
+	if (fd == -1) {
+		perror("dup stdin");
+		return -1;
+	}
 
-		events = read_events(fd, 0);
-		if (!events)
-			break;
+	loops = 0;
+	while ((events = read_events(fd, 0)) != 0) {
 	
+		smallest_seq_read = -1U;
+
 		if (sort_entries(&youngest))
 			break;
 
 		if (youngest > stopwatch_end)
 			break;
 
-		show_entries_rb(0);
-	} while (1);
+		if (loops++ & 1)
+			show_entries_rb(0);
+	}
 
 	if (rb_sort_entries)
 		show_entries_rb(1);
