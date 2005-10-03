@@ -7,7 +7,7 @@
 # 
 
 TRACEOPTS=""
-PARSEOPTS=""
+PARSEOPTS="-b100000"
 SUMMARIZE="-q"	# quiet (no dev/cpu summary by default)
 USAGE="Usage: btrace [-s] [-t] [-S] [-w N] [-a <trace>...] <dev>..."
 DIRNAME=`dirname $0`
