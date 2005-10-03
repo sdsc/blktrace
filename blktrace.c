@@ -34,7 +34,6 @@
 #include <sched.h>
 #include <ctype.h>
 #include <getopt.h>
-#include <sys/mman.h>
 
 #include "blktrace.h"
 
@@ -171,7 +170,6 @@ static char *relay_path;
 static char *output_name;
 static int act_mask = ~0U;
 static int kill_running_trace;
-static int use_mmap;
 static unsigned int buf_size = BUF_SIZE;
 static unsigned int buf_nr = BUF_NR;
 
@@ -231,77 +229,55 @@ static void stop_all_traces(void)
 		stop_trace(dip);
 }
 
-static int get_data_read(struct thread_information *tip, void *buf, int len)
+static int read_data(struct thread_information *tip, void *buf, int len)
 {
 	char *p = buf;
 	int ret, bytes_left = len;
 
 	while (!is_done() && bytes_left > 0) {
 		ret = read(tip->fd, p, bytes_left);
-		if (ret == len)
+		if (ret == bytes_left)
 			return 0;
 
 		if (ret < 0) {
 			perror(tip->fn);
 			fprintf(stderr,"Thread %d failed read of %s\n",
 				tip->cpu, tip->fn);
-			exit_trace(1);
+			break;
 		} else if (ret > 0) {
-			fprintf(stderr,"Thread %d misread %s %d,%d\n",
-				tip->cpu, tip->fn, ret, len);
-			exit_trace(1);
-		} else {
 			p += ret;
 			bytes_left -= ret;
-		}
-
-		usleep(10000);
+		} else
+			usleep(1000);
 	}
 
 	return -1;
 }
 
-static int get_data_mmap(struct thread_information *tip, void *buf,
-			 unsigned int len, int check_magic)
+static int write_data(int fd, void *buf, unsigned int buf_len)
 {
-	if (len > (buf_size * (tip->buf_subbuf + 1)) - tip->buf_offset) {
-		tip->buf_subbuf++;
-		if (tip->buf_subbuf == buf_nr)
-			tip->buf_subbuf = 0;
+	int ret, bytes_left;
+	char *p = buf;
 
-		tip->buf_offset = tip->buf_subbuf * buf_size;
-	}
-
-	while (1) {
-		struct blk_io_trace *t = buf;
-
-		memcpy(buf, tip->buf + tip->buf_offset, len);
-
-		if (!check_magic)
+	bytes_left = buf_len;
+	while (bytes_left > 0) {
+		ret = write(fd, p, bytes_left);
+		if (ret == bytes_left)
 			break;
 
-		if (CHECK_MAGIC(t) && t->sequence >= tip->sequence) {
-			tip->sequence = t->sequence;
-			break;
+		if (ret < 0) {
+			perror("write");
+			return 1;
+		} else if (ret > 0) {
+			p += ret;
+			bytes_left -= ret;
+		} else {
+			fprintf(stderr, "Zero write?\n");
+			return 1;
 		}
-	
-		if (is_done())
-			return -1;
-
-		usleep(10000);
 	}
 
-	tip->buf_offset += len;
 	return 0;
-}
-
-static int get_data(struct thread_information *tip, void *buf, int len,
-		    int check_magic)
-{
-	if (tip->buf)
-		return get_data_mmap(tip, buf, len, check_magic);
-	else
-		return get_data_read(tip, buf, len);
 }
 
 static void *extract_data(struct thread_information *tip, int nb)
@@ -309,11 +285,10 @@ static void *extract_data(struct thread_information *tip, int nb)
 	unsigned char *buf;
 
 	buf = malloc(nb);
-	if (!get_data(tip, buf, nb, 0))
+	if (!read_data(tip, buf, nb))
 		return buf;
 
 	free(buf);
-	exit_trace(1);
 	return NULL;
 }
 
@@ -332,7 +307,7 @@ static inline void tip_fd_lock(struct thread_information *tip)
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
-	int ret, pdu_len;
+	int pdu_len;
 	char *pdu_data;
 	struct blk_io_trace t;
 	pid_t pid = getpid();
@@ -356,29 +331,23 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
-	if (use_mmap) {
-		tip->buf = mmap(NULL, buf_size * buf_nr, PROT_READ,
-					MAP_PRIVATE | MAP_POPULATE, tip->fd, 0);
-		if (tip->buf == MAP_FAILED) {
-			perror("mmap");
-			exit_trace(1);
-		}
-	}
-
 	pdu_data = NULL;
 	while (!is_done()) {
-		if (get_data(tip, &t, sizeof(t), 1))
+		if (read_data(tip, &t, sizeof(t)))
 			break;
 
 		if (verify_trace(&t))
-			exit_trace(1);
+			break;
 
 		pdu_len = t.pdu_len;
 
 		trace_to_be(&t);
 
-		if (pdu_len)
+		if (pdu_len) {
 			pdu_data = extract_data(tip, pdu_len);
+			if (!pdu_data)
+				break;
+		}
 
 		/*
 		 * now we have both trace and payload, get a lock on the
@@ -386,29 +355,27 @@ static void *extract(void *arg)
 		 */
 		tip_fd_lock(tip);
 
-		ret = write(tip->ofd, &t, sizeof(t));
-		if (ret < 0) {
-			fprintf(stderr,"Thread %d failed write\n", tip->cpu);
+		if (write_data(tip->ofd, &t, sizeof(t))) {
 			tip_fd_unlock(tip);
-			exit_trace(1);
+			break;
 		}
 
-		if (pdu_data) {
-			ret = write(tip->ofd, pdu_data, pdu_len);
-			if (ret != pdu_len) {
-				perror("write pdu data");
-				tip_fd_unlock(tip);
-				exit_trace(1);
-			}
+		if (pdu_data && write_data(tip->ofd, pdu_data, pdu_len)) {
+			tip_fd_unlock(tip);
+			break;
+		}
 
+		tip_fd_unlock(tip);
+
+		if (pdu_data) {
 			free(pdu_data);
 			pdu_data = NULL;
 		}
 
-		tip_fd_unlock(tip);
 		tip->events_processed++;
 	}
 
+	exit_trace(1);
 	return NULL;
 }
 
@@ -455,9 +422,6 @@ static int start_threads(struct device_information *dip)
 
 static void close_thread(struct thread_information *tip)
 {
-	if (tip->buf)
-		munmap(tip->buf, buf_size * buf_nr);
-
 	if (tip->fd != -1)
 		close(tip->fd);
 	if (tip->ofd != -1)
