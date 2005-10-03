@@ -292,6 +292,22 @@ static void *extract_data(struct thread_information *tip, int nb)
 	return NULL;
 }
 
+static int get_event(struct thread_information *tip, struct blk_io_trace *bit)
+{
+	void *p = &bit->sequence;
+
+	do {
+		if (read_data(tip, bit, sizeof(bit->magic)))
+			return -1;
+
+	} while (!CHECK_MAGIC(bit));
+
+	if (!read_data(tip, p, sizeof(*bit) - sizeof(bit->magic)))
+		return 0;
+
+	return -1;
+}
+
 static inline void tip_fd_unlock(struct thread_information *tip)
 {
 	if (tip->fd_lock)
@@ -333,7 +349,7 @@ static void *extract(void *arg)
 
 	pdu_data = NULL;
 	while (!is_done()) {
-		if (read_data(tip, &t, sizeof(t)))
+		if (get_event(tip, &t))
 			break;
 
 		if (verify_trace(&t))
