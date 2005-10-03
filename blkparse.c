@@ -1369,12 +1369,6 @@ static void show_entries_rb(int force)
 	struct rb_node *n;
 	struct trace *t;
 
-	if (force) {
-		n = rb_first(&rb_sort_root);
-		t = rb_entry(n, struct trace, rb_node);
-		fprintf(stderr, "first force %u\n", t->bit->sequence);
-	}
-
 	while ((n = rb_first(&rb_sort_root)) != NULL) {
 		if (done)
 			break;
