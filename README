@@ -39,6 +39,7 @@ $ blktrace -d <dev> [ -r relay_path ] [ -o output ] [ -k ] [ -w time ]
 	-d Use specified device. May also be given last after options.
 	-r Path to mounted relayfs, defaults to /relay.
 	-o File(s) to send output to.
+	-D Directory to prepend to output file names.
 	-k Kill running trace.
 	-w Stop after defined time, in seconds.
 	-a Only trace specific actions (use more -a options to add actions).
@@ -65,6 +66,7 @@ $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 		      [ -w start:stop ] [ -f output format ] [ -F format spec ]
 
 	-i Input file containing trace data, or '-' for stdin.
+	-D Directory to prepend to input file names.
 	-o Output file. If not given, output is stdout.
 	-b stdin read batching.
 	-s Show per-program io statistics.

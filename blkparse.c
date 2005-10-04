@@ -81,7 +81,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"i:o:b:stqw:f:F:vnm"
+#define S_OPTS	"i:o:b:stqw:f:F:vnmD:"
 static struct option l_opts[] = {
 	{
 		.name = "input",
@@ -155,6 +155,12 @@ static struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'v'
 	},
+	{
+		.name = "input directory",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'D'
+	},
 };
 
 /*
@@ -198,6 +204,7 @@ static char *get_dev_name(struct per_dev_info *, char *, int);
 
 FILE *ofp = NULL;
 static char *output_name;
+static char *input_dir;
 
 static unsigned long long genesis_time;
 static unsigned long long last_allowed_time;
@@ -1502,12 +1509,16 @@ static int do_file(void)
 
 		for (j = 0;; j++) {
 			struct stat st;
+			int len = 0;
 
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 			pci->fd = -1;
 
-			snprintf(pci->fname, sizeof(pci->fname)-1,
+			if (input_dir)
+				len = sprintf(pci->fname, "%s/", input_dir);
+
+			snprintf(pci->fname + len, sizeof(pci->fname)-1-len,
 				 "%s.blktrace.%d", pdi->name, pci->cpu);
 			if (stat(pci->fname, &st) < 0)
 				break;
@@ -1661,6 +1672,7 @@ static char usage_str[] = \
 	"[ -i <input name> ] [-o <output name> [ -s ] [ -t ] [ -q ]\n" \
 	"[ -w start:stop ] [ -f output format ] [ -F format spec ] [ -v] \n\n" \
 	"\t-i Input file containing trace data, or '-' for stdin\n" \
+	"\t-D Directory to prepend to input file names\n" \
 	"\t-o Output file. If not given, output is stdout\n" \
 	"\t-b stdin read batching\n" \
 	"\t-s Show per-program io statistics\n" \
@@ -1694,6 +1706,9 @@ int main(int argc, char *argv[])
 				pipeline = 1;
 			else if (resize_devices(optarg) != 0)
 				return 1;
+			break;
+		case 'D':
+			input_dir = optarg;
 			break;
 		case 'o':
 			output_name = optarg;

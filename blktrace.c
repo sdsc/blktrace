@@ -70,7 +70,7 @@ static struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(PC),
 };
 
-#define S_OPTS	"d:a:A:r:o:kw:vb:n:"
+#define S_OPTS	"d:a:A:r:o:kw:vb:n:D:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -132,6 +132,12 @@ static struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'n'
 	},
+	{
+		.name = "output directory",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'D'
+	},
 };
 
 struct thread_information {
@@ -168,6 +174,7 @@ static struct device_information *device_information;
 /* command line option globals */
 static char *relay_path;
 static char *output_name;
+static char *output_dir;
 static int act_mask = ~0U;
 static int kill_running_trace;
 static unsigned int buf_size = BUF_SIZE;
@@ -464,6 +471,7 @@ static int start_threads(struct device_information *dip)
 	struct thread_information *tip;
 	char op[64];
 	int j, pipeline = output_name && !strcmp(output_name, "-");
+	int len;
 
 	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
 		tip->cpu = j;
@@ -475,11 +483,16 @@ static int start_threads(struct device_information *dip)
 			tip->ofd = dup(STDOUT_FILENO);
 			tip->fd_lock = &stdout_mutex;
 		} else {
+			len = 0;
+
+			if (output_dir)
+				len = sprintf(op, "%s/", output_dir);
+
 			if (output_name) {
-				sprintf(op, "%s.blktrace.%d", output_name,
+				sprintf(op + len, "%s.blktrace.%d", output_name,
 					tip->cpu);
 			} else {
-				sprintf(op, "%s.blktrace.%d",
+				sprintf(op + len, "%s.blktrace.%d",
 					dip->buts_name, tip->cpu);
 			}
 			tip->ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
@@ -652,6 +665,7 @@ static char usage_str[] = \
 	"\t-d Use specified device. May also be given last after options\n" \
 	"\t-r Path to mounted relayfs, defaults to /relay\n" \
 	"\t-o File(s) to send output to\n" \
+	"\t-D Directory to prepend to output file names\n" \
 	"\t-k Kill a running trace\n" \
 	"\t-w Stop after defined time, in seconds\n" \
 	"\t-a Only trace specified actions. See documentation\n" \
@@ -743,6 +757,9 @@ int main(int argc, char *argv[])
 					"Invalid buffer nr (%d)\n", buf_nr);
 				return 1;
 			}
+			break;
+		case 'D':
+			output_dir = optarg;
 			break;
 		default:
 			show_usage(argv[0]);
