@@ -121,7 +121,7 @@ static struct option l_opts[] = {
 		.val = 'v'
 	},
 	{
-		.name = "buffer size",
+		.name = "buffer size (in KiB)",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'b'
