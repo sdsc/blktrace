@@ -292,20 +292,84 @@ static void *extract_data(struct thread_information *tip, int nb)
 	return NULL;
 }
 
-static int get_event(struct thread_information *tip, struct blk_io_trace *bit)
+/*
+ * trace may start inside 'bit' or may need to be gotten further on
+ */
+static int get_event_slow(struct thread_information *tip,
+			  struct blk_io_trace *bit)
 {
-	void *p = &bit->sequence;
+	const int inc = sizeof(__u32);
+	struct blk_io_trace foo;
+	int offset;
+	void *p;
 
+	/*
+	 * check is trace is inside
+	 */
+	offset = 0;
+	p = bit;
+	while (offset < sizeof(*bit)) {
+		p += inc;
+		offset += inc;
+
+		memcpy(&foo, p, inc);
+
+		if (CHECK_MAGIC(&foo))
+			break;
+	}
+
+	/*
+	 * part trace found inside, read the rest
+	 */
+	if (offset < sizeof(*bit)) {
+		int good_bytes = sizeof(*bit) - offset;
+
+		memmove(bit, p, good_bytes);
+		p = (void *) bit + good_bytes;
+
+		return read_data(tip, p, offset);
+	}
+
+	/*
+	 * nothing found, keep looking for start of trace
+	 */
 	do {
 		if (read_data(tip, bit, sizeof(bit->magic)))
 			return -1;
-
 	} while (!CHECK_MAGIC(bit));
 
-	if (!read_data(tip, p, sizeof(*bit) - sizeof(bit->magic)))
+	/*
+	 * now get the rest of it
+	 */
+	p = &bit->sequence;
+	if (!read_data(tip, p, sizeof(*bit) - inc))
+		return -1;
+
+	return 0;
+}
+
+/*
+ * Sometimes relayfs screws us a little, if an event crosses a sub buffer
+ * boundary. So keep looking forward in the trace data until an event
+ * is found
+ */
+static int get_event(struct thread_information *tip, struct blk_io_trace *bit)
+{
+	/*
+	 * optimize for the common fast case, a full trace read that
+	 * succeeds
+	 */
+	if (read_data(tip, bit, sizeof(*bit)))
+		return -1;
+
+	if (CHECK_MAGIC(bit))
 		return 0;
 
-	return -1;
+	/*
+	 * ok that didn't work, the event may start somewhere inside the
+	 * trace itself
+	 */
+	return get_event_slow(tip, bit);
 }
 
 static inline void tip_fd_unlock(struct thread_information *tip)
