@@ -468,6 +468,67 @@ Short              & Long                       & Description \\ \hline\hline
 \end{tabular}
 
 \newpage
+\subsection{\label{sec:blkparse-actions}Trace actions}
+
+\begin{description}
+  \item[C -- complete] A previously issued request has been completed.
+  The output will detail the sector and size of that request, as well
+  as the success or failure of it.
+
+  \item[D -- issued] A request that previously resided on the block layer
+  queue or in the io scheduler has been sent to the driver.
+
+  \item[I -- inserted] A request is being sent to the io scheduler for
+  addition to the internal queue and later service by the driver. The
+  request is fully formed at this time.
+
+  \item[Q -- queued] This notes intent to queue io at the given location.
+  No real requests exists yet.
+
+  \item[W -- bounced] The data pages attached to this \emph{bio} are
+  not reachable by the hardware and must be bounced to a lower memory
+  location. This causes a big slowdown in io performance, since the data
+  must be copied to/from kernel buffers. Usually this can be fixed with
+  using better hardware - either a better io controller, or a platform
+  with an IOMMU.
+
+  \item[B -- back merge] A previously inserted request exists that ends
+  on the boundary of where this io begins, so the io scheduler can merge
+  them together.
+
+  \item[F -- front merge] Same as the back merge, except this io ends
+  where a previously inserted requests starts.
+
+  \item[M -- front or back merge] One of the above.
+
+  \item[G -- get request] To send any type of request to a block device,
+  a \emph{struct request} container must be allocated first.
+
+  \item[S -- sleep] No available request structures were available, so
+  the issuer has to wait for one to be freed.
+
+  \item[P -- plug] When io is queued to a previously empty block device
+  queue, Linux will plug the queue in anticipation of future ios being
+  added before this data is needed.
+
+  \item[U -- unplug] Some request data already queued in the device,
+  start sending requests to the driver. This may happen automatically
+  if a timeout period has passed (see next entry) or if a number of
+  requests have been added to the queue.
+
+  \item[T -- unplug due to timer] If nobody requests the io that was queued
+  after plugging the queue, Linux will automatically unplug it after a
+  defined period has passed.
+
+  \item[X -- split] On raid or device mapper setups, an incoming io may
+  straddle a device or internal zone and needs to be chopped up into
+  smaller pieces for service. This may indicate a performance problem due
+  to a bad setup of that raid/dm device, but may also just be part of
+  normal boundary conditions. dm is notably bad at this and will clone
+  lots of io.
+
+\end{description}
+
 \subsection{\label{sec:blkparse-format}Output Description and Formatting}
 
 The output from blkparse can be tailored for specific use - in particular,
