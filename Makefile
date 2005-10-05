@@ -35,4 +35,6 @@ install: $(PROGS) $(SCRIPTS)
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
 
+ifneq ($(wildcard .depend),)
 include .depend
+endif
