@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
 	last_time = 0;
 	last_seq = alias = nr = 0;
 	while ((p = fgets(line, sizeof(line), f)) != NULL) {
-		if (!sscanf(p, "%3d,%3d %2d %8d %lf", &major, &minor, &cpu, &seq, &this_time))
+		if (sscanf(p, "%3d,%3d %2d %8d %lf", &major, &minor, &cpu, &seq, &this_time) == -1)
 			break;
 
 		if (this_time < last_time) {
@@ -33,8 +33,10 @@ int main(int argc, char *argv[])
 		} else
 			last_time = this_time;
 
-		if (last_seq == seq)
+		if (last_seq == seq) {
+			fprintf(stdout, "alias on sequence %u\n", seq);
 			alias++;
+		}
 
 		last_seq = seq;
 	}
