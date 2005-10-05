@@ -81,8 +81,20 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"i:o:b:stqw:f:F:vnmD:"
+#define S_OPTS	"a:A:i:o:b:stqw:f:F:vnmD:"
 static struct option l_opts[] = {
+ 	{
+		.name = "act-mask",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'a'
+	},
+	{
+		.name = "set-mask",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'A'
+	},
 	{
 		.name = "input",
 		.has_arg = required_argument,
@@ -216,6 +228,7 @@ static int per_process_stats;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
 static int print_missing;
+static unsigned int act_mask = -1U;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
@@ -1397,7 +1410,8 @@ static void show_entries_rb(int force)
 		if (!pci || pci->cpu != bit->cpu)
 			pci = get_cpu_info(pdi, bit->cpu);
 
-		dump_trace(bit, pci, pdi);
+		if (bit->action & (act_mask << BLK_TC_SHIFT)) 
+			dump_trace(bit, pci, pdi);
 
 		put_trace(pdi, t);
 	}
@@ -1696,11 +1710,32 @@ static void usage(char *prog)
 int main(int argc, char *argv[])
 {
 	char *ofp_buffer;
-	int c, ret, mode;
+	int i, c, ret, mode;
 	int per_device_and_cpu_stats = 1;
+	int act_mask_tmp = 0;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
+		case 'a':
+			i = find_mask_map(optarg);
+			if (i < 0) {
+				fprintf(stderr,"Invalid action mask %s\n",
+					optarg);
+				return 1;
+			}
+			act_mask_tmp |= i;
+			break;
+
+		case 'A':
+			if ((sscanf(optarg, "%x", &i) != 1) || 
+							!valid_act_opt(i)) {
+				fprintf(stderr,
+					"Invalid set action mask %s/0x%x\n",
+					optarg, i);
+				return 1;
+			}
+			act_mask_tmp = i;
+			break;
 		case 'i':
 			if (!strcmp(optarg, "-") && !pipeline)
 				pipeline = 1;
@@ -1765,6 +1800,9 @@ int main(int argc, char *argv[])
 		usage(argv[0]);
 		return 1;
 	}
+
+	if (act_mask_tmp != 0)
+		act_mask = act_mask_tmp;
 
 	memset(&rb_sort_root, 0, sizeof(rb_sort_root));
 

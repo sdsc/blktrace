@@ -1,6 +1,7 @@
 #ifndef BLKTRACE_H
 #define BLKTRACE_H
 
+#include <stdio.h>
 #include <byteswap.h>
 #include <asm/types.h>
 #include <asm/byteorder.h>
@@ -112,5 +113,7 @@ extern void set_all_format_specs(char *);
 extern int add_format_spec(char *);
 extern void process_fmt(char *, struct per_cpu_info *, struct blk_io_trace *,
 			unsigned long long, int, unsigned char *);
+extern int valid_act_opt(int);
+extern int find_mask_map(char *);
 
 #endif

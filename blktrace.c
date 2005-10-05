@@ -44,32 +44,6 @@ static char blktrace_version[] = "0.90";
 
 #define RELAYFS_TYPE	0xF0B4A981
 
-#define DECLARE_MASK_MAP(mask)          { BLK_TC_##mask, #mask, "BLK_TC_"#mask }
-#define COMPARE_MASK_MAP(mmp, str)                                      \
-        (!strcasecmp((mmp)->short_form, (str)) ||                      \
-         !strcasecmp((mmp)->long_form, (str)))
-
-#define VALID_SET(x)	((1 <= (x)) && ((x) < (1 << BLK_TC_SHIFT)))
-
-struct mask_map {
-	int mask;
-	char *short_form;
-	char *long_form;
-};
-
-static struct mask_map mask_maps[] = {
-	DECLARE_MASK_MAP(READ),
-	DECLARE_MASK_MAP(WRITE),
-	DECLARE_MASK_MAP(BARRIER),
-	DECLARE_MASK_MAP(SYNC),
-	DECLARE_MASK_MAP(QUEUE),
-	DECLARE_MASK_MAP(REQUEUE),
-	DECLARE_MASK_MAP(ISSUE),
-	DECLARE_MASK_MAP(COMPLETE),
-	DECLARE_MASK_MAP(FS),
-	DECLARE_MASK_MAP(PC),
-};
-
 #define S_OPTS	"d:a:A:r:o:kw:vb:n:D:"
 static struct option l_opts[] = {
 	{
@@ -186,17 +160,6 @@ static volatile int done;
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void exit_trace(int status);
-
-static int find_mask_map(char *string)
-{
-	unsigned int i;
-
-	for (i = 0; i < sizeof(mask_maps)/sizeof(mask_maps[0]); i++)
-		if (COMPARE_MASK_MAP(&mask_maps[i], string))
-			return mask_maps[i].mask;
-
-	return -1;
-}
 
 static int start_trace(struct device_information *dip)
 {
@@ -705,7 +668,8 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'A':
-			if ((sscanf(optarg, "%x", &i) != 1) || !VALID_SET(i)) {
+			if ((sscanf(optarg, "%x", &i) != 1) || 
+							!valid_act_opt(i)) {
 				fprintf(stderr,
 					"Invalid set action mask %s/0x%x\n",
 					optarg, i);

@@ -6,10 +6,10 @@ SCRIPTS	= btrace
 
 all: $(PROGS) $(SCRIPTS)
 
-blkparse: blkparse.o blkparse_fmt.o rbtree.o
+blkparse: blkparse.o blkparse_fmt.o rbtree.o act_mask.o
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^)
 
-blktrace: blktrace.o $(LIBS)
+blktrace: blktrace.o act_mask.o $(LIBS)
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
 
 verify_blkparse: verify_blkparse.o
