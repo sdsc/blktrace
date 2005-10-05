@@ -3,8 +3,8 @@
 
 #include <stdio.h>
 #include <byteswap.h>
-#include <asm/types.h>
-#include <asm/byteorder.h>
+#include <endian.h>
+
 #include "blktrace_api.h"
 
 #define MINORBITS	20
@@ -44,14 +44,14 @@ extern FILE *ofp;
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 #define SUPPORTED_VERSION	(0x05)
 
-#if defined(__LITTLE_ENDIAN_BITFIELD)
+#if __BYTE_ORDER == __LITTLE_ENDIAN
 #define be16_to_cpu(x)		__bswap_16(x)
 #define be32_to_cpu(x)		__bswap_32(x)
 #define be64_to_cpu(x)		__bswap_64(x)
 #define cpu_to_be16(x)		__bswap_16(x)
 #define cpu_to_be32(x)		__bswap_32(x)
 #define cpu_to_be64(x)		__bswap_64(x)
-#elif defined(__BIG_ENDIAN_BITFIELD)
+#elif __BYTE_ORDER == __BIT_ENDIAN
 #define be16_to_cpu(x)		(x)
 #define be32_to_cpu(x)		(x)
 #define be64_to_cpu(x)		(x)
