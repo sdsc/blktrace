@@ -114,13 +114,13 @@ static struct option l_opts[] = {
 		.val = 'b'
 	},
 	{
-		.name = "per program stats",
+		.name = "per-program-stats",
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 's'
 	},
 	{
-		.name = "track ios",
+		.name = "track-ios",
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 't'
@@ -150,7 +150,7 @@ static struct option l_opts[] = {
 		.val = 'F'
 	},
 	{
-		.name = "hash by name",
+		.name = "hash-by-name",
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 'n'
@@ -168,7 +168,7 @@ static struct option l_opts[] = {
 		.val = 'v'
 	},
 	{
-		.name = "input directory",
+		.name = "input-directory",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'D'

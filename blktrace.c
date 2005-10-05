@@ -95,19 +95,19 @@ static struct option l_opts[] = {
 		.val = 'v'
 	},
 	{
-		.name = "buffer size (in KiB)",
+		.name = "buffer-size",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'b'
 	},
 	{
-		.name = "nr of sub buffers",
+		.name = "num-sub-buffers",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'n'
 	},
 	{
-		.name = "output directory",
+		.name = "output-dir",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'D'
