@@ -51,7 +51,7 @@ extern FILE *ofp;
 #define cpu_to_be16(x)		__bswap_16(x)
 #define cpu_to_be32(x)		__bswap_32(x)
 #define cpu_to_be64(x)		__bswap_64(x)
-#elif __BYTE_ORDER == __BIT_ENDIAN
+#elif __BYTE_ORDER == __BIG_ENDIAN
 #define be16_to_cpu(x)		(x)
 #define be32_to_cpu(x)		(x)
 #define be64_to_cpu(x)		(x)
