@@ -22,7 +22,7 @@ docsclean:
 	$(MAKE) -C doc clean
 
 depend:
-	@$(CC) -MM $(CFLAGS) *.[ch] 1> .depend
+	@$(CC) -MM $(CFLAGS) *.c 1> .depend
 
 clean: docsclean
 	-rm -f *.o $(PROGS) .depend
