@@ -112,6 +112,9 @@ static struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'D'
 	},
+	{
+		.name = NULL,
+	}
 };
 
 struct thread_information {

@@ -173,6 +173,9 @@ static struct option l_opts[] = {
 		.flag = NULL,
 		.val = 'D'
 	},
+	{
+		.name = NULL,
+	}
 };
 
 /*
