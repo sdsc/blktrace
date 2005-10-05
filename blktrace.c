@@ -273,7 +273,7 @@ static int get_event_slow(struct thread_information *tip,
 {
 	const int inc = sizeof(__u32);
 	struct blk_io_trace foo;
-	int offset;
+	unsigned int offset;
 	void *p;
 
 	/*
