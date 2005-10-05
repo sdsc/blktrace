@@ -4,7 +4,7 @@ PROGS	= blkparse blktrace verify_blkparse
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
-all: $(PROGS) $(SCRIPTS)
+all: depend $(PROGS) $(SCRIPTS)
 
 blkparse: blkparse.o blkparse_fmt.o rbtree.o act_mask.o
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^)
@@ -21,8 +21,11 @@ docs:
 docsclean:
 	$(MAKE) -C doc clean
 
+depend:
+	@$(CC) -MM $(CFLAGS) *.[ch] 1> .depend
+
 clean: docsclean
-	-rm -f *.o $(PROGS)
+	-rm -f *.o $(PROGS) .depend
 
 INSTALL = install
 prefix = /usr/local
@@ -32,3 +35,4 @@ install: $(PROGS) $(SCRIPTS)
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
 
+include .depend
