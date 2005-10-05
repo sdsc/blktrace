@@ -185,6 +185,7 @@ struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
 	struct trace *next;
+	int skipped;
 };
 
 static struct rb_root rb_sort_root;
@@ -1337,10 +1338,11 @@ static void put_trace(struct per_dev_info *pdi, struct trace *t)
 	}
 }
 
-static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit)
+static int check_sequence(struct per_dev_info *pdi, struct trace *t)
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
-	struct trace *t;
+	struct blk_io_trace *bit = t->bit;
+	struct trace *__t;
 	
 	/*
 	 * first entry, always ok
@@ -1356,14 +1358,19 @@ static int check_sequence(struct per_dev_info *pdi, struct blk_io_trace *bit)
 	 * the final run, break and wait for more entries.
 	 */
 	if (expected_sequence < smallest_seq_read) {
-		t = trace_rb_find_last(pdi, expected_sequence);
-		if (!t)
+		__t = trace_rb_find_last(pdi, expected_sequence);
+		if (!__t)
 			goto skip;
 
-		__put_trace_last(pdi, t);
+		__put_trace_last(pdi, __t);
 		return 0;
 	} else {
 skip:
+		if (!t->skipped)
+			return 1;
+
+		t->skipped = 1;
+
 		if (print_missing) {
 			fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
 				MAJOR(pdi->dev), MINOR(pdi->dev),
@@ -1399,7 +1406,7 @@ static void show_entries_rb(int force)
 		}
 
 		if (!force) {
-			if (check_sequence(pdi, bit))
+			if (check_sequence(pdi, t))
 				break;
 
 			if (bit->time > last_allowed_time)
