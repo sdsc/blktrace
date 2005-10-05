@@ -710,7 +710,7 @@ int main(int argc, char *argv[])
 			return 0;
 		case 'b':
 			buf_size = atoi(optarg);
-			if (buf_size <= 0) {
+			if (buf_size <= 0 || buf_size > 16*1024) {
 				fprintf(stderr,
 					"Invalid buffer size (%d)\n", buf_size);
 				return 1;
