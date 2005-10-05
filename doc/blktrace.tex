@@ -45,21 +45,6 @@ three major components that are provided:
   run in \emph{live} mode directly outputs data collected by blktrace.
 \end{description}
 
-\subsection{\label{sec:quetions}Questions / Ideas}
-\begin{enumerate}
-  \item Is the \emph{-b} scaling by $2^{10}$ correct?
-
-  \item Better descriptions for FS and PC in section \ref{sec:filter-mask}.
-
-  \item The long forms of options to blktrace and blkparse are not all
-  right - for example, \emph{"hash by name".}
-
-  \item Add \emph{-D} to specify directory to locate extracted data
-  files into (blktrace) or to read from (blkparse).
-
-  \item Add \emph{-a} and \emph{-A} to blkparse.
-\end{enumerate}
-
 \subsection{blktrace Download Area}
 
 The blktrace and blkparse utilities and associated kernel patch are provided
@@ -391,6 +376,18 @@ requeue & \emph{requeue} operations \\ \hline
 sync & \emph{synchronous} attribute \\ \hline
 write & \emph{write} traces \\ \hline
 \end{tabular}
+
+\subsubsection{\label{sec:request-types}Request types}
+blktrace disguingishes between two types of block layer requests,
+file system and scsi commands. The former are dubbed \emph{fs}
+requests, the latter \emph{pc} requests. File system requests are
+normal read/write operations, ie any type of read or write from a
+specific disk location at a given size. These requests typically
+originate from a user process, but they may also be initiated by
+the vm flushing dirty data to disk or the file system syncing
+a super or journal block to disk. \emph{pc} requests are SCSI
+commands. blktrace sends the command data block as a payload
+so that blkparse can decode it.
 
 %----------------------------
 \newpage\section{\label{sec:blkparse-ug}blkparse User Guide}
