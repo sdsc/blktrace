@@ -511,16 +511,16 @@ static void log_track_frontmerge(struct per_dev_info *pdi,
 	if (!track_ios)
 		return;
 
-	iot = __find_track(pdi, t->sector + (t->bytes >> 9));
+	iot = __find_track(pdi, t->sector + t_sec(t));
 	if (!iot) {
 		fprintf(stderr, "merge not found for (%d,%d): %llu\n",
 			MAJOR(pdi->dev), MINOR(pdi->dev),
-			(unsigned long long) t->sector + (t->bytes >> 9));
+			(unsigned long long) t->sector + t_sec(t));
 		return;
 	}
 
 	rb_erase(&iot->rb_node, &pdi->rb_track);
-	iot->sector -= t->bytes >> 9;
+	iot->sector -= t_sec(t);
 	track_rb_insert(pdi, iot);
 }
 
@@ -761,10 +761,10 @@ static inline void __account_m(struct io_stats *ios, struct blk_io_trace *t,
 {
 	if (rw) {
 		ios->mwrites++;
-		ios->qwrite_kb += t->bytes >> 10;
+		ios->qwrite_kb += t_kb(t);
 	} else {
 		ios->mreads++;
-		ios->qread_kb += t->bytes >> 10;
+		ios->qread_kb += t_kb(t);
 	}
 }
 
@@ -785,10 +785,10 @@ static inline void __account_queue(struct io_stats *ios, struct blk_io_trace *t,
 {
 	if (rw) {
 		ios->qwrites++;
-		ios->qwrite_kb += t->bytes >> 10;
+		ios->qwrite_kb += t_kb(t);
 	} else {
 		ios->qreads++;
-		ios->qread_kb += t->bytes >> 10;
+		ios->qread_kb += t_kb(t);
 	}
 }
 

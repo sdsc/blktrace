@@ -18,6 +18,9 @@
 
 #define min(a, b)	((a) < (b) ? (a) : (b))
 
+#define t_sec(t)	((t)->bytes >> 9)
+#define t_kb(t)		((t)->bytes >> 10)
+
 typedef __u32 u32;
 typedef __u8 u8;
 

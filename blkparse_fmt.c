@@ -159,7 +159,7 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		fprintf(ofp, strcat(format, "d"), MINOR(t->device));
 		break;
 	case 'n':
-		fprintf(ofp, strcat(format, "u"), t->bytes >> 9);
+		fprintf(ofp, strcat(format, "u"), t_sec(t));
 		break;
 	case 'N':
 		fprintf(ofp, strcat(format, "u"), t->bytes);
@@ -257,11 +257,11 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			if (elapsed != -1ULL) {
 				fprintf(ofp, "%llu + %u (%8llu) [%d]\n",
 					(unsigned long long) t->sector,
-					t->bytes >> 9, elapsed, t->error);
+					t_sec(t), elapsed, t->error);
 			} else {
 				fprintf(ofp, "%llu + %u [%d]\n",
 					(unsigned long long) t->sector,
-					t->bytes >> 9, t->error);
+					t_sec(t), t->error);
 			}
 		}
 		break;
@@ -281,11 +281,11 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			if (elapsed != -1ULL) {
 				fprintf(ofp, "%llu + %u (%8llu) [%s]\n",
 					(unsigned long long) t->sector,
-					t->bytes >> 9, elapsed, t->comm);
+					t_sec(t), elapsed, t->comm);
 			} else {
 				fprintf(ofp, "%llu + %u [%s]\n",
 					(unsigned long long) t->sector,
-					t->bytes >> 9, t->comm);
+					t_sec(t), t->comm);
 			}
 		}
 		break;
@@ -296,7 +296,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	case 'G':	/* Get request */
 	case 'S':	/* Sleep request */
 		fprintf(ofp, "%llu + %u [%s]\n", (unsigned long long) t->sector,
-			t->bytes >> 9, t->comm);
+			t_sec(t), t->comm);
 		break;
 
 	case 'P':	/* Plug */
@@ -313,7 +313,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 
 		get_pdu_remap(t, &r);
 		fprintf(ofp, "%llu + %u <- (%d,%d) %llu\n",
-			(unsigned long long) r.sector, t->bytes >> 10,
+			(unsigned long long) r.sector, t_sec(t),
 			MAJOR(r.device), MINOR(r.device),
 			(unsigned long long) t->sector);
 		break;
