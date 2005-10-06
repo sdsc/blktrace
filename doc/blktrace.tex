@@ -527,6 +527,10 @@ Short              & Long                       & Description \\ \hline\hline
   normal boundary conditions. dm is notably bad at this and will clone
   lots of io.
 
+  \item[A -- remap] For stacked devices, incoming io is remapped to device
+  below it in the io stack. The remap action details what exactly is
+  being remapped to what.
+
 \end{description}
 
 \subsection{\label{sec:blkparse-format}Output Description and Formatting}
@@ -578,6 +582,7 @@ The following table shows the various actions which may be output.
 
 \begin{tabular}{|l|l|}\hline
 Act & Description \\ \hline\hline
+A & IO was remapped to a different device \\ \hline
 B & IO back merged with request on queue \\ \hline
 C & IO completion \\ \hline
 D & IO issued to driver \\ \hline
@@ -672,6 +677,9 @@ The default output for all event types includes this header.
   sector (separated by a slash (/) is output, followed by the command
   associated with the event (surrounded by square brackets).
 
+  \item[A -- remap] Sector and length is output, along with the original
+  device and sector offset.
+
 \end{description}
 
 %------------------------------
@@ -705,6 +713,7 @@ definitions:
   BLK\_TA\_INSERT & Insert request into queue. \\ \hline
   BLK\_TA\_SPLIT & BIO split into 2 or more requests. \\ \hline
   BLK\_TA\_BOUNCE & BIO was bounced \\ \hline
+  BLK\_TA\_REMAP & BIO was remapped \\ \hline
 \end{tabular}
 
 %..........................................
@@ -740,6 +749,12 @@ kernel routine invocable interfaces:
 	32-bit entity (the \emph{pdu} parameter). The \emph{what} parameter
 	describes the nature of the payload, and is one of
 	BLK\_TA\_UNPLUG\_IO or BLK\_TA\_UNPLUG\_TIMER.
+
+  \item[blk\_add\_trace\_remap(struct request\_queue *q, struct bio  *bio,
+						dev\_t dev, sector\_t sector)]
+	Adds a trace with a remap event. \emph{dev} and \emph{sector} denote
+	the original device this \emph{bio} was mapped from.
+
 
 \end{description}
 \end{document}

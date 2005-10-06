@@ -42,6 +42,7 @@ enum {
 	__BLK_TA_INSERT,		/* insert request */
 	__BLK_TA_SPLIT,			/* bio was split */
 	__BLK_TA_BOUNCE,		/* bio was bounced */
+	__BLK_TA_REMAP,			/* bio was remapped */
 };
 
 /*
@@ -61,6 +62,7 @@ enum {
 #define BLK_TA_INSERT		(__BLK_TA_INSERT | BLK_TC_ACT(BLK_TC_QUEUE))
 #define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
 #define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
+#define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
 #define BLK_IO_TRACE_VERSION	0x05
@@ -81,6 +83,14 @@ struct blk_io_trace {
 	__u16 pdu_len;		/* length of data after this trace */
 	__u32 device;		/* device identifier (dev_t) */
 	char  comm[16];		/* task command name (TASK_COMM_LEN) */
+};
+
+/*
+ * The remap event
+ */
+struct blk_io_trace_remap {
+	__u32 device;
+	__u64 sector;
 };
 
 /*

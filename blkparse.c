@@ -1025,6 +1025,9 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 		case __BLK_TA_BOUNCE:
 			log_generic(pci, t, "B");
 			break;
+		case __BLK_TA_REMAP:
+			log_generic(pci, t, "A");
+			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
 			break;

@@ -190,16 +190,39 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -2991,6 +3019,8 @@ end_io:
+@@ -2931,6 +2959,7 @@ void generic_make_request(struct bio *bi
+ 	request_queue_t *q;
+ 	sector_t maxsector;
+ 	int ret, nr_sectors = bio_sectors(bio);
++	dev_t old_dev;
+ 
+ 	might_sleep();
+ 	/* Test device or partition size, when known. */
+@@ -2957,6 +2986,8 @@ void generic_make_request(struct bio *bi
+ 	 * NOTE: we don't repeat the blk_size check for each new device.
+ 	 * Stacking drivers are expected to know what they are doing.
+ 	 */
++	maxsector = -1;
++	old_dev = 0;
+ 	do {
+ 		char b[BDEVNAME_SIZE];
+ 
+@@ -2991,6 +3022,14 @@ end_io:
  		 */
  		blk_partition_remap(bio);
  
++		if (maxsector != -1)
++			blk_add_trace_remap(q, bio, old_dev, maxsector);
++
 +		blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
++
++		maxsector = bio->bi_sector;
++		old_dev = bio->bi_bdev->bd_dev;
 +
  		ret = q->make_request_fn(q, bio);
  	} while (ret);
  }
-@@ -3110,6 +3140,8 @@ static int __end_that_request_first(stru
+@@ -3110,6 +3149,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -517,8 +540,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +module_init(blk_trace_init);
 +
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-09-28 08:46:33.000000000 +0200
-@@ -0,0 +1,180 @@
++++ linux-2.6/include/linux/blktrace.h	2005-10-06 09:38:46.000000000 +0200
+@@ -0,0 +1,206 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -529,7 +552,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +/*
 + * Trace categories
 + */
-+enum {
++enum blktrace_cat {
 +	BLK_TC_READ	= 1 << 0,	/* reads */
 +	BLK_TC_WRITE	= 1 << 1,	/* writes */
 +	BLK_TC_BARRIER	= 1 << 2,	/* barrier */
@@ -550,7 +573,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +/*
 + * Basic trace actions
 + */
-+enum {
++enum blktrace_act {
 +	__BLK_TA_QUEUE = 1,		/* queued */
 +	__BLK_TA_BACKMERGE,		/* back merged to existing rq */
 +	__BLK_TA_FRONTMERGE,		/* front merge to existing rq */
@@ -565,6 +588,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +	__BLK_TA_INSERT,		/* insert request */
 +	__BLK_TA_SPLIT,			/* bio was split */
 +	__BLK_TA_BOUNCE,		/* bio was bounced */
++	__BLK_TA_REMAP,			/* bio was remapped */
 +};
 +
 +/*
@@ -584,6 +608,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +#define BLK_TA_INSERT		(__BLK_TA_INSERT | BLK_TC_ACT(BLK_TC_QUEUE))
 +#define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
 +#define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
++#define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
 +#define BLK_IO_TRACE_VERSION	0x05
@@ -604,6 +629,14 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +	u16 pdu_len;		/* length of data after this trace */
 +	u32 device;		/* device number */
 +	char comm[16];		/* task command name (TASK_COMM_LEN) */
++};
++
++/*
++ * The remap event
++ */
++struct blk_io_trace_remap {
++	u32 device;
++	u64 sector;
 +};
 +
 +struct blk_trace {
@@ -688,6 +721,21 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +		__blk_add_trace(bt, 0, 0, 0, what, 0, sizeof(rpdu), &rpdu);
 +}
 +
++static inline void blk_add_trace_remap(struct request_queue *q, struct bio *bio, dev_t dev,
++				       sector_t sector)
++{
++	struct blk_trace *bt = q->blk_trace;
++	struct blk_io_trace_remap r;
++
++	if (likely(!bt))
++		return;
++
++	r.device = cpu_to_be32(dev);
++	r.sector = cpu_to_be64(sector);
++
++	__blk_add_trace(bt, bio->bi_sector, bio->bi_size, bio->bi_rw, BLK_TA_REMAP, !bio_flagged(bio, BIO_UPTODATE), sizeof(r), &r);
++}
++
 +#else /* !CONFIG_BLK_DEV_IO_TRACE */
 +#define blk_start_trace(bdev, arg)		(-EINVAL)
 +#define blk_stop_trace(bdev)			(-EINVAL)
@@ -696,6 +744,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +#define blk_add_trace_bio(q, rq, what)		do { } while (0)
 +#define blk_add_trace_generic(q, rq, rw, what)	do { } while (0)
 +#define blk_add_trace_pdu_int(q, what, bio, pdu)	do { } while (0)
++#define blk_add_trace_remap(q, bio, dev, sec)	do {} while (0)
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif

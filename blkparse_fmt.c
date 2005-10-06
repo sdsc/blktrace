@@ -10,7 +10,7 @@
 
 #include "blktrace.h"
 
-#define VALID_SPECS	"BCDFGMPQRSTU"
+#define VALID_SPECS	"ABCDFGMPQRSTUWX"
 
 #define HEADER		"%D %2c %8s %5T.%9t %5p %2a %3d "
 
@@ -97,11 +97,21 @@ static char *dump_pdu(unsigned char *pdu_buf, int pdu_len)
 	return p;
 }
 
+#define pdu_start(t)	(((void *) (t) + sizeof(struct blk_io_trace)))
+
 static unsigned int get_pdu_int(struct blk_io_trace *t)
 {
-	__u64 *val = (__u64 *) ((char *) t + sizeof(*t));
+	__u64 *val = pdu_start(t);
 
 	return be64_to_cpu(*val);
+}
+
+static void get_pdu_remap(struct blk_io_trace *t, struct blk_io_trace_remap *r)
+{
+	struct blk_io_trace_remap *__r = pdu_start(t);
+
+	r->device = be32_to_cpu(__r->device);
+	r->sector = be64_to_cpu(__r->sector);
 }
 
 static void print_field(char *act, struct per_cpu_info *pci,
@@ -294,11 +304,21 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		break;
 
 	case 'U':	/* Unplug IO */
-	case 'T': {	/* Unplug timer */
+	case 'T': 	/* Unplug timer */
 		fprintf(ofp, "[%s] %u\n", t->comm, get_pdu_int(t));
 		break;
-	}
 
+	case 'A': {	/* remap */
+		struct blk_io_trace_remap r;
+
+		get_pdu_remap(t, &r);
+		fprintf(ofp, "%llu + %u <- (%d,%d) %llu\n",
+			(unsigned long long) r.sector, t->bytes >> 10,
+			MAJOR(r.device), MINOR(r.device),
+			(unsigned long long) t->sector);
+		break;
+	}
+		
 	case 'X': 	/* Split */
 		fprintf(ofp, "%llu / %u [%s]\n", (unsigned long long) t->sector,
 			get_pdu_int(t), t->comm);
