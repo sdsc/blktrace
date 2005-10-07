@@ -9,7 +9,7 @@ Nathan Scott <nathans@sgi.com> (bug fixes, process names, multiple devices)
 Requirements
 ------------
 
-You need to be running a 2.6.14-rc2 kernel or newer, with the blk-trace patch
+You need to be running a 2.6.14-rc3 kernel or newer, with the blk-trace patch
 included in this repository. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
@@ -143,6 +143,13 @@ Which will send the traces from tracehost to parsehost over the network on
 the defined port number.
 
 
+Documentation
+-------------
+
+A users guide is distributed with the source. It is in latex, a
+'make docs' will build a PDF in doc/.
+
+
 Resources
 ---------
 
@@ -153,5 +160,5 @@ the mail body.
 
 
 
-20050906, Jens Axboe <axboe@suse.de>
+20051007, Jens Axboe <axboe@suse.de>
 
