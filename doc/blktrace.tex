@@ -66,7 +66,7 @@ As noted above, the kernel patch along with the blktrace and blkparse utilities 
 \begin{verbatim}
 % git clone rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git bt
 % cd bt
-% git-read-tree -m HEAD && git-checkout-cache -q -f -u -a
+% git checkout
 \end{verbatim}
 
 \subsection{\label{sec:patching}Patching and configuring the Linux kernel}
@@ -180,6 +180,40 @@ Total (8,0):
 
 Events (8,0): 89 entries, 0 skips
 \end{verbatim}
+
+A \emph{btrace} script is included in the distribution to ease live
+tracing of devices. The above could also be accomplished by issuing:
+
+\begin{verbatim}
+% btrace /dev/sda
+\end{verbatim}
+
+By default, \emph{btrace} runs the trace in quiet mode so it will not
+include statistics when you break the run. Add the \emph{-S} option to
+get that dumped as well.
+
+\subsection{\label{sec:pc-blktrace}blktrace -- SCSI commands}
+
+The previous section showed typical file system io actions, but blktrace
+can also show SCSI commands going in and out of the queue as submitted
+by applications using the SCSI Generic (\emph{sg}) interface.
+
+\begin{verbatim}
+% btrace /dev/cdrom
+[...]
+  3,0    0       25     0.004884107 13528  G   R 0 + 0 [inquiry]
+  3,0    0       26     0.004890361 13528  I   R 56 (12 00 00 00 38 ..) [inquiry]
+  3,0    0       27     0.004891223 13528  P   R [inquiry]
+  3,0    0       28     0.004893250 13528  D   R 56 (12 00 00 00 38 ..) [inquiry]
+  3,0    0       29     0.005344910     0  C   R (12 00 00 00 38 ..) [0]
+\end{verbatim}
+
+Here we see a program issuing an INQUIRY command to the CDROM device.
+The program requested a read of 56 bytes of data, the CDB is included
+in parenthesis after the data length. The completion event shows shows
+that the command completed successfully. Tracing SCSI commands can be
+very useful for debugging problems with programs talking directly to the
+device. An example of that would be \emph{cdrecord} burning.
 
 \subsection{\label{sec:blktrace-post}blktrace -- post-processing}
 
