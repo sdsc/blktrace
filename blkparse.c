@@ -81,7 +81,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVnD:"
+#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:"
 static struct option l_opts[] = {
  	{
 		.name = "act-mask",
@@ -153,7 +153,7 @@ static struct option l_opts[] = {
 		.name = "hash-by-name",
 		.has_arg = no_argument,
 		.flag = NULL,
-		.val = 'n'
+		.val = 'h'
 	},
 	{
 		.name = "verbose",
@@ -1721,8 +1721,8 @@ static char usage_str[] = \
 	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
 	"\t-w Only parse data between the given time interval in seconds.\n" \
 	"\t   If 'start' isn't given, blkparse defaults the start time to 0\n" \
-	"\t -f Output format. Customize the output format. The format field\n" \
-	"\t    identifies can be found in the documentation\n" \
+	"\t-f Output format. Customize the output format. The format field\n" \
+	"\t   identifies can be found in the documentation\n" \
 	"\t-F Format specification. Can be found in the documentation\n" \
 	"\t-v More verbose for marginal errors\n" \
 	"\t-V Print program version info\n\n";
@@ -1797,7 +1797,7 @@ int main(int argc, char *argv[])
 			if (add_format_spec(optarg) != 0)
 				return 1;
 			break;
-		case 'n':
+		case 'h':
 			ppi_hash_by_pid = 0;
 			break;
 		case 'v':
