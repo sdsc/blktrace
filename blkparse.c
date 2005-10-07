@@ -1609,7 +1609,7 @@ static int do_file(void)
 static int do_stdin(void)
 {
 	unsigned long long youngest;
-	int fd, events, loops;
+	int fd, events;
 
 	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
@@ -1618,7 +1618,6 @@ static int do_stdin(void)
 		return -1;
 	}
 
-	loops = 0;
 	while ((events = read_events(fd, 0)) != 0) {
 	
 		smallest_seq_read = -1U;
@@ -1629,8 +1628,7 @@ static int do_stdin(void)
 		if (youngest > stopwatch_end)
 			break;
 
-		if (loops++ & 1)
-			show_entries_rb(0);
+		show_entries_rb(0);
 	}
 
 	if (rb_sort_entries)
