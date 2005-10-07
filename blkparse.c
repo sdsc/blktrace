@@ -228,10 +228,12 @@ static unsigned long long stopwatch_start;	/* start from zero by default */
 static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 
 static int per_process_stats;
+static int per_device_and_cpu_stats = 1;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
 static int verbose;
 static unsigned int act_mask = -1U;
+static int stats_printed;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
@@ -1420,6 +1422,8 @@ static void show_entries_rb(int force)
 		if (!pci || pci->cpu != bit->cpu)
 			pci = get_cpu_info(pdi, bit->cpu);
 
+		pci->nelems++;
+
 		if (bit->action & (act_mask << BLK_TC_SHIFT)) 
 			dump_trace(bit, pci, pdi);
 
@@ -1641,15 +1645,28 @@ static int do_stdin(void)
 	return 0;
 }
 
-static void flush_output(void)
+static void show_stats(void)
 {
+	if (!ofp)
+		return;
+	if (stats_printed)
+		return;
+
+	stats_printed = 1;
+
+	if (per_process_stats)
+		show_process_stats();
+
+	if (per_device_and_cpu_stats)
+		show_device_and_cpu_stats();
+
 	fflush(ofp);
 }
 
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
-	flush_output();
+	show_stats();
 }
 
 /*
@@ -1719,7 +1736,6 @@ int main(int argc, char *argv[])
 {
 	char *ofp_buffer;
 	int i, c, ret, mode;
-	int per_device_and_cpu_stats = 1;
 	int act_mask_tmp = 0;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
@@ -1847,12 +1863,6 @@ int main(int argc, char *argv[])
 	else
 		ret = do_file();
 
-	if (per_process_stats)
-		show_process_stats();
-
-	if (per_device_and_cpu_stats)
-		show_device_and_cpu_stats();
-
-	flush_output();
+	show_stats();
 	return ret;
 }
