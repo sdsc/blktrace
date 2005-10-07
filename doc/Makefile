@@ -5,7 +5,7 @@ all: blktrace.pdf
 blktrace.tex:
 	@touch blktrace.tex
 
-blktrace.pdf:
+blktrace.pdf: blktrace.tex
 	@latex blktrace.tex > /dev/null
 	@latex blktrace.tex > /dev/null
 	@dvipdfm -p a4 blktrace
