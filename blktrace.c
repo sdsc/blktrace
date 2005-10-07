@@ -186,10 +186,13 @@ static int start_trace(struct device_information *dip)
 static void stop_trace(struct device_information *dip)
 {
 	if (dip->trace_started || kill_running_trace) {
+		dip->trace_started = 0;
+
 		if (ioctl(dip->fd, BLKSTOPTRACE) < 0)
 			perror("BLKSTOPTRACE");
+
 		close(dip->fd);
-		dip->trace_started = 0;
+		dip->fd = -1;
 	}
 }
 
@@ -550,7 +553,7 @@ static int open_devices(void)
 	int i;
 
 	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
-		dip->fd = open(dip->path, O_RDONLY);
+		dip->fd = open(dip->path, O_RDONLY | O_NONBLOCK);
 		if (dip->fd < 0) {
 			perror(dip->path);
 			return 1;
