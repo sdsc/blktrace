@@ -79,14 +79,11 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 	rwbs[i] = '\0';
 }
 
-static int pdu_rest_is_zero(unsigned char *pdu, int len)
+static inline int pdu_rest_is_zero(unsigned char *pdu, int len)
 {
-	int i = 0;
+	static char zero[4096];
 
-	while (!pdu[i] && i < len)
-		i++;
-
-	return i == len;
+	return !memcmp(pdu, zero, len);
 }
 
 static char *dump_pdu(unsigned char *pdu_buf, int pdu_len)
