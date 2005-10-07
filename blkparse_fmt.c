@@ -79,6 +79,16 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 	rwbs[i] = '\0';
 }
 
+static int pdu_rest_is_zero(unsigned char *pdu, int len)
+{
+	int i = 0;
+
+	while (!pdu[i] && i < len)
+		i++;
+
+	return i == len;
+}
+
 static char *dump_pdu(unsigned char *pdu_buf, int pdu_len)
 {
 	static char p[4096];
@@ -92,6 +102,16 @@ static char *dump_pdu(unsigned char *pdu_buf, int pdu_len)
 			len += sprintf(p + len, " ");
 
 		len += sprintf(p + len, "%02x", pdu_buf[i]);
+
+		/*
+		 * usually dump for cdb dumps where we can see lots of
+		 * zeroes, stop when the rest is just zeroes and indicate
+		 * so with a .. appended
+		 */
+		if (!pdu_buf[i] && pdu_rest_is_zero(pdu_buf + i, pdu_len - i)) {
+			sprintf(p + len, " ..");
+			break;
+		}
 	}
 
 	return p;
