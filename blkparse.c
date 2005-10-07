@@ -81,7 +81,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"a:A:i:o:b:stqw:f:F:vnmD:"
+#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVnD:"
 static struct option l_opts[] = {
  	{
 		.name = "act-mask",
@@ -156,16 +156,16 @@ static struct option l_opts[] = {
 		.val = 'n'
 	},
 	{
-		.name = "missing",
+		.name = "verbose",
 		.has_arg = no_argument,
 		.flag = NULL,
-		.val = 'm'
+		.val = 'v'
 	},
 	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
-		.val = 'v'
+		.val = 'V'
 	},
 	{
 		.name = "input-directory",
@@ -230,7 +230,7 @@ static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
 static int per_process_stats;
 static int track_ios;
 static int ppi_hash_by_pid = 1;
-static int print_missing;
+static int verbose;
 static unsigned int act_mask = -1U;
 
 static unsigned int t_alloc_cache;
@@ -513,9 +513,10 @@ static void log_track_frontmerge(struct per_dev_info *pdi,
 
 	iot = __find_track(pdi, t->sector + t_sec(t));
 	if (!iot) {
-		fprintf(stderr, "merge not found for (%d,%d): %llu\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev),
-			(unsigned long long) t->sector + t_sec(t));
+		if (verbose)
+			fprintf(stderr, "merge not found for (%d,%d): %llu\n",
+				MAJOR(pdi->dev), MINOR(pdi->dev),
+				(unsigned long long) t->sector + t_sec(t));
 		return;
 	}
 
@@ -582,9 +583,10 @@ static unsigned long long log_track_issue(struct per_dev_info *pdi,
 
 	iot = __find_track(pdi, t->sector);
 	if (!iot) {
-		fprintf(stderr, "issue not found for (%d,%d): %llu\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev),
-			(unsigned long long) t->sector);
+		if (verbose)
+			fprintf(stderr, "issue not found for (%d,%d): %llu\n",
+				MAJOR(pdi->dev), MINOR(pdi->dev),
+				(unsigned long long) t->sector);
 		return -1;
 	}
 
@@ -618,9 +620,10 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 
 	iot = __find_track(pdi, t->sector);
 	if (!iot) {
-		fprintf(stderr, "complete not found for (%d,%d): %llu\n",
-			MAJOR(pdi->dev), MINOR(pdi->dev),
-			(unsigned long long) t->sector);
+		if (verbose)
+			fprintf(stderr,"complete not found for (%d,%d): %llu\n",
+				MAJOR(pdi->dev), MINOR(pdi->dev),
+				(unsigned long long) t->sector);
 		return -1;
 	}
 
@@ -1370,7 +1373,7 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 		return 1;
 	} else {
 skip:
-		if (print_missing) {
+		if (verbose) {
 			fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
 				MAJOR(pdi->dev), MINOR(pdi->dev),
 				pdi->last_sequence, bit->sequence);
@@ -1704,8 +1707,8 @@ static char usage_str[] = \
 	"\t -f Output format. Customize the output format. The format field\n" \
 	"\t    identifies can be found in the documentation\n" \
 	"\t-F Format specification. Can be found in the documentation\n" \
-	"\t-m Print missing entries\n" \
-	"\t-v Print program version info\n\n";
+	"\t-v More verbose for marginal errors\n" \
+	"\t-V Print program version info\n\n";
 
 static void usage(char *prog)
 {
@@ -1781,10 +1784,10 @@ int main(int argc, char *argv[])
 		case 'n':
 			ppi_hash_by_pid = 0;
 			break;
-		case 'm':
-			print_missing = 1;
-			break;
 		case 'v':
+			verbose++;
+			break;
+		case 'V':
 			printf("%s version %s\n", argv[0], blkparse_version);
 			return 0;
 		default:

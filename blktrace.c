@@ -44,7 +44,7 @@ static char blktrace_version[] = "0.90";
 
 #define RELAYFS_TYPE	0xF0B4A981
 
-#define S_OPTS	"d:a:A:r:o:kw:vb:n:D:"
+#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -92,7 +92,7 @@ static struct option l_opts[] = {
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
-		.val = 'v'
+		.val = 'V'
 	},
 	{
 		.name = "buffer-size",
@@ -708,7 +708,7 @@ int main(int argc, char *argv[])
 				return 1;
 			}
 			break;
-		case 'v':
+		case 'V':
 			printf("%s version %s\n", argv[0], blktrace_version);
 			return 0;
 		case 'b':

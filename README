@@ -58,9 +58,9 @@ $ blktrace -d <dev> [ -r relay_path ] [ -o output ] [ -k ] [ -w time ]
 
 	-A Give the trace mask directly as a number.
 
-	-v Print program version info.
 	-b Sub buffer size in KiB.
 	-n Number of sub buffers.
+	-V Print program version info.
 
 $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 		      [ -w start:stop ] [ -f output format ] [ -F format spec ]
@@ -117,8 +117,8 @@ $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 		W	- Bounce
 		X	- Split
 
-	-m Print missing entries.
-	-v Print program version info.
+	-v More verbose for marginal errors.
+	-V Print program version info.
 
 $ verify_blkparse filename
 
