@@ -147,7 +147,8 @@ Documentation
 -------------
 
 A users guide is distributed with the source. It is in latex, a
-'make docs' will build a PDF in doc/.
+'make docs' will build a PDF in doc/. You need tetex and latex installed
+to build the document.
 
 
 Resources
