@@ -55,6 +55,7 @@ struct per_dev_info {
 	struct rb_root rb_track;
 
 	int nfiles;
+	int nopenfiles;
 	int ncpus;
 	struct per_cpu_info *cpus;
 };
@@ -1305,6 +1306,9 @@ static int sort_entries(unsigned long long *youngest)
 		if (bit->time < *youngest || !*youngest)
 			*youngest = bit->time;
 
+		if (bit->sequence < smallest_seq_read)
+			smallest_seq_read = bit->sequence;
+
 		if (check_stopwatch(bit)) {
 			bit_free(bit);
 			t_free(t);
@@ -1313,9 +1317,6 @@ static int sort_entries(unsigned long long *youngest)
 
 		if (trace_rb_insert_sort(t))
 			return -1;
-
-		if (bit->sequence < smallest_seq_read)
-			smallest_seq_read = bit->sequence;
 	}
 
 	return 0;
@@ -1351,11 +1352,37 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 	struct blk_io_trace *bit = t->bit;
 	struct trace *__t;
 	
-	/*
-	 * first entry, always ok
-	 */
-	if (!expected_sequence)
-		return 0;
+	if (!expected_sequence) {
+		struct rb_node *n;
+		char *cpu_seen;
+		int cpus;
+
+		/*
+		 * 1 should be the first entry, just allow it
+		 */
+		if (bit->sequence == 1)
+			return 0;
+
+		/*
+		 * if we are starting somewhere else, check that we have
+		 * entries from all cpus in the tree before dumping one
+		 */
+		cpu_seen = malloc(pdi->nopenfiles);
+		n = rb_first(&rb_sort_root);
+		cpus = 0;
+		while (n) {
+			__t = rb_entry(n, struct trace, rb_node);
+
+			if (!cpu_seen[__t->bit->cpu]) {
+				cpu_seen[__t->bit->cpu] = 1;
+				cpus++;
+			}
+			n = rb_next(n);
+		}
+
+		free(cpu_seen);
+		return cpus != pdi->nopenfiles;
+	}
 
 	if (bit->sequence == expected_sequence)
 		return 0;
@@ -1560,6 +1587,7 @@ static int do_file(void)
 
 			printf("Input file %s added\n", pci->fname);
 			pdi->nfiles++;
+			pdi->nopenfiles++;
 		}
 	}
 
@@ -1587,6 +1615,7 @@ static int do_file(void)
 				if (!events) {
 					close(pci->fd);
 					pci->fd = -1;
+					pdi->nopenfiles--;
 					continue;
 				}
 
