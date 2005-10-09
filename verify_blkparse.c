@@ -8,6 +8,7 @@ int main(int argc, char *argv[])
 	double this_time, last_time;
 	char line[256], *p;
 	int major, minor, cpu, seq, nr, alias, last_seq;
+	unsigned long long total_entries;
 	FILE *f;
 
 	if (argc < 2) {
@@ -23,6 +24,7 @@ int main(int argc, char *argv[])
 
 	last_time = 0;
 	last_seq = alias = nr = 0;
+	total_entries = 0;
 	while ((p = fgets(line, sizeof(line), f)) != NULL) {
 		if (sscanf(p, "%3d,%3d %2d %8d %lf", &major, &minor, &cpu, &seq, &this_time) != 5)
 			break;
@@ -39,9 +41,10 @@ int main(int argc, char *argv[])
 		}
 
 		last_seq = seq;
+		total_entries++;
 	}
 
-	fprintf(stdout, "%d unordered events, %d aliases\n", nr, alias);
+	fprintf(stdout, "Events %Lu: %d unordered, %d aliases\n", total_entries, nr, alias);
 	fclose(f);
 
 	return nr != 0;
