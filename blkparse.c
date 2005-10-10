@@ -1099,7 +1099,7 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
  */
 static char *size_cnv(char *dst, unsigned long long num, int in_kb)
 {
-	static char suff[] = { '\0', 'K', 'M', 'G', 'P' };
+	char suff[] = { '\0', 'K', 'M', 'G', 'P' };
 	unsigned int i = 0;
 
 	if (in_kb)
