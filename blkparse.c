@@ -1423,8 +1423,8 @@ static int check_cpu_map(struct per_dev_info *pdi)
 	}
 
 	/*
-	 * we can't continue of pdi->cpu_map has entries set that we don't.
-	 * the opposite is not a problem, though
+	 * we can't continue if pdi->cpu_map has entries set that we don't
+	 * have in the sort rbtree. the opposite is not a problem, though
 	 */
 	ret = 0;
 	for (i = 0; i < pdi->cpu_map_max / CPUS_PER_LONG; i++) {
