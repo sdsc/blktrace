@@ -1312,7 +1312,7 @@ static inline struct trace *t_alloc(void)
 
 static inline void bit_free(struct blk_io_trace *bit)
 {
-	if (bit_alloc_cache < 1024) {
+	if (bit_alloc_cache < 1024 && !bit->pdu_len) {
 		/*
 		 * abuse a 64-bit field for a next pointer for the free item
 		 */
@@ -1595,8 +1595,10 @@ static int read_events(int fd, int always_block)
 
 		bit = bit_alloc();
 
-		if (read_data(fd, bit, sizeof(*bit), !events || always_block))
+		if (read_data(fd, bit, sizeof(*bit), !events || always_block)) {
+			bit_free(bit);
 			break;
+		}
 
 		magic = be32_to_cpu(bit->magic);
 		if ((magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
@@ -1608,8 +1610,10 @@ static int read_events(int fd, int always_block)
 		if (pdu_len) {
 			void *ptr = realloc(bit, sizeof(*bit) + pdu_len);
 
-			if (read_data(fd, ptr + sizeof(*bit), pdu_len, 1))
+			if (read_data(fd, ptr + sizeof(*bit), pdu_len, 1)) {
+				bit_free(ptr);
 				break;
+			}
 
 			bit = ptr;
 		}
@@ -1985,5 +1989,6 @@ int main(int argc, char *argv[])
 		ret = do_file();
 
 	show_stats();
+	free(ofp_buffer);
 	return ret;
 }
