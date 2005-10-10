@@ -29,7 +29,6 @@
 #include <errno.h>
 #include <signal.h>
 #include <locale.h>
-#include <limits.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -230,7 +229,7 @@ static unsigned long long genesis_time;
 static unsigned long long last_allowed_time;
 static unsigned int smallest_seq_read;
 static unsigned long long stopwatch_start;	/* start from zero by default */
-static unsigned long long stopwatch_end = ULONG_LONG_MAX;	/* "infinity" */
+static unsigned long long stopwatch_end = -1ULL;	/* "infinity" */
 
 static int per_process_stats;
 static int per_device_and_cpu_stats = 1;
