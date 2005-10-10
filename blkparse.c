@@ -43,6 +43,7 @@ struct per_dev_info {
 
 	int backwards;
 	unsigned long long events;
+	unsigned long long first_reported_time;
 	unsigned long long last_reported_time;
 	unsigned long long last_read_time;
 	struct io_stats io_stats;
@@ -774,6 +775,7 @@ static struct per_dev_info *get_dev_info(dev_t dev)
 
 	pdi = &devices[ndevices - 1];
 	pdi->dev = dev;
+	pdi->first_reported_time = 0;
 	pdi->last_sequence = -1;
 	pdi->last_read_time = 0;
 	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
@@ -1085,6 +1087,9 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 	else
 		dump_trace_fs(t, pdi, pci);
 
+	if (!pdi->events)
+		pdi->first_reported_time = t->time;
+
 	pdi->events++;
 }
 
@@ -1192,6 +1197,7 @@ static void show_device_and_cpu_stats(void)
 	struct per_dev_info *pdi;
 	struct per_cpu_info *pci;
 	struct io_stats total, *ios;
+	unsigned long long rrate, wrate, msec;
 	int i, j, pci_events;
 	char line[3 + 8/*cpu*/ + 2 + 32/*dev*/ + 3];
 	char name[32];
@@ -1239,7 +1245,16 @@ static void show_device_and_cpu_stats(void)
 			dump_io_stats(&total, line);
 		}
 
-		fprintf(ofp, "\nEvents (%s): %'Lu entries, %'lu skips\n",
+		wrate = rrate = 0;
+		fprintf(stderr, "first=%Lu, last=%Lu\n", pdi->first_reported_time, pdi->last_reported_time);
+		msec = (pdi->last_reported_time - pdi->first_reported_time) / 1000000;
+		if (msec) {
+			rrate = 1000 * total.cread_kb / msec;
+			wrate = 1000 * total.cwrite_kb / msec;
+		}
+
+		fprintf(ofp, "\nThroughput (R/W): %'LuKiB/s / %'LuKiB/s\n", rrate, wrate);
+		fprintf(ofp, "Events (%s): %'Lu entries, %'lu skips\n",
 			get_dev_name(pdi, line, sizeof(line)), pdi->events,
 			pdi->skips);
 	}
