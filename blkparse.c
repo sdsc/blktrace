@@ -1100,12 +1100,12 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 static char *size_cnv(char *dst, unsigned long long num, int in_kb)
 {
 	static char suff[] = { '\0', 'K', 'M', 'G', 'P' };
-	int i = 0;
+	unsigned int i = 0;
 
 	if (in_kb)
 		i++;
 
-	while (num > 1000 * 1000ULL) {
+	while (num > 1000 * 1000ULL && (i < sizeof(suff) - 1)) {
 		i++;
 		num /= 1000;
 	}
