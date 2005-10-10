@@ -1093,17 +1093,40 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 	pdi->events++;
 }
 
+/*
+ * print in a proper way, not too small and not too big. if more than
+ * 1000,000K, turn into M and so on
+ */
+static char *size_cnv(char *dst, unsigned long long num, int in_kb)
+{
+	static char suff[] = { '\0', 'K', 'M', 'G', 'P' };
+	int i = 0;
+
+	if (in_kb)
+		i++;
+
+	while (num > 1000 * 1000ULL) {
+		i++;
+		num /= 1000;
+	}
+
+	sprintf(dst, "%'8Lu%c", num, suff[i]);
+	return dst;
+}
+
 static void dump_io_stats(struct io_stats *ios, char *msg)
 {
+	static char x[256], y[256];
+
 	fprintf(ofp, "%s\n", msg);
 
-	fprintf(ofp, " Reads Queued:    %'8lu, %'8LuKiB\t", ios->qreads, ios->qread_kb);
-	fprintf(ofp, " Writes Queued:    %'8lu, %'8LuKiB\n", ios->qwrites,ios->qwrite_kb);
+	fprintf(ofp, " Reads Queued:    %s, %siB\t", size_cnv(x, ios->qreads, 0), size_cnv(y, ios->qread_kb, 1));
+	fprintf(ofp, " Writes Queued:    %s, %siB\n", size_cnv(x, ios->qwrites, 0), size_cnv(y, ios->qwrite_kb, 1));
 
-	fprintf(ofp, " Read Dispatches: %'8lu, %'8LuKiB\t", ios->ireads, ios->iread_kb);
-	fprintf(ofp, " Write Dispatches: %'8lu, %'8LuKiB\n", ios->iwrites,ios->iwrite_kb);
-	fprintf(ofp, " Reads Completed: %'8lu, %'8LuKiB\t", ios->creads, ios->cread_kb);
-	fprintf(ofp, " Writes Completed: %'8lu, %'8LuKiB\n", ios->cwrites,ios->cwrite_kb);
+	fprintf(ofp, " Read Dispatches: %s, %siB\t", size_cnv(x, ios->ireads, 0), size_cnv(y, ios->iread_kb, 1));
+	fprintf(ofp, " Write Dispatches: %s, %siB\n", size_cnv(x, ios->iwrites, 0), size_cnv(y, ios->iwrite_kb, 1));
+	fprintf(ofp, " Reads Completed: %s, %siB\t", size_cnv(x, ios->creads, 0), size_cnv(y, ios->cread_kb, 1));
+	fprintf(ofp, " Writes Completed: %s, %siB\n", size_cnv(x, ios->cwrites, 0), size_cnv(y, ios->cwrite_kb, 1));
 	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
 	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
 	fprintf(ofp, " IO unplugs:      %'8lu%8c\t", ios->io_unplugs, ' ');
