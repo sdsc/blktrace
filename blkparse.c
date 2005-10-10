@@ -55,8 +55,11 @@ struct per_dev_info {
 	struct rb_root rb_track;
 
 	int nfiles;
-	int nopenfiles;
 	int ncpus;
+
+	unsigned long *cpu_map;
+	unsigned int cpu_map_max;
+
 	struct per_cpu_info *cpus;
 };
 
@@ -248,6 +251,40 @@ static int pipeline;
 static volatile int done;
 
 #define JHASH_RANDOM	(0x3af5f2ee)
+
+#define CPUS_PER_LONG	(8 * sizeof(unsigned long))
+#define CPU_IDX(cpu)	((cpu) / CPUS_PER_LONG)
+#define CPU_BIT(cpu)	((cpu) & (CPUS_PER_LONG - 1))
+
+static void cpu_mark_online(struct per_dev_info *pdi, unsigned int cpu)
+{
+	if (cpu >= pdi->cpu_map_max || !pdi->cpu_map) {
+		int new_max = (cpu + CPUS_PER_LONG) & ~(CPUS_PER_LONG - 1);
+		unsigned long *map = malloc(new_max / sizeof(long));
+
+		memset(map, 0, new_max / sizeof(long));
+
+		if (pdi->cpu_map) {
+			memcpy(map, pdi->cpu_map, pdi->cpu_map_max / sizeof(long));
+			free(pdi->cpu_map);
+		}
+
+		pdi->cpu_map = map;
+		pdi->cpu_map_max = new_max;
+	}
+
+	pdi->cpu_map[CPU_IDX(cpu)] |= (1UL << CPU_BIT(cpu));
+}
+
+static inline void cpu_mark_offline(struct per_dev_info *pdi, int cpu)
+{
+	pdi->cpu_map[CPU_IDX(cpu)] &= ~(1UL << CPU_BIT(cpu));
+}
+
+static inline int cpu_is_online(struct per_dev_info *pdi, int cpu)
+{
+	return (pdi->cpu_map[CPU_IDX(cpu)] & (1UL << CPU_BIT(cpu))) != 0;
+}
 
 static inline int ppi_hash_pid(__u32 pid)
 {
@@ -1346,6 +1383,46 @@ static void put_trace(struct per_dev_info *pdi, struct trace *t)
 	}
 }
 
+/*
+ * to continue, we must have traces from all online cpus in the tree
+ */
+static int check_cpu_map(struct per_dev_info *pdi)
+{
+	unsigned long *cpu_map;
+	struct rb_node *n;
+	struct trace *__t;
+	unsigned int i;
+	int ret, cpu;
+
+	/*
+	 * create a map of the cpus we have traces for
+	 */
+	cpu_map = malloc(pdi->cpu_map_max / sizeof(long));
+	n = rb_first(&rb_sort_root);
+	while (n) {
+		__t = rb_entry(n, struct trace, rb_node);
+		cpu = __t->bit->cpu;
+
+		cpu_map[CPU_IDX(cpu)] |= (1UL << CPU_BIT(cpu));
+		n = rb_next(n);
+	}
+
+	/*
+	 * we can't continue of pdi->cpu_map has entries set that we don't.
+	 * the opposite is not a problem, though
+	 */
+	ret = 0;
+	for (i = 0; i < pdi->cpu_map_max / CPUS_PER_LONG; i++) {
+		if (pdi->cpu_map[i] & ~(cpu_map[i])) {
+			ret = 1;
+			break;
+		}
+	}
+
+	free(cpu_map);
+	return ret;
+}
+
 static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 {
 	unsigned long expected_sequence = pdi->last_sequence + 1;
@@ -1353,35 +1430,13 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 	struct trace *__t;
 	
 	if (!expected_sequence) {
-		struct rb_node *n;
-		char *cpu_seen;
-		int cpus;
-
 		/*
 		 * 1 should be the first entry, just allow it
 		 */
 		if (bit->sequence == 1)
 			return 0;
 
-		/*
-		 * if we are starting somewhere else, check that we have
-		 * entries from all cpus in the tree before dumping one
-		 */
-		cpu_seen = malloc(pdi->nopenfiles);
-		n = rb_first(&rb_sort_root);
-		cpus = 0;
-		while (n) {
-			__t = rb_entry(n, struct trace, rb_node);
-
-			if (!cpu_seen[__t->bit->cpu]) {
-				cpu_seen[__t->bit->cpu] = 1;
-				cpus++;
-			}
-			n = rb_next(n);
-		}
-
-		free(cpu_seen);
-		return cpus != pdi->nopenfiles;
+		return check_cpu_map(pdi);
 	}
 
 	if (bit->sequence == expected_sequence)
@@ -1587,7 +1642,7 @@ static int do_file(void)
 
 			printf("Input file %s added\n", pci->fname);
 			pdi->nfiles++;
-			pdi->nopenfiles++;
+			cpu_mark_online(pdi, pci->cpu);
 		}
 	}
 
@@ -1613,9 +1668,9 @@ static int do_file(void)
 
 				events = read_events(pci->fd, 1);
 				if (!events) {
+					cpu_mark_offline(pdi, pci->cpu);
 					close(pci->fd);
 					pci->fd = -1;
-					pdi->nopenfiles--;
 					continue;
 				}
 
