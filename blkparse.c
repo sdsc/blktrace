@@ -1246,7 +1246,6 @@ static void show_device_and_cpu_stats(void)
 		}
 
 		wrate = rrate = 0;
-		fprintf(stderr, "first=%Lu, last=%Lu\n", pdi->first_reported_time, pdi->last_reported_time);
 		msec = (pdi->last_reported_time - pdi->first_reported_time) / 1000000;
 		if (msec) {
 			rrate = 1000 * total.cread_kb / msec;
