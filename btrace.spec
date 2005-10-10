@@ -24,7 +24,7 @@ BuildRoot:    %{_tmppath}/%{name}-%{version}-build
 %description
 btrace can show detailed info about what is happening on a block
 device io queue. This is valuable for diagnosing and fixing
-performance or application problems relating to blok layer io.
+performance or application problems relating to block layer io.
 
 
 Authors:
