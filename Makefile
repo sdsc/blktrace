@@ -40,7 +40,7 @@ rpm: dist
 	rpmbuild -ta btrace-1.0.tar.bz2
 
 clean: docsclean
-	-rm -f *.o $(PROGS) .depend
+	-rm -f *.o $(PROGS) .depend btrace-1.0.tar.bz2
 
 INSTALL = install
 prefix = /usr/local
