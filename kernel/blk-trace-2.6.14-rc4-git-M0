@@ -1,4 +1,5 @@
 diff --git a/drivers/block/Kconfig b/drivers/block/Kconfig
+index 51b0af1..ded32f2 100644
 --- a/drivers/block/Kconfig
 +++ b/drivers/block/Kconfig
 @@ -419,6 +419,14 @@ config LBD
@@ -17,6 +18,7 @@ diff --git a/drivers/block/Kconfig b/drivers/block/Kconfig
  	tristate "Packet writing on CD/DVD media"
  	depends on !UML
 diff --git a/drivers/block/Makefile b/drivers/block/Makefile
+index 1cf09a1..ddf986a 100644
 --- a/drivers/block/Makefile
 +++ b/drivers/block/Makefile
 @@ -45,3 +45,5 @@ obj-$(CONFIG_VIODASD)		+= viodasd.o
@@ -26,6 +28,7 @@ diff --git a/drivers/block/Makefile b/drivers/block/Makefile
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 +
 diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
+index 98f0126..037a4e0 100644
 --- a/drivers/block/elevator.c
 +++ b/drivers/block/elevator.c
 @@ -34,6 +34,7 @@
@@ -56,6 +59,7 @@ diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
  		 * just mark as started even if we don't start it, a request
  		 * that has been delayed should not be passed by new incoming
 diff --git a/drivers/block/ioctl.c b/drivers/block/ioctl.c
+index 6e27847..a73c11a 100644
 --- a/drivers/block/ioctl.c
 +++ b/drivers/block/ioctl.c
 @@ -4,6 +4,7 @@
@@ -78,6 +82,7 @@ diff --git a/drivers/block/ioctl.c b/drivers/block/ioctl.c
  	return -ENOIOCTLCMD;
  }
 diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
+index baedac5..28245d2 100644
 --- a/drivers/block/ll_rw_blk.c
 +++ b/drivers/block/ll_rw_blk.c
 @@ -29,6 +29,7 @@
@@ -207,12 +212,13 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	do {
  		char b[BDEVNAME_SIZE];
  
-@@ -2991,6 +3022,14 @@ end_io:
+@@ -2991,6 +3022,15 @@ end_io:
  		 */
  		blk_partition_remap(bio);
  
 +		if (maxsector != -1)
-+			blk_add_trace_remap(q, bio, old_dev, maxsector);
++			blk_add_trace_remap(q, bio, old_dev, bio->bi_sector, 
++					    maxsector);
 +
 +		blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
 +
@@ -222,7 +228,7 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  		ret = q->make_request_fn(q, bio);
  	} while (ret);
  }
-@@ -3110,6 +3149,8 @@ static int __end_that_request_first(stru
+@@ -3110,6 +3150,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -231,7 +237,56 @@ diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 930b9fc..4573599 100644
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -17,6 +17,7 @@
+ #include <linux/mempool.h>
+ #include <linux/slab.h>
+ #include <linux/idr.h>
++#include <linux/blktrace.h>
+ 
+ static const char *_name = DM_NAME;
+ 
+@@ -302,6 +303,8 @@ static inline void dec_pending(struct dm
+ 			/* nudge anyone waiting on suspend queue */
+ 			wake_up(&io->md->wait);
+ 
++		blk_add_trace_bio(io->md->queue, io->bio, BLK_TA_COMPLETE);
++
+ 		bio_endio(io->bio, io->bio->bi_size, io->error);
+ 		free_io(io->md, io);
+ 	}
+@@ -360,6 +363,7 @@ static void __map_bio(struct dm_target *
+ 		      struct target_io *tio)
+ {
+ 	int r;
++	sector_t sector;
+ 
+ 	/*
+ 	 * Sanity checks.
+@@ -375,10 +379,17 @@ static void __map_bio(struct dm_target *
+ 	 * this io.
+ 	 */
+ 	atomic_inc(&tio->io->io_count);
++	sector = clone->bi_sector;
+ 	r = ti->type->map(ti, clone, &tio->info);
+-	if (r > 0)
++	if (r > 0) {
+ 		/* the bio has been remapped so dispatch it */
++
++		blk_add_trace_remap(bdev_get_queue(clone->bi_bdev), clone, 
++				    tio->io->bio->bi_bdev->bd_dev, sector, 
++				    clone->bi_sector);
++
+ 		generic_make_request(clone);
++	}
+ 
+ 	else if (r < 0) {
+ 		/* error the io and bail out */
 diff --git a/fs/bio.c b/fs/bio.c
+index 7d81a93..35798f3 100644
 --- a/fs/bio.c
 +++ b/fs/bio.c
 @@ -25,6 +25,7 @@
@@ -253,6 +308,7 @@ diff --git a/fs/bio.c b/fs/bio.c
  	BUG_ON(bi->bi_idx != 0);
  	atomic_set(&bp->cnt, 3);
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index efdc9b5..3f6328e 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
 @@ -22,6 +22,7 @@ typedef struct request_queue request_que
@@ -273,6 +329,7 @@ diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
  
  enum {
 diff --git a/include/linux/fs.h b/include/linux/fs.h
+index e0b77c5..b78f396 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -196,6 +196,8 @@ extern int dir_notify_enable;
@@ -285,6 +342,7 @@ diff --git a/include/linux/fs.h b/include/linux/fs.h
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 diff --git a/mm/highmem.c b/mm/highmem.c
+index 90e1861..dfbea4a 100644
 --- a/mm/highmem.c
 +++ b/mm/highmem.c
 @@ -26,6 +26,7 @@
@@ -305,7 +363,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
  	 * slow path
  	 */
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-09-28 08:46:33.000000000 +0200
++++ linux-2.6/drivers/block/blktrace.c	2005-10-06 15:53:19.000000000 +0200
 @@ -0,0 +1,232 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
@@ -540,7 +598,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +module_init(blk_trace_init);
 +
 --- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-10-06 09:38:46.000000000 +0200
++++ linux-2.6/include/linux/blktrace.h	2005-10-11 09:04:17.000000000 +0200
 @@ -0,0 +1,206 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
@@ -721,8 +779,8 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +		__blk_add_trace(bt, 0, 0, 0, what, 0, sizeof(rpdu), &rpdu);
 +}
 +
-+static inline void blk_add_trace_remap(struct request_queue *q, struct bio *bio, dev_t dev,
-+				       sector_t sector)
++static inline void blk_add_trace_remap(struct request_queue *q, struct bio *bio,
++				       dev_t dev, sector_t from, sector_t to)
 +{
 +	struct blk_trace *bt = q->blk_trace;
 +	struct blk_io_trace_remap r;
@@ -731,9 +789,9 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +		return;
 +
 +	r.device = cpu_to_be32(dev);
-+	r.sector = cpu_to_be64(sector);
++	r.sector = cpu_to_be64(to);
 +
-+	__blk_add_trace(bt, bio->bi_sector, bio->bi_size, bio->bi_rw, BLK_TA_REMAP, !bio_flagged(bio, BIO_UPTODATE), sizeof(r), &r);
++	__blk_add_trace(bt, from, bio->bi_size, bio->bi_rw, BLK_TA_REMAP, !bio_flagged(bio, BIO_UPTODATE), sizeof(r), &r);
 +}
 +
 +#else /* !CONFIG_BLK_DEV_IO_TRACE */
@@ -744,7 +802,7 @@ diff --git a/mm/highmem.c b/mm/highmem.c
 +#define blk_add_trace_bio(q, rq, what)		do { } while (0)
 +#define blk_add_trace_generic(q, rq, rw, what)	do { } while (0)
 +#define blk_add_trace_pdu_int(q, what, bio, pdu)	do { } while (0)
-+#define blk_add_trace_remap(q, bio, dev, sec)	do {} while (0)
++#define blk_add_trace_remap(q, bio, dev, f, t)	do {} while (0)
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif
