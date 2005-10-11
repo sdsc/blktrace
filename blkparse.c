@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <locale.h>
+#include <libgen.h>
 
 #include "blktrace.h"
 #include "rbtree.h"
@@ -1660,10 +1661,20 @@ static int do_file(void)
 		for (j = 0;; j++) {
 			struct stat st;
 			int len = 0;
+			char *p, *dname;
 
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 			pci->fd = -1;
+	
+			p = strdup(pdi->name);
+			dname = dirname(p);
+			if (strcmp(dname, ".")) {
+				input_dir = dname;
+				p = strdup(pdi->name);
+				strcpy(pdi->name, basename(p));
+			}
+			free(p);
 
 			if (input_dir)
 				len = sprintf(pci->fname, "%s/", input_dir);
