@@ -28,6 +28,17 @@ docsclean:
 depend:
 	@$(CC) -MM $(ALL_CFLAGS) *.c 1> .depend
 
+dist: btrace.spec
+	git-tar-tree HEAD btrace-1.0 > btrace-1.0.tar
+	@mkdir -p btrace-1.0
+	@cp btrace.spec btrace-1.0
+	@tar rf btrace-1.0.tar btrace-1.0/btrace.spec
+	@rm -rf btrace-1.0
+	@bzip2 btrace-1.0.tar
+
+rpm: dist
+	rpmbuild -ta btrace-1.0.tar.bz2
+
 clean: docsclean
 	-rm -f *.o $(PROGS) .depend
 
