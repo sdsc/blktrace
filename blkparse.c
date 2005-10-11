@@ -35,7 +35,7 @@
 #include "rbtree.h"
 #include "jhash.h"
 
-static char blkparse_version[] = "0.90";
+static char blkparse_version[] = "0.99";
 
 struct per_dev_info {
 	dev_t dev;

@@ -35,10 +35,11 @@ Authors:
 %setup -q
 
 %build
-make all docs
+make CFLAGS="$RPM_OPT_FLAGS" all docs
 
 %install
-make DESTDIR=$RPM_BUILD_ROOT install
+rm -rf $RPM_BUILD_ROOT
+make dest=$RPM_BUILD_ROOT prefix=$RPM_BUILD_ROOT/%{_prefix} install
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -46,7 +47,7 @@ rm -rf $RPM_BUILD_ROOT
 %files
 %defattr(-,root,root)
 %doc README doc/blktrace.pdf
-/usr/local/bin/*
+/usr/bin/*
 
 %changelog -n btrace
 * Mon Oct 10 2005 - axboe@suse.de

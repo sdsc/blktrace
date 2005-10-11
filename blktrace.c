@@ -37,7 +37,7 @@
 
 #include "blktrace.h"
 
-static char blktrace_version[] = "0.90";
+static char blktrace_version[] = "0.99";
 
 #define BUF_SIZE	(128 *1024)
 #define BUF_NR		(4)
