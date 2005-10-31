@@ -1,0 +1,6 @@
+.depend
+*.o
+blkparse
+blktrace
+doc/.depend
+verify_blkparse
