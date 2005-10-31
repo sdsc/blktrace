@@ -1,8 +1,8 @@
 diff --git a/drivers/block/Kconfig b/drivers/block/Kconfig
-index 51b0af1..ded32f2 100644
+index 51b0af1..77ddfe9 100644
 --- a/drivers/block/Kconfig
 +++ b/drivers/block/Kconfig
-@@ -419,6 +419,14 @@ config LBD
+@@ -419,6 +419,18 @@ config LBD
  	  your machine, or if you want to have a raid or loopback device
  	  bigger than 2TB.  Otherwise say N.
  
@@ -11,7 +11,11 @@ index 51b0af1..ded32f2 100644
 +	select RELAYFS_FS
 +	help
 +	  Say Y here, if you want to be able to trace the block layer actions
-+	  on a given queue.
++	  on a given queue. Tracing allows you to see any traffic happening
++	  on a block device queue. For more information (and the user space
++	  support tools needed), fetch the blktrace app from:
++
++	  git://brick.kernel.dk/data/git/blktrace.git
 +
 +
  config CDROM_PKTCDVD
@@ -27,344 +31,12 @@ index 1cf09a1..ddf986a 100644
  
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 +
-diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
-index 98f0126..037a4e0 100644
---- a/drivers/block/elevator.c
-+++ b/drivers/block/elevator.c
-@@ -34,6 +34,7 @@
- #include <linux/slab.h>
- #include <linux/init.h>
- #include <linux/compiler.h>
-+#include <linux/blktrace.h>
- 
- #include <asm/uaccess.h>
- 
-@@ -305,6 +306,8 @@ void elv_requeue_request(request_queue_t
- void __elv_add_request(request_queue_t *q, struct request *rq, int where,
- 		       int plug)
- {
-+	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
-+
- 	/*
- 	 * barriers implicitly indicate back insertion
- 	 */
-@@ -371,6 +374,9 @@ struct request *elv_next_request(request
- 	int ret;
- 
- 	while ((rq = __elv_next_request(q)) != NULL) {
-+
-+		blk_add_trace_rq(q, rq, BLK_TA_ISSUE);
-+
- 		/*
- 		 * just mark as started even if we don't start it, a request
- 		 * that has been delayed should not be passed by new incoming
-diff --git a/drivers/block/ioctl.c b/drivers/block/ioctl.c
-index 6e27847..a73c11a 100644
---- a/drivers/block/ioctl.c
-+++ b/drivers/block/ioctl.c
-@@ -4,6 +4,7 @@
- #include <linux/backing-dev.h>
- #include <linux/buffer_head.h>
- #include <linux/smp_lock.h>
-+#include <linux/blktrace.h>
- #include <asm/uaccess.h>
- 
- static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
-@@ -188,6 +189,10 @@ static int blkdev_locked_ioctl(struct fi
- 		return put_ulong(arg, bdev->bd_inode->i_size >> 9);
- 	case BLKGETSIZE64:
- 		return put_u64(arg, bdev->bd_inode->i_size);
-+	case BLKSTARTTRACE:
-+		return blk_start_trace(bdev, (char __user *) arg);
-+	case BLKSTOPTRACE:
-+		return blk_stop_trace(bdev);
- 	}
- 	return -ENOIOCTLCMD;
- }
-diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
-index baedac5..28245d2 100644
---- a/drivers/block/ll_rw_blk.c
-+++ b/drivers/block/ll_rw_blk.c
-@@ -29,6 +29,7 @@
- #include <linux/swap.h>
- #include <linux/writeback.h>
- #include <linux/blkdev.h>
-+#include <linux/blktrace.h>
- 
- /*
-  * for max sense size
-@@ -1422,8 +1423,10 @@ void blk_plug_device(request_queue_t *q)
- 	if (test_bit(QUEUE_FLAG_STOPPED, &q->queue_flags))
- 		return;
- 
--	if (!test_and_set_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags))
-+	if (!test_and_set_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags)) {
- 		mod_timer(&q->unplug_timer, jiffies + q->unplug_delay);
-+		blk_add_trace_generic(q, NULL, 0, BLK_TA_PLUG);
-+	}
- }
- 
- EXPORT_SYMBOL(blk_plug_device);
-@@ -1487,14 +1490,21 @@ static void blk_backing_dev_unplug(struc
- 	/*
- 	 * devices don't necessarily have an ->unplug_fn defined
- 	 */
--	if (q->unplug_fn)
-+	if (q->unplug_fn) {
-+		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
-+					q->rq.count[READ] + q->rq.count[WRITE]);
-+
- 		q->unplug_fn(q);
-+	}
- }
- 
- static void blk_unplug_work(void *data)
- {
- 	request_queue_t *q = data;
- 
-+	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
-+				q->rq.count[READ] + q->rq.count[WRITE]);
-+
- 	q->unplug_fn(q);
- }
- 
-@@ -1502,6 +1512,9 @@ static void blk_unplug_timeout(unsigned 
- {
- 	request_queue_t *q = (request_queue_t *)data;
- 
-+	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, NULL,
-+				q->rq.count[READ] + q->rq.count[WRITE]);
-+
- 	kblockd_schedule_work(&q->unplug_work);
- }
- 
-@@ -1624,6 +1637,11 @@ void blk_cleanup_queue(request_queue_t *
- 	if (q->queue_tags)
- 		__blk_queue_free_tags(q);
- 
-+	if (q->blk_trace) {
-+		blk_cleanup_trace(q->blk_trace);
-+		q->blk_trace = NULL;
-+	}
-+
- 	blk_queue_ordered(q, QUEUE_ORDERED_NONE);
- 
- 	kmem_cache_free(requestq_cachep, q);
-@@ -1970,6 +1988,8 @@ rq_starved:
- 	
- 	rq_init(q, rq);
- 	rq->rl = rl;
-+
-+	blk_add_trace_generic(q, bio, rw, BLK_TA_GETRQ);
- out:
- 	return rq;
- }
-@@ -1998,6 +2018,8 @@ static struct request *get_request_wait(
- 		if (!rq) {
- 			struct io_context *ioc;
- 
-+			blk_add_trace_generic(q, bio, rw, BLK_TA_SLEEPRQ);
-+
- 			__generic_unplug_device(q);
- 			spin_unlock_irq(q->queue_lock);
- 			io_schedule();
-@@ -2051,6 +2073,8 @@ EXPORT_SYMBOL(blk_get_request);
-  */
- void blk_requeue_request(request_queue_t *q, struct request *rq)
- {
-+	blk_add_trace_rq(q, rq, BLK_TA_REQUEUE);
-+
- 	if (blk_rq_tagged(rq))
- 		blk_queue_end_tag(q, rq);
- 
-@@ -2676,6 +2700,8 @@ static int __make_request(request_queue_
- 			if (!q->back_merge_fn(q, req, bio))
- 				break;
- 
-+			blk_add_trace_bio(q, bio, BLK_TA_BACKMERGE);
-+
- 			req->biotail->bi_next = bio;
- 			req->biotail = bio;
- 			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2691,6 +2717,8 @@ static int __make_request(request_queue_
- 			if (!q->front_merge_fn(q, req, bio))
- 				break;
- 
-+			blk_add_trace_bio(q, bio, BLK_TA_FRONTMERGE);
-+
- 			bio->bi_next = req->bio;
- 			req->bio = bio;
- 
-@@ -2931,6 +2959,7 @@ void generic_make_request(struct bio *bi
- 	request_queue_t *q;
- 	sector_t maxsector;
- 	int ret, nr_sectors = bio_sectors(bio);
-+	dev_t old_dev;
- 
- 	might_sleep();
- 	/* Test device or partition size, when known. */
-@@ -2957,6 +2986,8 @@ void generic_make_request(struct bio *bi
- 	 * NOTE: we don't repeat the blk_size check for each new device.
- 	 * Stacking drivers are expected to know what they are doing.
- 	 */
-+	maxsector = -1;
-+	old_dev = 0;
- 	do {
- 		char b[BDEVNAME_SIZE];
- 
-@@ -2991,6 +3022,15 @@ end_io:
- 		 */
- 		blk_partition_remap(bio);
- 
-+		if (maxsector != -1)
-+			blk_add_trace_remap(q, bio, old_dev, bio->bi_sector, 
-+					    maxsector);
-+
-+		blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
-+
-+		maxsector = bio->bi_sector;
-+		old_dev = bio->bi_bdev->bd_dev;
-+
- 		ret = q->make_request_fn(q, bio);
- 	} while (ret);
- }
-@@ -3110,6 +3150,8 @@ static int __end_that_request_first(stru
- 	int total_bytes, bio_nbytes, error, next_idx = 0;
- 	struct bio *bio;
- 
-+	blk_add_trace_rq(req->q, req, BLK_TA_COMPLETE);
-+
- 	/*
- 	 * extend uptodate bool to allow < 0 value to be direct io error
- 	 */
-diff --git a/drivers/md/dm.c b/drivers/md/dm.c
-index 930b9fc..4573599 100644
---- a/drivers/md/dm.c
-+++ b/drivers/md/dm.c
-@@ -17,6 +17,7 @@
- #include <linux/mempool.h>
- #include <linux/slab.h>
- #include <linux/idr.h>
-+#include <linux/blktrace.h>
- 
- static const char *_name = DM_NAME;
- 
-@@ -302,6 +303,8 @@ static inline void dec_pending(struct dm
- 			/* nudge anyone waiting on suspend queue */
- 			wake_up(&io->md->wait);
- 
-+		blk_add_trace_bio(io->md->queue, io->bio, BLK_TA_COMPLETE);
-+
- 		bio_endio(io->bio, io->bio->bi_size, io->error);
- 		free_io(io->md, io);
- 	}
-@@ -360,6 +363,7 @@ static void __map_bio(struct dm_target *
- 		      struct target_io *tio)
- {
- 	int r;
-+	sector_t sector;
- 
- 	/*
- 	 * Sanity checks.
-@@ -375,10 +379,17 @@ static void __map_bio(struct dm_target *
- 	 * this io.
- 	 */
- 	atomic_inc(&tio->io->io_count);
-+	sector = clone->bi_sector;
- 	r = ti->type->map(ti, clone, &tio->info);
--	if (r > 0)
-+	if (r > 0) {
- 		/* the bio has been remapped so dispatch it */
-+
-+		blk_add_trace_remap(bdev_get_queue(clone->bi_bdev), clone, 
-+				    tio->io->bio->bi_bdev->bd_dev, sector, 
-+				    clone->bi_sector);
-+
- 		generic_make_request(clone);
-+	}
- 
- 	else if (r < 0) {
- 		/* error the io and bail out */
-diff --git a/fs/bio.c b/fs/bio.c
-index 7d81a93..35798f3 100644
---- a/fs/bio.c
-+++ b/fs/bio.c
-@@ -25,6 +25,7 @@
- #include <linux/module.h>
- #include <linux/mempool.h>
- #include <linux/workqueue.h>
-+#include <linux/blktrace.h>
- #include <scsi/sg.h>		/* for struct sg_iovec */
- 
- #define BIO_POOL_SIZE 256
-@@ -1050,6 +1051,9 @@ struct bio_pair *bio_split(struct bio *b
- 	if (!bp)
- 		return bp;
- 
-+	blk_add_trace_pdu_int(bdev_get_queue(bi->bi_bdev), BLK_TA_SPLIT, bi,
-+				bi->bi_sector + first_sectors);
-+
- 	BUG_ON(bi->bi_vcnt != 1);
- 	BUG_ON(bi->bi_idx != 0);
- 	atomic_set(&bp->cnt, 3);
-diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
-index efdc9b5..3f6328e 100644
---- a/include/linux/blkdev.h
-+++ b/include/linux/blkdev.h
-@@ -22,6 +22,7 @@ typedef struct request_queue request_que
- struct elevator_queue;
- typedef struct elevator_queue elevator_t;
- struct request_pm_state;
-+struct blk_trace;
- 
- #define BLKDEV_MIN_RQ	4
- #define BLKDEV_MAX_RQ	128	/* Default maximum */
-@@ -412,6 +413,8 @@ struct request_queue
- 	 */
- 	struct request		*flush_rq;
- 	unsigned char		ordered;
-+
-+	struct blk_trace	*blk_trace;
- };
- 
- enum {
-diff --git a/include/linux/fs.h b/include/linux/fs.h
-index e0b77c5..b78f396 100644
---- a/include/linux/fs.h
-+++ b/include/linux/fs.h
-@@ -196,6 +196,8 @@ extern int dir_notify_enable;
- #define BLKBSZGET  _IOR(0x12,112,size_t)
- #define BLKBSZSET  _IOW(0x12,113,size_t)
- #define BLKGETSIZE64 _IOR(0x12,114,size_t)	/* return device size in bytes (u64 *arg) */
-+#define BLKSTARTTRACE _IOWR(0x12,115,struct blk_user_trace_setup)
-+#define BLKSTOPTRACE _IO(0x12,116)
- 
- #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
- #define FIBMAP	   _IO(0x00,1)	/* bmap access */
-diff --git a/mm/highmem.c b/mm/highmem.c
-index 90e1861..dfbea4a 100644
---- a/mm/highmem.c
-+++ b/mm/highmem.c
-@@ -26,6 +26,7 @@
- #include <linux/init.h>
- #include <linux/hash.h>
- #include <linux/highmem.h>
-+#include <linux/blktrace.h>
- #include <asm/tlbflush.h>
- 
- static mempool_t *page_pool, *isa_page_pool;
-@@ -479,6 +480,8 @@ void blk_queue_bounce(request_queue_t *q
- 		pool = isa_page_pool;
- 	}
- 
-+	blk_add_trace_bio(q, *bio_orig, BLK_TA_BOUNCE);
-+
- 	/*
- 	 * slow path
- 	 */
---- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/drivers/block/blktrace.c	2005-10-06 15:53:19.000000000 +0200
-@@ -0,0 +1,232 @@
+diff --git a/drivers/block/blktrace.c b/drivers/block/blktrace.c
+new file mode 100644
+index 0000000..904db2f
+--- /dev/null
++++ b/drivers/block/blktrace.c
+@@ -0,0 +1,246 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -380,6 +52,7 @@ index 90e1861..dfbea4a 100644
 +{
 +	struct blk_io_trace t;
 +	unsigned long flags;
++	pid_t pid;
 +	int cpu;
 +
 +	if (rw & (1 << BIO_RW_BARRIER))
@@ -394,6 +67,12 @@ index 90e1861..dfbea4a 100644
 +
 +	if (((bt->act_mask << BLK_TC_SHIFT) & what) == 0)
 +		return;
++	if (sector < bt->start_lba || sector > bt->end_lba)
++		return;
++
++	pid = current->pid;
++	if (bt->pid && pid != bt->pid)
++		return;
 +
 +	t.magic		= BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
 +
@@ -404,7 +83,7 @@ index 90e1861..dfbea4a 100644
 +	t.error		= error;
 +	t.pdu_len	= pdu_len;
 +
-+	t.pid		= current->pid;
++	t.pid		= pid;
 +	memcpy(t.comm, current->comm, sizeof(t.comm));
 +
 +	/*
@@ -549,6 +228,13 @@ index 90e1861..dfbea4a 100644
 +	if (!bt->act_mask)
 +		bt->act_mask = (u16) -1;
 +
++	bt->start_lba = buts.start_lba;
++	bt->end_lba = buts.end_lba;
++	if (!bt->end_lba)
++		bt->end_lba = -1ULL;
++
++	bt->pid = buts.pid;
++
 +	q->blk_trace = bt;
 +	up(&bdev->bd_sem);
 +	return 0;
@@ -597,9 +283,312 @@ index 90e1861..dfbea4a 100644
 +
 +module_init(blk_trace_init);
 +
---- /dev/null	2005-09-09 21:24:12.000000000 +0200
-+++ linux-2.6/include/linux/blktrace.h	2005-10-11 09:04:17.000000000 +0200
-@@ -0,0 +1,206 @@
+diff --git a/drivers/block/elevator.c b/drivers/block/elevator.c
+index 36f1057..b481403 100644
+--- a/drivers/block/elevator.c
++++ b/drivers/block/elevator.c
+@@ -35,6 +35,7 @@
+ #include <linux/init.h>
+ #include <linux/compiler.h>
+ #include <linux/delay.h>
++#include <linux/blktrace.h>
+ 
+ #include <asm/uaccess.h>
+ 
+@@ -317,6 +318,8 @@ void elv_requeue_request(request_queue_t
+ void __elv_add_request(request_queue_t *q, struct request *rq, int where,
+ 		       int plug)
+ {
++	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
++
+ 	if (rq->flags & (REQ_SOFTBARRIER | REQ_HARDBARRIER)) {
+ 		/*
+ 		 * barriers implicitly indicate back insertion
+@@ -450,6 +453,8 @@ struct request *elv_next_request(request
+ 			rq->flags |= REQ_STARTED;
+ 		}
+ 
++		blk_add_trace_rq(q, rq, BLK_TA_ISSUE);
++
+ 		if (!q->boundary_rq || q->boundary_rq == rq) {
+ 			q->end_sector = rq_end_sector(rq);
+ 			q->boundary_rq = NULL;
+diff --git a/drivers/block/ioctl.c b/drivers/block/ioctl.c
+index 6e27847..a73c11a 100644
+--- a/drivers/block/ioctl.c
++++ b/drivers/block/ioctl.c
+@@ -4,6 +4,7 @@
+ #include <linux/backing-dev.h>
+ #include <linux/buffer_head.h>
+ #include <linux/smp_lock.h>
++#include <linux/blktrace.h>
+ #include <asm/uaccess.h>
+ 
+ static int blkpg_ioctl(struct block_device *bdev, struct blkpg_ioctl_arg __user *arg)
+@@ -188,6 +189,10 @@ static int blkdev_locked_ioctl(struct fi
+ 		return put_ulong(arg, bdev->bd_inode->i_size >> 9);
+ 	case BLKGETSIZE64:
+ 		return put_u64(arg, bdev->bd_inode->i_size);
++	case BLKSTARTTRACE:
++		return blk_start_trace(bdev, (char __user *) arg);
++	case BLKSTOPTRACE:
++		return blk_stop_trace(bdev);
+ 	}
+ 	return -ENOIOCTLCMD;
+ }
+diff --git a/drivers/block/ll_rw_blk.c b/drivers/block/ll_rw_blk.c
+index 0af7351..b40a90d 100644
+--- a/drivers/block/ll_rw_blk.c
++++ b/drivers/block/ll_rw_blk.c
+@@ -29,6 +29,7 @@
+ #include <linux/swap.h>
+ #include <linux/writeback.h>
+ #include <linux/blkdev.h>
++#include <linux/blktrace.h>
+ 
+ /*
+  * for max sense size
+@@ -1424,8 +1425,10 @@ void blk_plug_device(request_queue_t *q)
+ 	if (test_bit(QUEUE_FLAG_STOPPED, &q->queue_flags))
+ 		return;
+ 
+-	if (!test_and_set_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags))
++	if (!test_and_set_bit(QUEUE_FLAG_PLUGGED, &q->queue_flags)) {
+ 		mod_timer(&q->unplug_timer, jiffies + q->unplug_delay);
++		blk_add_trace_generic(q, NULL, 0, BLK_TA_PLUG);
++	}
+ }
+ 
+ EXPORT_SYMBOL(blk_plug_device);
+@@ -1489,14 +1492,21 @@ static void blk_backing_dev_unplug(struc
+ 	/*
+ 	 * devices don't necessarily have an ->unplug_fn defined
+ 	 */
+-	if (q->unplug_fn)
++	if (q->unplug_fn) {
++		blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
++					q->rq.count[READ] + q->rq.count[WRITE]);
++
+ 		q->unplug_fn(q);
++	}
+ }
+ 
+ static void blk_unplug_work(void *data)
+ {
+ 	request_queue_t *q = data;
+ 
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_IO, NULL,
++				q->rq.count[READ] + q->rq.count[WRITE]);
++
+ 	q->unplug_fn(q);
+ }
+ 
+@@ -1504,6 +1514,9 @@ static void blk_unplug_timeout(unsigned 
+ {
+ 	request_queue_t *q = (request_queue_t *)data;
+ 
++	blk_add_trace_pdu_int(q, BLK_TA_UNPLUG_TIMER, NULL,
++				q->rq.count[READ] + q->rq.count[WRITE]);
++
+ 	kblockd_schedule_work(&q->unplug_work);
+ }
+ 
+@@ -1626,6 +1639,11 @@ void blk_cleanup_queue(request_queue_t *
+ 	if (q->queue_tags)
+ 		__blk_queue_free_tags(q);
+ 
++	if (q->blk_trace) {
++		blk_cleanup_trace(q->blk_trace);
++		q->blk_trace = NULL;
++	}
++
+ 	blk_queue_ordered(q, QUEUE_ORDERED_NONE);
+ 
+ 	kmem_cache_free(requestq_cachep, q);
+@@ -1977,6 +1995,8 @@ rq_starved:
+ 	
+ 	rq_init(q, rq);
+ 	rq->rl = rl;
++
++	blk_add_trace_generic(q, bio, rw, BLK_TA_GETRQ);
+ out:
+ 	return rq;
+ }
+@@ -2005,6 +2025,8 @@ static struct request *get_request_wait(
+ 		if (!rq) {
+ 			struct io_context *ioc;
+ 
++			blk_add_trace_generic(q, bio, rw, BLK_TA_SLEEPRQ);
++
+ 			__generic_unplug_device(q);
+ 			spin_unlock_irq(q->queue_lock);
+ 			io_schedule();
+@@ -2058,6 +2080,8 @@ EXPORT_SYMBOL(blk_get_request);
+  */
+ void blk_requeue_request(request_queue_t *q, struct request *rq)
+ {
++	blk_add_trace_rq(q, rq, BLK_TA_REQUEUE);
++
+ 	if (blk_rq_tagged(rq))
+ 		blk_queue_end_tag(q, rq);
+ 
+@@ -2686,6 +2710,8 @@ static int __make_request(request_queue_
+ 			if (!q->back_merge_fn(q, req, bio))
+ 				break;
+ 
++			blk_add_trace_bio(q, bio, BLK_TA_BACKMERGE);
++
+ 			req->biotail->bi_next = bio;
+ 			req->biotail = bio;
+ 			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
+@@ -2701,6 +2727,8 @@ static int __make_request(request_queue_
+ 			if (!q->front_merge_fn(q, req, bio))
+ 				break;
+ 
++			blk_add_trace_bio(q, bio, BLK_TA_FRONTMERGE);
++
+ 			bio->bi_next = req->bio;
+ 			req->bio = bio;
+ 
+@@ -2850,6 +2878,7 @@ void generic_make_request(struct bio *bi
+ 	request_queue_t *q;
+ 	sector_t maxsector;
+ 	int ret, nr_sectors = bio_sectors(bio);
++	dev_t old_dev;
+ 
+ 	might_sleep();
+ 	/* Test device or partition size, when known. */
+@@ -2876,6 +2905,8 @@ void generic_make_request(struct bio *bi
+ 	 * NOTE: we don't repeat the blk_size check for each new device.
+ 	 * Stacking drivers are expected to know what they are doing.
+ 	 */
++	maxsector = -1;
++	old_dev = 0;
+ 	do {
+ 		char b[BDEVNAME_SIZE];
+ 
+@@ -2908,6 +2939,15 @@ end_io:
+ 		 */
+ 		blk_partition_remap(bio);
+ 
++		if (maxsector != -1)
++			blk_add_trace_remap(q, bio, old_dev, bio->bi_sector, 
++					    maxsector);
++
++		blk_add_trace_bio(q, bio, BLK_TA_QUEUE);
++
++		maxsector = bio->bi_sector;
++		old_dev = bio->bi_bdev->bd_dev;
++
+ 		ret = q->make_request_fn(q, bio);
+ 	} while (ret);
+ }
+@@ -3027,6 +3067,8 @@ static int __end_that_request_first(stru
+ 	int total_bytes, bio_nbytes, error, next_idx = 0;
+ 	struct bio *bio;
+ 
++	blk_add_trace_rq(req->q, req, BLK_TA_COMPLETE);
++
+ 	/*
+ 	 * extend uptodate bool to allow < 0 value to be direct io error
+ 	 */
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 930b9fc..4573599 100644
+--- a/drivers/md/dm.c
++++ b/drivers/md/dm.c
+@@ -17,6 +17,7 @@
+ #include <linux/mempool.h>
+ #include <linux/slab.h>
+ #include <linux/idr.h>
++#include <linux/blktrace.h>
+ 
+ static const char *_name = DM_NAME;
+ 
+@@ -302,6 +303,8 @@ static inline void dec_pending(struct dm
+ 			/* nudge anyone waiting on suspend queue */
+ 			wake_up(&io->md->wait);
+ 
++		blk_add_trace_bio(io->md->queue, io->bio, BLK_TA_COMPLETE);
++
+ 		bio_endio(io->bio, io->bio->bi_size, io->error);
+ 		free_io(io->md, io);
+ 	}
+@@ -360,6 +363,7 @@ static void __map_bio(struct dm_target *
+ 		      struct target_io *tio)
+ {
+ 	int r;
++	sector_t sector;
+ 
+ 	/*
+ 	 * Sanity checks.
+@@ -375,10 +379,17 @@ static void __map_bio(struct dm_target *
+ 	 * this io.
+ 	 */
+ 	atomic_inc(&tio->io->io_count);
++	sector = clone->bi_sector;
+ 	r = ti->type->map(ti, clone, &tio->info);
+-	if (r > 0)
++	if (r > 0) {
+ 		/* the bio has been remapped so dispatch it */
++
++		blk_add_trace_remap(bdev_get_queue(clone->bi_bdev), clone, 
++				    tio->io->bio->bi_bdev->bd_dev, sector, 
++				    clone->bi_sector);
++
+ 		generic_make_request(clone);
++	}
+ 
+ 	else if (r < 0) {
+ 		/* error the io and bail out */
+diff --git a/fs/bio.c b/fs/bio.c
+index 460554b..cd95166 100644
+--- a/fs/bio.c
++++ b/fs/bio.c
+@@ -25,6 +25,7 @@
+ #include <linux/module.h>
+ #include <linux/mempool.h>
+ #include <linux/workqueue.h>
++#include <linux/blktrace.h>
+ #include <scsi/sg.h>		/* for struct sg_iovec */
+ 
+ #define BIO_POOL_SIZE 256
+@@ -1050,6 +1051,9 @@ struct bio_pair *bio_split(struct bio *b
+ 	if (!bp)
+ 		return bp;
+ 
++	blk_add_trace_pdu_int(bdev_get_queue(bi->bi_bdev), BLK_TA_SPLIT, bi,
++				bi->bi_sector + first_sectors);
++
+ 	BUG_ON(bi->bi_vcnt != 1);
+ 	BUG_ON(bi->bi_idx != 0);
+ 	atomic_set(&bp->cnt, 3);
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 025a7f0..749f370 100644
+--- a/include/linux/blkdev.h
++++ b/include/linux/blkdev.h
+@@ -22,6 +22,7 @@ typedef struct request_queue request_que
+ struct elevator_queue;
+ typedef struct elevator_queue elevator_t;
+ struct request_pm_state;
++struct blk_trace;
+ 
+ #define BLKDEV_MIN_RQ	4
+ #define BLKDEV_MAX_RQ	128	/* Default maximum */
+@@ -420,6 +421,8 @@ struct request_queue
+ 	 */
+ 	struct request		*flush_rq;
+ 	unsigned char		ordered;
++
++	struct blk_trace	*blk_trace;
+ };
+ 
+ enum {
+diff --git a/include/linux/blktrace.h b/include/linux/blktrace.h
+new file mode 100644
+index 0000000..0c36714
+--- /dev/null
++++ b/include/linux/blktrace.h
+@@ -0,0 +1,212 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -703,6 +692,9 @@ index 90e1861..dfbea4a 100644
 +	atomic_t sequence;
 +	u32 dev;
 +	u16 act_mask;
++	u64 start_lba;
++	u64 end_lba;
++	u32 pid;
 +};
 +
 +/*
@@ -713,6 +705,9 @@ index 90e1861..dfbea4a 100644
 +	u16 act_mask;			/* input */
 +	u32 buf_size;			/* input */
 +	u32 buf_nr;			/* input */
++	u64 start_lba;
++	u64 end_lba;
++	u32 pid;
 +};
 +
 +#if defined(CONFIG_BLK_DEV_IO_TRACE)
@@ -806,3 +801,37 @@ index 90e1861..dfbea4a 100644
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index 6d62267..78adc99 100644
+--- a/include/linux/fs.h
++++ b/include/linux/fs.h
+@@ -196,6 +196,8 @@ extern int dir_notify_enable;
+ #define BLKBSZGET  _IOR(0x12,112,size_t)
+ #define BLKBSZSET  _IOW(0x12,113,size_t)
+ #define BLKGETSIZE64 _IOR(0x12,114,size_t)	/* return device size in bytes (u64 *arg) */
++#define BLKSTARTTRACE _IOWR(0x12,115,struct blk_user_trace_setup)
++#define BLKSTOPTRACE _IO(0x12,116)
+ 
+ #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
+ #define FIBMAP	   _IO(0x00,1)	/* bmap access */
+diff --git a/mm/highmem.c b/mm/highmem.c
+index ce2e7e8..800aa91 100644
+--- a/mm/highmem.c
++++ b/mm/highmem.c
+@@ -26,6 +26,7 @@
+ #include <linux/init.h>
+ #include <linux/hash.h>
+ #include <linux/highmem.h>
++#include <linux/blktrace.h>
+ #include <asm/tlbflush.h>
+ 
+ static mempool_t *page_pool, *isa_page_pool;
+@@ -483,6 +484,8 @@ void blk_queue_bounce(request_queue_t *q
+ 		pool = isa_page_pool;
+ 	}
+ 
++	blk_add_trace_bio(q, *bio_orig, BLK_TA_BOUNCE);
++
+ 	/*
+ 	 * slow path
+ 	 */

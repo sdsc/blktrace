@@ -101,6 +101,9 @@ struct blk_user_trace_setup {
 	__u16 act_mask;			/* input */
 	__u32 buf_size;			/* input */
 	__u32 buf_nr;			/* input */
+	__u64 start_lba;
+	__u64 end_lba;
+	__u32 pid;
 };
 
 #define BLKSTARTTRACE _IOWR(0x12,115,struct blk_user_trace_setup)
