@@ -126,9 +126,10 @@ static unsigned int get_pdu_int(struct blk_io_trace *t)
 static void get_pdu_remap(struct blk_io_trace *t, struct blk_io_trace_remap *r)
 {
 	struct blk_io_trace_remap *__r = pdu_start(t);
+	__u64 sector = __r->sector;
 
 	r->device = be32_to_cpu(__r->device);
-	r->sector = be64_to_cpu(__r->sector);
+	r->sector = be64_to_cpu(sector);
 }
 
 static void print_field(char *act, struct per_cpu_info *pci,
