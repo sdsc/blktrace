@@ -39,7 +39,11 @@
 
 static char blktrace_version[] = "0.99";
 
-#define BUF_SIZE	(128 *1024)
+/*
+ * You may want to increase this even more, if you are logging at a high
+ * rate and see skipped/missed events
+ */
+#define BUF_SIZE	(512 *1024)
 #define BUF_NR		(4)
 
 #define RELAYFS_TYPE	0xF0B4A981
