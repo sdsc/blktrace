@@ -138,7 +138,7 @@ struct thread_information {
 	FILE *ofile;
 	char *ofile_buffer;
 
-	int closed;
+	volatile int closed;
 
 	unsigned long events_processed;
 	struct device_information *device;
@@ -148,7 +148,7 @@ struct device_information {
 	int fd;
 	char *path;
 	char buts_name[32];
-	int trace_started;
+	volatile int trace_started;
 	struct thread_information *threads;
 };
 
@@ -176,6 +176,16 @@ static void exit_trace(int status);
 #define tip_closed(tip)		(*(volatile int *)(&(tip)->closed))
 #define set_tip_closed(tip)	((tip)->closed = 1)
 
+#define dip_tracing(dip)	(*(volatile int *)(&(dip)->trace_started))
+#define dip_set_tracing(dip, v)	((dip)->trace_started = (v))
+
+#define __for_each_dip(__d, __i, __e)	\
+	for (__i = 0, __d = device_information; __i < __e; __i++, __d++)
+
+#define for_each_dip(__d, __i)	__for_each_dip(__d, __i, ndevs)
+#define for_each_tip(__d, __t, __i)	\
+	for (__i = 0, __t = (__d)->threads; __i < ncpus; __i++, __t++)
+
 static int start_trace(struct device_information *dip)
 {
 	struct blk_user_trace_setup buts;
@@ -191,14 +201,14 @@ static int start_trace(struct device_information *dip)
 	}
 
 	memcpy(dip->buts_name, buts.name, sizeof(dip->buts_name));
-	dip->trace_started = 1;
+	dip_set_tracing(dip, 1);
 	return 0;
 }
 
 static void stop_trace(struct device_information *dip)
 {
-	if (dip->trace_started || kill_running_trace) {
-		dip->trace_started = 0;
+	if (dip_tracing(dip) || kill_running_trace) {
+		dip_set_tracing(dip, 0);
 
 		if (ioctl(dip->fd, BLKSTOPTRACE) < 0)
 			perror("BLKSTOPTRACE");
@@ -213,7 +223,7 @@ static void stop_all_traces(void)
 	struct device_information *dip;
 	int i;
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+	for_each_dip(dip, i)
 		stop_trace(dip);
 }
 
@@ -467,7 +477,7 @@ static int start_threads(struct device_information *dip)
 	int j, pipeline = output_name && !strcmp(output_name, "-");
 	int len, mode;
 
-	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
+	for_each_tip(dip, tip, j) {
 		tip->cpu = j;
 		tip->device = dip;
 		tip->fd_lock = NULL;
@@ -524,9 +534,7 @@ static void stop_threads(struct device_information *dip)
 	long ret;
 	int i;
 
-	for (i = 0; i < ncpus; i++) {
-		tip = &dip->threads[i];
-
+	for_each_tip(dip, tip, i) {
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
 
@@ -539,11 +547,8 @@ static void stop_all_threads(void)
 	struct device_information *dip;
 	int i;
 
-	for (i = 0; i < ndevs; i++) {
-		dip = &device_information[i];
-
+	for_each_dip(dip, i)
 		stop_threads(dip);
-	}
 }
 
 static void stop_all_tracing(void)
@@ -552,14 +557,9 @@ static void stop_all_tracing(void)
 	struct thread_information *tip;
 	int i, j;
 
-	for (i = 0; i < ndevs; i++) {
-		dip = &device_information[i];
-
-		for (j = 0; j < ncpus; j++) {
-			tip = &dip->threads[j];
-
+	for_each_dip(dip, i) {
+		for_each_tip(dip, tip, j)
 			close_thread(tip);
-		}
 
 		stop_trace(dip);
 	}
@@ -590,13 +590,14 @@ static int open_devices(void)
 	struct device_information *dip;
 	int i;
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+	for_each_dip(dip, i) {
 		dip->fd = open(dip->path, O_RDONLY | O_NONBLOCK);
 		if (dip->fd < 0) {
 			perror(dip->path);
 			return 1;
 		}
 	}
+
 	return 0;
 }
 
@@ -612,7 +613,7 @@ static int start_devices(void)
 		return 1;
 	}
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+	for_each_dip(dip, i) {
 		if (start_trace(dip)) {
 			close(dip->fd);
 			fprintf(stderr, "Failed to start trace on %s\n",
@@ -620,24 +621,28 @@ static int start_devices(void)
 			break;
 		}
 	}
+
 	if (i != ndevs) {
-		for (dip = device_information, j = 0; j < i; j++, dip++)
+		__for_each_dip(dip, j, i)
 			stop_trace(dip);
+
 		return 1;
 	}
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+	for_each_dip(dip, i) {
 		dip->threads = thread_information + (i * ncpus);
 		if (start_threads(dip)) {
 			fprintf(stderr, "Failed to start worker threads\n");
 			break;
 		}
 	}
+
 	if (i != ndevs) {
-		for (dip = device_information, j = 0; j < i; j++, dip++)
+		__for_each_dip(dip, j, i)
 			stop_threads(dip);
-		for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+		for_each_dip(dip, i)
 			stop_trace(dip);
+
 		return 1;
 	}
 
@@ -654,10 +659,10 @@ static void show_stats(void)
 	if (output_name && !strcmp(output_name, "-"))
 		return;
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
+	for_each_dip(dip, i) {
 		printf("Device: %s\n", dip->path);
 		events_processed = 0;
-		for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
+		for_each_tip(dip, tip, j) {
 			printf("  CPU%3d: %20ld events\n",
 			       tip->cpu, tip->events_processed);
 			events_processed += tip->events_processed;
