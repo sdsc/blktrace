@@ -1,7 +1,7 @@
 From: Jens Axboe <axboe@suse.de>
-Date: Wed, 11 Jan 2006 08:45:35 +0000 (+0100)
+Date: Thu, 12 Jan 2006 10:16:32 +0000 (+0100)
 Subject: [BLOCK] blktrace: block device queue io tracing support
-X-Git-Url: http://router/git/?p=linux-2.6-block.git;a=commitdiff;h=6ec55a3dfa455db0a41d4232424f97404dcbd27f
+X-Git-Url: http://router/git/?p=linux-2.6-block.git;a=commitdiff;h=9028533f69904e451a1d1b517421f832d5d3969f
 
 [BLOCK] blktrace: block device queue io tracing support
 
@@ -297,7 +297,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	struct list_head *pos;
  	unsigned ordseq;
  
-++	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
++	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
 +
  	if (q->ordcolor)
  		rq->flags |= REQ_ORDERED_COLOR;
@@ -554,7 +554,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	atomic_set(&bp->cnt, 3);
 --- a/fs/compat_ioctl.c
 +++ b/fs/compat_ioctl.c
-@@ -71,6 +71,7 @@
+@@ -72,6 +72,7 @@
  #include <linux/i2c-dev.h>
  #include <linux/wireless.h>
  #include <linux/atalk.h>
