@@ -265,6 +265,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		t->pid, act, rwbs);
 
 	switch (act[0]) {
+	case 'R':	/* Requeue */
 	case 'C': 	/* Complete */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			char *p = dump_pdu(pdu_buf, pdu_len);
