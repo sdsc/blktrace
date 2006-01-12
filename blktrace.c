@@ -43,8 +43,10 @@ static char blktrace_version[] = "0.99";
  * You may want to increase this even more, if you are logging at a high
  * rate and see skipped/missed events
  */
-#define BUF_SIZE	(512 *1024)
+#define BUF_SIZE	(512 * 1024)
 #define BUF_NR		(4)
+
+#define OFILE_BUF	(128 * 1024)
 
 #define RELAYFS_TYPE	0xF0B4A981
 
@@ -133,7 +135,10 @@ struct thread_information {
 	unsigned int sequence;
 
 	pthread_mutex_t *fd_lock;
-	int ofd;
+	FILE *ofile;
+	char *ofile_buffer;
+
+	int closed;
 
 	unsigned long events_processed;
 	struct device_information *device;
@@ -167,6 +172,9 @@ static volatile int done;
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void exit_trace(int status);
+
+#define tip_closed(tip)		(*(volatile int *)(&(tip)->closed))
+#define set_tip_closed(tip)	((tip)->closed = 1)
 
 static int start_trace(struct device_information *dip)
 {
@@ -234,25 +242,19 @@ static int read_data(struct thread_information *tip, void *buf, int len)
 	return -1;
 }
 
-static int write_data(int fd, void *buf, unsigned int buf_len)
+static int write_data(FILE *file, void *buf, unsigned int buf_len)
 {
 	int ret, bytes_left;
 	char *p = buf;
 
 	bytes_left = buf_len;
 	while (bytes_left > 0) {
-		ret = write(fd, p, bytes_left);
-		if (ret == bytes_left)
+		ret = fwrite(p, bytes_left, 1, file);
+		if (ret == 1)
 			break;
 
 		if (ret < 0) {
 			perror("write");
-			return 1;
-		} else if (ret > 0) {
-			p += ret;
-			bytes_left -= ret;
-		} else {
-			fprintf(stderr, "Zero write?\n");
 			return 1;
 		}
 	}
@@ -415,12 +417,12 @@ static void *extract(void *arg)
 		 */
 		tip_fd_lock(tip);
 
-		if (write_data(tip->ofd, &t, sizeof(t))) {
+		if (write_data(tip->ofile, &t, sizeof(t))) {
 			tip_fd_unlock(tip);
 			break;
 		}
 
-		if (pdu_data && write_data(tip->ofd, pdu_data, pdu_len)) {
+		if (pdu_data && write_data(tip->ofile, pdu_data, pdu_len)) {
 			tip_fd_unlock(tip);
 			break;
 		}
@@ -439,12 +441,31 @@ static void *extract(void *arg)
 	return NULL;
 }
 
+static void close_thread(struct thread_information *tip)
+{
+	if (tip_closed(tip))
+		return;
+
+	set_tip_closed(tip);
+
+	if (tip->fd != -1)
+		close(tip->fd);
+	if (tip->ofile)
+		fclose(tip->ofile);
+	if (tip->ofile_buffer)
+		free(tip->ofile_buffer);
+
+	tip->fd = -1;
+	tip->ofile = NULL;
+	tip->ofile_buffer = NULL;
+}
+
 static int start_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
 	char op[64];
 	int j, pipeline = output_name && !strcmp(output_name, "-");
-	int len;
+	int len, mode;
 
 	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
 		tip->cpu = j;
@@ -453,8 +474,10 @@ static int start_threads(struct device_information *dip)
 		tip->events_processed = 0;
 
 		if (pipeline) {
-			tip->ofd = dup(STDOUT_FILENO);
+			tip->ofile = fdopen(STDOUT_FILENO, "w");
 			tip->fd_lock = &stdout_mutex;
+			mode = _IOLBF;
+			buf_size = 512;
 		} else {
 			len = 0;
 
@@ -468,17 +491,26 @@ static int start_threads(struct device_information *dip)
 				sprintf(op + len, "%s.blktrace.%d",
 					dip->buts_name, tip->cpu);
 			}
-			tip->ofd = open(op, O_CREAT|O_TRUNC|O_WRONLY, 0644);
+			tip->ofile = fopen(op, "w");
+			mode = _IOFBF;
+			buf_size = OFILE_BUF;
 		}
 
-		if (tip->ofd < 0) {
+		if (tip->ofile == NULL) {
 			perror(op);
+			return 1;
+		}
+
+		tip->ofile_buffer = malloc(buf_size);
+		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, buf_size)) {
+			perror("setvbuf");
+			close_thread(tip);
 			return 1;
 		}
 
 		if (pthread_create(&tip->thread, NULL, extract, tip)) {
 			perror("pthread_create");
-			close(tip->ofd);
+			close_thread(tip);
 			return 1;
 		}
 	}
@@ -486,25 +518,18 @@ static int start_threads(struct device_information *dip)
 	return 0;
 }
 
-static void close_thread(struct thread_information *tip)
-{
-	if (tip->fd != -1)
-		close(tip->fd);
-	if (tip->ofd != -1)
-		close(tip->ofd);
-
-	tip->fd = tip->ofd = -1;
-}
-
 static void stop_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
 	long ret;
-	int j;
+	int i;
 
-	for (tip = dip->threads, j = 0; j < ncpus; j++, tip++) {
+	for (i = 0; i < ncpus; i++) {
+		tip = &dip->threads[i];
+
 		if (pthread_join(tip->thread, (void *) &ret))
 			perror("thread_join");
+
 		close_thread(tip);
 	}
 }
@@ -514,8 +539,11 @@ static void stop_all_threads(void)
 	struct device_information *dip;
 	int i;
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++)
+	for (i = 0; i < ndevs; i++) {
+		dip = &device_information[i];
+
 		stop_threads(dip);
+	}
 }
 
 static void stop_all_tracing(void)
@@ -524,9 +552,15 @@ static void stop_all_tracing(void)
 	struct thread_information *tip;
 	int i, j;
 
-	for (dip = device_information, i = 0; i < ndevs; i++, dip++) {
-		for (tip = dip->threads, j = 0; j < ncpus; j++, tip++)
+	for (i = 0; i < ndevs; i++) {
+		dip = &device_information[i];
+
+		for (j = 0; j < ncpus; j++) {
+			tip = &dip->threads[j];
+
 			close_thread(tip);
+		}
+
 		stop_trace(dip);
 	}
 }
