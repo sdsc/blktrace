@@ -1,13 +1,5 @@
-From: Jens Axboe <axboe@suse.de>
-Date: Thu, 12 Jan 2006 10:16:32 +0000 (+0100)
-Subject: [BLOCK] blktrace: block device queue io tracing support
-X-Git-Url: http://router/git/?p=linux-2.6-block.git;a=commitdiff;h=9028533f69904e451a1d1b517421f832d5d3969f
-
-[BLOCK] blktrace: block device queue io tracing support
-
-Signed-off-by: Jens Axboe <axboe@suse.de>
----
-
+diff --git a/block/Kconfig b/block/Kconfig
+index 377f6dd..27eaed9 100644
 --- a/block/Kconfig
 +++ b/block/Kconfig
 @@ -11,4 +11,15 @@ config LBD
@@ -26,6 +18,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +	  git://brick.kernel.dk/data/git/blktrace.git
 +
  source block/Kconfig.iosched
+diff --git a/block/Makefile b/block/Makefile
+index 7e4f93e..c05de0e 100644
 --- a/block/Makefile
 +++ b/block/Makefile
 @@ -8,3 +8,5 @@ obj-$(CONFIG_IOSCHED_NOOP)	+= noop-iosch
@@ -34,15 +28,19 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  obj-$(CONFIG_IOSCHED_CFQ)	+= cfq-iosched.o
 +
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
+diff --git a/block/blktrace.c b/block/blktrace.c
+new file mode 100644
+index 0000000..c66d074
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,257 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
 +#include <linux/blktrace_api.h>
 +#include <linux/percpu.h>
 +#include <linux/init.h>
++#include <linux/mutex.h>
 +#include <asm/uaccess.h>
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
@@ -108,7 +106,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +EXPORT_SYMBOL_GPL(__blk_add_trace);
 +
 +static struct dentry *blk_tree_root;
-+static DECLARE_MUTEX(blk_tree_mutex);
++static struct mutex blk_tree_mutex;
 +
 +static inline void blk_remove_root(void)
 +{
@@ -118,17 +116,17 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +
 +static void blk_remove_tree(struct dentry *dir)
 +{
-+	down(&blk_tree_mutex);
++	mutex_lock(&blk_tree_mutex);
 +	relayfs_remove_dir(dir);
 +	blk_remove_root();
-+	up(&blk_tree_mutex);
++	mutex_unlock(&blk_tree_mutex);
 +}
 +
 +static struct dentry *blk_create_tree(const char *blk_name)
 +{
 +	struct dentry *dir = NULL;
 +
-+	down(&blk_tree_mutex);
++	mutex_lock(&blk_tree_mutex);
 +
 +	if (!blk_tree_root) {
 +		blk_tree_root = relayfs_create_dir("block", NULL);
@@ -141,7 +139,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +		blk_remove_root();
 +
 +err:
-+	up(&blk_tree_mutex);
++	mutex_unlock(&blk_tree_mutex);
 +	return dir;
 +}
 +
@@ -184,7 +182,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +	struct blk_trace *bt = NULL;
 +	struct dentry *dir = NULL;
 +	char b[BDEVNAME_SIZE];
-+	int ret;
++	int ret, i;
 +
 +	if (!q)
 +		return -ENXIO;
@@ -196,6 +194,14 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +		return -EINVAL;
 +
 +	strcpy(buts.name, bdevname(bdev, b));
++
++	/*
++	 * some device names have larger paths - convert the slashes
++	 * to underscores for this to work as expected
++	 */
++	for (i = 0; i < strlen(buts.name); i++)
++		if (buts.name[i] == '/')
++			buts.name[i] = '_';
 +
 +	if (copy_to_user(arg, &buts, sizeof(buts)))
 +		return -EFAULT;
@@ -211,7 +217,7 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +		goto err;
 +
 +	ret = -ENOENT;
-+	dir = blk_create_tree(bdevname(bdev, b));
++	dir = blk_create_tree(buts.name);
 +	if (!dir)
 +		goto err;
 +
@@ -278,11 +284,15 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +
 +static __init int blk_trace_init(void)
 +{
++	mutex_init(&blk_tree_mutex);
++
 +	return blk_trace_calibrate_offsets();
 +}
 +
 +module_init(blk_trace_init);
 +
+diff --git a/block/elevator.c b/block/elevator.c
+index 99a4d7b..e0b8179 100644
 --- a/block/elevator.c
 +++ b/block/elevator.c
 @@ -33,6 +33,7 @@
@@ -311,6 +321,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  		if (!q->boundary_rq || q->boundary_rq == rq) {
  			q->end_sector = rq_end_sector(rq);
  			q->boundary_rq = NULL;
+diff --git a/block/ioctl.c b/block/ioctl.c
+index e110949..63e67a2 100644
 --- a/block/ioctl.c
 +++ b/block/ioctl.c
 @@ -5,6 +5,7 @@
@@ -332,6 +344,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	}
  	return -ENOIOCTLCMD;
  }
+diff --git a/block/ll_rw_blk.c b/block/ll_rw_blk.c
+index 8e27d0a..bfcde0f 100644
 --- a/block/ll_rw_blk.c
 +++ b/block/ll_rw_blk.c
 @@ -28,6 +28,7 @@
@@ -486,6 +500,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
+diff --git a/drivers/md/dm.c b/drivers/md/dm.c
+index 097d1e5..0411900 100644
 --- a/drivers/md/dm.c
 +++ b/drivers/md/dm.c
 @@ -17,6 +17,7 @@
@@ -532,6 +548,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  
  	else if (r < 0) {
  		/* error the io and bail out */
+diff --git a/fs/bio.c b/fs/bio.c
+index 7b30695..c0cbbd4 100644
 --- a/fs/bio.c
 +++ b/fs/bio.c
 @@ -25,6 +25,7 @@
@@ -552,6 +570,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	BUG_ON(bi->bi_vcnt != 1);
  	BUG_ON(bi->bi_idx != 0);
  	atomic_set(&bp->cnt, 3);
+diff --git a/fs/compat_ioctl.c b/fs/compat_ioctl.c
+index f0b7256..67e901a 100644
 --- a/fs/compat_ioctl.c
 +++ b/fs/compat_ioctl.c
 @@ -72,6 +72,7 @@
@@ -562,6 +582,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  
  #include <net/sock.h>          /* siocdevprivate_ioctl */
  #include <net/bluetooth/bluetooth.h>
+diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
+index 02a585f..195c3b9 100644
 --- a/include/linux/blkdev.h
 +++ b/include/linux/blkdev.h
 @@ -22,6 +22,7 @@ typedef struct request_queue request_que
@@ -581,6 +603,9 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  	/*
  	 * reserved for flush operations
  	 */
+diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
+new file mode 100644
+index 0000000..a37367f
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
 @@ -0,0 +1,213 @@
@@ -797,6 +822,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
 +#endif /* CONFIG_BLK_DEV_IO_TRACE */
 +
 +#endif
+diff --git a/include/linux/compat_ioctl.h b/include/linux/compat_ioctl.h
+index 8fad50f..5bed09a 100644
 --- a/include/linux/compat_ioctl.h
 +++ b/include/linux/compat_ioctl.h
 @@ -97,6 +97,8 @@ COMPATIBLE_IOCTL(BLKRRPART)
@@ -808,6 +835,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  ULONG_IOCTL(BLKRASET)
  ULONG_IOCTL(BLKFRASET)
  /* RAID */
+diff --git a/include/linux/fs.h b/include/linux/fs.h
+index d1e370d..98b381e 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -196,6 +196,8 @@ extern int dir_notify_enable;
@@ -819,6 +848,8 @@ Signed-off-by: Jens Axboe <axboe@suse.de>
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
+diff --git a/mm/highmem.c b/mm/highmem.c
+index ce2e7e8..d0ea1ee 100644
 --- a/mm/highmem.c
 +++ b/mm/highmem.c
 @@ -26,6 +26,7 @@
