@@ -683,26 +683,34 @@ static int get_dropped_count(const char *buts_name)
 
 static void show_stats(void)
 {
-	int i, j, dropped;
+	int i, j, dropped, total_drops, no_stdout = 0;
 	struct device_information *dip;
 	struct thread_information *tip;
 	unsigned long long events_processed;
 
 	if (output_name && !strcmp(output_name, "-"))
-		return;
+		no_stdout = 1;
 
+	total_drops = 0;
 	for_each_dip(dip, i) {
-		printf("Device: %s\n", dip->path);
+		if (!no_stdout)
+			printf("Device: %s\n", dip->path);
 		events_processed = 0;
 		for_each_tip(dip, tip, j) {
-			printf("  CPU%3d: %20ld events\n",
-			       tip->cpu, tip->events_processed);
+			if (!no_stdout)
+				printf("  CPU%3d: %20ld events\n",
+			       		tip->cpu, tip->events_processed);
 			events_processed += tip->events_processed;
 		}
 		dropped = get_dropped_count(dip->buts_name);
-		printf("  Total:  %20lld events (dropped %d)\n",
-				events_processed, dropped);
+		total_drops += dropped;
+		if (!no_stdout)
+			printf("  Total:  %20lld events (dropped %d)\n",
+					events_processed, dropped);
 	}
+
+	if (total_drops)
+		fprintf(stderr, "You have dropped events, consider using a larger buffer size (-b)\n");
 }
 
 static char usage_str[] = \
