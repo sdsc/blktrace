@@ -34,6 +34,7 @@
 #include <sched.h>
 #include <ctype.h>
 #include <getopt.h>
+#include <errno.h>
 
 #include "blktrace.h"
 
@@ -649,9 +650,40 @@ static int start_devices(void)
 	return 0;
 }
 
+static int get_dropped_count(const char *buts_name)
+{
+	int fd;
+	char tmp[MAXPATHLEN + 64];
+
+	snprintf(tmp, sizeof(tmp), "%s/block/%s/dropped",
+		 relay_path, buts_name);
+
+	fd = open(tmp, O_RDONLY);
+	if (fd < 0) {
+		/*
+		 * this may be ok, if the kernel doesn't support dropped counts
+		 */
+		if (errno == ENOENT)
+			return 0;
+
+		fprintf(stderr, "Couldn't open dropped file %s\n", tmp);
+		return -1;
+	}
+
+	if (read(fd, tmp, sizeof(tmp)) < 0) {
+		perror(tmp);
+		close(fd);
+		return -1;
+	}
+
+	close(fd);
+
+	return atoi(tmp);
+}
+
 static void show_stats(void)
 {
-	int i, j;
+	int i, j, dropped;
 	struct device_information *dip;
 	struct thread_information *tip;
 	unsigned long long events_processed;
@@ -667,7 +699,9 @@ static void show_stats(void)
 			       tip->cpu, tip->events_processed);
 			events_processed += tip->events_processed;
 		}
-		printf("  Total:  %20lld events\n", events_processed);
+		dropped = get_dropped_count(dip->buts_name);
+		printf("  Total:  %20lld events (dropped %d)\n",
+				events_processed, dropped);
 	}
 }
 
