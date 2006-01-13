@@ -48,7 +48,8 @@ struct per_dev_info {
 	unsigned long long last_read_time;
 	struct io_stats io_stats;
 	unsigned long last_sequence;
-	unsigned long skips;
+	unsigned long skips, nskips;
+	unsigned long long seq_skips, seq_nskips;
 
 	struct rb_root rb_last;
 	unsigned long rb_last_entries;
@@ -1303,10 +1304,17 @@ static void show_device_and_cpu_stats(void)
 			wrate = 1000 * total.cwrite_kb / msec;
 		}
 
-		fprintf(ofp, "\nThroughput (R/W): %'LuKiB/s / %'LuKiB/s\n", rrate, wrate);
-		fprintf(ofp, "Events (%s): %'Lu entries, %'lu skips\n",
-			get_dev_name(pdi, line, sizeof(line)), pdi->events,
-			pdi->skips);
+		fprintf(ofp, "\nThroughput (R/W): %'LuKiB/s / %'LuKiB/s\n",
+			rrate, wrate);
+		fprintf(ofp, "Events (%s): %'Lu entries\n",
+			get_dev_name(pdi, line, sizeof(line)), pdi->events);
+		fprintf(ofp, "Skips: %'lu forward (%'llu - %5.1lf%%) %'lu backward (%'llu - %5.1lf%%)\n",
+			pdi->skips,pdi->seq_skips,
+			100.0 * ((double)pdi->seq_skips /
+				(double)(pdi->events + pdi->seq_skips)),
+			pdi->nskips,pdi->seq_nskips,
+			100.0 * ((double)pdi->seq_nskips /
+				(double)(pdi->events + pdi->seq_skips)));
 	}
 }
 
@@ -1527,7 +1535,13 @@ skip:
 				MAJOR(pdi->dev), MINOR(pdi->dev),
 				pdi->last_sequence, bit->sequence);
 		}
-		pdi->skips++;
+		if (bit->sequence > pdi->last_sequence) {
+			pdi->skips++;
+			pdi->seq_skips += (bit->sequence - pdi->last_sequence);
+		} else {
+			pdi->nskips++;
+			pdi->seq_nskips += (pdi->last_sequence - bit->sequence);
+		}
 		return 0;
 	}
 }
