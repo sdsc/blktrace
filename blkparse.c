@@ -916,6 +916,30 @@ static inline void account_unplug(struct blk_io_trace *t,
 	}
 }
 
+static inline void __account_requeue(struct io_stats *ios,
+				     struct blk_io_trace *t, int rw)
+{
+	if (rw) {
+		ios->wrqueue++;
+		ios->iwrite_kb -= t_kb(t);
+	} else {
+		ios->rrqueue++;
+		ios->iread_kb -= t_kb(t);
+	}
+}
+
+static inline void account_requeue(struct blk_io_trace *t,
+				   struct per_cpu_info *pci, int rw)
+{
+	__account_requeue(&pci->io_stats, t, rw);
+
+	if (per_process_stats) {
+		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+
+		__account_requeue(ios, t, rw);
+	}
+}
+
 static void log_complete(struct per_dev_info *pdi, struct per_cpu_info *pci,
 			 struct blk_io_trace *t, char *act)
 {
@@ -1042,7 +1066,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			log_generic(pci, t, "S");
 			break;
 		case __BLK_TA_REQUEUE:
-			account_c(t, pci, w, -t->bytes);
+			account_requeue(t, pci, w);
 			log_queue(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
@@ -1125,6 +1149,8 @@ static void dump_io_stats(struct io_stats *ios, char *msg)
 
 	fprintf(ofp, " Read Dispatches: %s, %siB\t", size_cnv(x, ios->ireads, 0), size_cnv(y, ios->iread_kb, 1));
 	fprintf(ofp, " Write Dispatches: %s, %siB\n", size_cnv(x, ios->iwrites, 0), size_cnv(y, ios->iwrite_kb, 1));
+	fprintf(ofp, " Reads Requeued:  %s\t\t", size_cnv(x, ios->rrqueue, 0));
+	fprintf(ofp, " Writes Requeued:  %s\n", size_cnv(x, ios->wrqueue, 0));
 	fprintf(ofp, " Reads Completed: %s, %siB\t", size_cnv(x, ios->creads, 0), size_cnv(y, ios->cread_kb, 1));
 	fprintf(ofp, " Writes Completed: %s, %siB\n", size_cnv(x, ios->cwrites, 0), size_cnv(y, ios->cwrite_kb, 1));
 	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
@@ -1246,6 +1272,8 @@ static void show_device_and_cpu_stats(void)
 			total.mwrites += ios->mwrites;
 			total.ireads += ios->ireads;
 			total.iwrites += ios->iwrites;
+			total.rrqueue += ios->rrqueue;
+			total.wrqueue += ios->wrqueue;
 			total.qread_kb += ios->qread_kb;
 			total.qwrite_kb += ios->qwrite_kb;
 			total.cread_kb += ios->cread_kb;

@@ -26,7 +26,7 @@ typedef __u8 u8;
 
 struct io_stats {
 	unsigned long qreads, qwrites, creads, cwrites, mreads, mwrites;
-	unsigned long ireads, iwrites;
+	unsigned long ireads, iwrites, rrqueue, wrqueue;
 	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
 	unsigned long long iread_kb, iwrite_kb;
 	unsigned long io_unplugs, timer_unplugs;
