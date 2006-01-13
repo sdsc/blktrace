@@ -728,6 +728,7 @@ static void show_usage(char *program)
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
+	show_stats();
 }
 
 int main(int argc, char *argv[])
