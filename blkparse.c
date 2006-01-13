@@ -849,7 +849,7 @@ static inline void account_queue(struct blk_io_trace *t,
 	}
 }
 
-static inline void __account_c(struct io_stats *ios, int rw, unsigned int bytes)
+static inline void __account_c(struct io_stats *ios, int rw, int bytes)
 {
 	if (rw) {
 		ios->cwrites++;
