@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..c66d074
+index 0000000..876f07b
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,257 @@
+@@ -0,0 +1,309 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -146,6 +146,7 @@ index 0000000..c66d074
 +void blk_cleanup_trace(struct blk_trace *bt)
 +{
 +	relay_close(bt->rchan);
++	relayfs_remove_file(bt->dropped_file);
 +	blk_remove_tree(bt->dir);
 +	kfree(bt);
 +}
@@ -174,6 +175,49 @@ index 0000000..c66d074
 +
 +	return ret;
 +}
++
++static int blk_dropped_open(struct inode *inode, struct file *filp)
++{
++	filp->private_data = inode->u.generic_ip;
++	
++	return 0;
++}
++
++static ssize_t blk_dropped_read(struct file *filp, char __user *buffer,
++				size_t count, loff_t *ppos)
++{
++	struct blk_trace *bt = filp->private_data;
++	char buf[16];
++
++	snprintf(buf, sizeof(buf), "%u\n", atomic_read(&bt->dropped));
++	
++	return simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
++}
++
++static struct file_operations blk_dropped_fops = {
++	.owner =	THIS_MODULE,
++	.open =		blk_dropped_open,
++	.read =		blk_dropped_read,
++};
++
++static int blk_subbuf_start_callback (struct rchan_buf *buf,
++				      void *subbuf,
++				      void *prev_subbuf,
++				      size_t prev_padding)
++{
++	if (relay_buf_full(buf)) {
++		struct blk_trace *bt = buf->chan->private_data;
++
++		atomic_inc(&bt->dropped);
++		return 0;
++	}
++
++	return 1;
++}
++
++static struct rchan_callbacks blk_relay_callbacks = {
++	.subbuf_start = blk_subbuf_start_callback,
++};
 +
 +int blk_start_trace(struct block_device *bdev, char __user *arg)
 +{
@@ -224,11 +268,17 @@ index 0000000..c66d074
 +	bt->dir = dir;
 +	bt->dev = bdev->bd_dev;
 +	atomic_set(&bt->sequence, 0);
++	atomic_set(&bt->dropped, 0);
 +
 +	ret = -EIO;
-+	bt->rchan = relay_open("trace", dir, buts.buf_size, buts.buf_nr, NULL);
++	bt->dropped_file = relayfs_create_file("dropped", dir, 0, &blk_dropped_fops, bt);
++	if (!bt->dropped_file)
++		goto err;
++
++	bt->rchan = relay_open("trace", dir, buts.buf_size, buts.buf_nr, &blk_relay_callbacks);
 +	if (!bt->rchan)
 +		goto err;
++	bt->rchan->private_data = bt;
 +
 +	bt->act_mask = buts.act_mask;
 +	if (!bt->act_mask)
@@ -246,6 +296,8 @@ index 0000000..c66d074
 +	return 0;
 +err:
 +	up(&bdev->bd_sem);
++	if (bt && bt->dropped_file)
++		relayfs_remove_file(bt->dropped_file);
 +	if (dir)
 +		blk_remove_tree(dir);
 +	if (bt)
@@ -500,6 +552,26 @@ index 8e27d0a..bfcde0f 100644
  	/*
  	 * extend uptodate bool to allow < 0 value to be direct io error
  	 */
+diff --git a/drivers/block/cciss.c b/drivers/block/cciss.c
+index 12d7b9b..880892a 100644
+--- a/drivers/block/cciss.c
++++ b/drivers/block/cciss.c
+@@ -38,6 +38,7 @@
+ #include <linux/hdreg.h>
+ #include <linux/spinlock.h>
+ #include <linux/compat.h>
++#include <linux/blktrace_api.h>
+ #include <asm/uaccess.h>
+ #include <asm/io.h>
+ 
+@@ -2330,6 +2331,7 @@ static inline void complete_command( ctl
+ 
+ 	cmd->rq->completion_data = cmd;
+ 	cmd->rq->errors = status;
++	blk_add_trace_rq(cmd->rq->q, cmd->rq, BLK_TA_COMPLETE);
+ 	blk_complete_request(cmd->rq);
+ }
+ 
 diff --git a/drivers/md/dm.c b/drivers/md/dm.c
 index 097d1e5..0411900 100644
 --- a/drivers/md/dm.c
@@ -605,10 +677,10 @@ index 02a585f..195c3b9 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..a37367f
+index 0000000..89d1fce
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
-@@ -0,0 +1,213 @@
+@@ -0,0 +1,215 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -710,6 +782,8 @@ index 0000000..a37367f
 +struct blk_trace {
 +	struct dentry *dir;
 +	struct rchan *rchan;
++	struct dentry *dropped_file;
++	atomic_t dropped;
 +	atomic_t sequence;
 +	u32 dev;
 +	u16 act_mask;
