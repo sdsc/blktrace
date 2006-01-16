@@ -130,10 +130,6 @@ struct thread_information {
 
 	int fd;
 	char fn[MAXPATHLEN + 64];
-	void *buf;
-	unsigned long buf_offset;
-	unsigned int buf_subbuf;
-	unsigned int sequence;
 
 	pthread_mutex_t *fd_lock;
 	FILE *ofile;
