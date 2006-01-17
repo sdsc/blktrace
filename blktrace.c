@@ -143,8 +143,6 @@ struct thread_information {
 	FILE *ofile;
 	char *ofile_buffer;
 
-	volatile int closed;
-
 	unsigned long events_processed;
 	struct device_information *device;
 };
@@ -180,9 +178,6 @@ static volatile int stopped_and_shown;
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void exit_trace(int status);
-
-#define tip_closed(tip)		(*(volatile int *)(&(tip)->closed))
-#define set_tip_closed(tip)	((tip)->closed = 1)
 
 #define dip_tracing(dip)	(*(volatile int *)(&(dip)->trace_started))
 #define dip_set_tracing(dip, v)	((dip)->trace_started = (v))
@@ -482,11 +477,6 @@ static inline void tip_fd_lock(struct thread_information *tip)
 
 static void close_thread(struct thread_information *tip)
 {
-	if (tip_closed(tip))
-		return;
-
-	set_tip_closed(tip);
-
 	if (tip->fd != -1)
 		close(tip->fd);
 	if (tip->ofile)
