@@ -35,6 +35,7 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <errno.h>
+#include <assert.h>
 
 #include "blktrace.h"
 
@@ -50,6 +51,9 @@ static char blktrace_version[] = "0.99";
 #define OFILE_BUF	(128 * 1024)
 
 #define RELAYFS_TYPE	0xF0B4A981
+
+#define RING_INIT_NR	(2)
+#define RING_MAX_NR	(16)
 
 #define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:"
 static struct option l_opts[] = {
@@ -129,6 +133,10 @@ struct thread_information {
 	pthread_t thread;
 
 	int fd;
+	void *fd_buf;
+	unsigned long fd_off;
+	unsigned long fd_size;
+	unsigned long fd_max_size;
 	char fn[MAXPATHLEN + 64];
 
 	pthread_mutex_t *fd_lock;
@@ -165,6 +173,9 @@ static unsigned int buf_nr = BUF_NR;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
+
+#define stopped_and_shown()	(*(volatile int *)(&stopped_and_shown))
+static volatile int stopped_and_shown;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -224,29 +235,125 @@ static void stop_all_traces(void)
 		stop_trace(dip);
 }
 
-static int read_data(struct thread_information *tip, void *buf, int len)
+static int __read_data(struct thread_information *tip, void *buf, int len)
 {
 	char *p = buf;
-	int ret, bytes_left = len;
+	int ret, bytes_done = 0;
 
-	while (!is_done() && bytes_left > 0) {
-		ret = read(tip->fd, p, bytes_left);
-		if (ret == bytes_left)
-			return 0;
+	while (!is_done() && bytes_done < len) {
+		ret = read(tip->fd, p, len - bytes_done);
+		if (ret == (len - bytes_done))
+			return len;
 
 		if (ret < 0) {
-			perror(tip->fn);
-			fprintf(stderr,"Thread %d failed read of %s\n",
-				tip->cpu, tip->fn);
-			break;
+			if (errno == EAGAIN) {
+				if (bytes_done)
+					break;
+				usleep(1000);
+			} else {
+				perror(tip->fn);
+				fprintf(stderr,"Thread %d failed read of %s\n",
+					tip->cpu, tip->fn);
+				break;
+			}
 		} else if (ret > 0) {
 			p += ret;
-			bytes_left -= ret;
-		} else
+			bytes_done += ret;
+		} else if (bytes_done)
+			break;
+		else
 			usleep(1000);
 	}
 
+	if (bytes_done)
+		return bytes_done;
+
 	return -1;
+}
+
+static int resize_ringbuffer(struct thread_information *tip)
+{
+	if (tip->fd_max_size >= RING_MAX_NR * buf_size * buf_nr)
+		return 1;
+
+	tip->fd_buf = realloc(tip->fd_buf, 2 * tip->fd_max_size);
+	tip->fd_max_size <<= 1;
+	return 0;
+}
+
+static int __refill_ringbuffer(struct thread_information *tip, unsigned int len)
+{
+	unsigned long off;
+	int ret;
+
+	if (len + tip->fd_size > tip->fd_max_size)
+		if (resize_ringbuffer(tip))
+			return 1;
+
+	off = (tip->fd_size + tip->fd_off) & (tip->fd_max_size - 1);
+	if (off + len > tip->fd_max_size)
+		len = tip->fd_max_size - off;
+
+	assert(len > 0);
+
+	ret = __read_data(tip, tip->fd_buf + off, len);
+	if (ret < 0)
+		return -1;
+
+	tip->fd_size += ret;
+	if (ret == len)
+		return 0;
+
+	return 1;
+}
+
+/*
+ * keep filling ring until we get a short read
+ */
+static void refill_ringbuffer(struct thread_information *tip, unsigned int len)
+{
+	int ret;
+
+	if (is_done())
+		return;
+
+	do {
+		ret = __refill_ringbuffer(tip, len);
+	} while (ret == len);
+}
+
+static int read_data(struct thread_information *tip, void *buf, int len)
+{
+	unsigned int start_size, end_size;
+
+	/*
+	 * if our ringbuffer is less than 50% full, fill it as much as we can
+	 */
+	if (!tip->fd_size || (tip->fd_max_size / tip->fd_size) >= 2)
+		refill_ringbuffer(tip, buf_size);
+
+	if (len > tip->fd_size) {
+		assert(is_done());
+		return -1;
+	}
+
+	/*
+	 * see if we wrap the ring
+	 */
+	start_size = len;
+	end_size = 0;
+	if (len > (tip->fd_max_size - tip->fd_off)) {
+		start_size = tip->fd_max_size - tip->fd_off;
+		end_size = len - start_size;
+	}
+
+	memcpy(buf, tip->fd_buf + tip->fd_off, start_size);
+	if (end_size)
+		memcpy(buf + start_size, tip->fd_buf, end_size);
+
+	tip->fd_off = (tip->fd_off + len) & (tip->fd_max_size - 1);
+	tip->fd_size -= len;
+	return 0;
 }
 
 static int write_data(FILE *file, void *buf, unsigned int buf_len)
@@ -293,7 +400,7 @@ static int get_event_slow(struct thread_information *tip,
 	void *p;
 
 	/*
-	 * check is trace is inside
+	 * check if trace is inside
 	 */
 	offset = 0;
 	p = bit;
@@ -331,7 +438,7 @@ static int get_event_slow(struct thread_information *tip,
 	 * now get the rest of it
 	 */
 	p = &bit->sequence;
-	if (!read_data(tip, p, sizeof(*bit) - inc))
+	if (read_data(tip, p, sizeof(*bit) - inc))
 		return -1;
 
 	return 0;
@@ -392,7 +499,7 @@ static void *extract(void *arg)
 
 	snprintf(tip->fn, sizeof(tip->fn), "%s/block/%s/trace%d",
 			relay_path, tip->device->buts_name, tip->cpu);
-	tip->fd = open(tip->fn, O_RDONLY);
+	tip->fd = open(tip->fn, O_RDONLY | O_NONBLOCK);
 	if (tip->fd < 0) {
 		perror(tip->fn);
 		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu,
@@ -400,8 +507,16 @@ static void *extract(void *arg)
 		exit_trace(1);
 	}
 
+	/*
+	 * start with a ringbuffer that is twice the size of the kernel side
+	 */
+	tip->fd_max_size = buf_size * buf_nr * RING_INIT_NR;
+	tip->fd_buf = malloc(tip->fd_max_size);
+	tip->fd_off = 0;
+	tip->fd_size = 0;
+
 	pdu_data = NULL;
-	while (!is_done()) {
+	while (1) {
 		if (get_event(tip, &t))
 			break;
 
