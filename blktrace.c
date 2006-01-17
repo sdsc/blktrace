@@ -480,6 +480,28 @@ static inline void tip_fd_lock(struct thread_information *tip)
 		pthread_mutex_lock(tip->fd_lock);
 }
 
+static void close_thread(struct thread_information *tip)
+{
+	if (tip_closed(tip))
+		return;
+
+	set_tip_closed(tip);
+
+	if (tip->fd != -1)
+		close(tip->fd);
+	if (tip->ofile)
+		fclose(tip->ofile);
+	if (tip->ofile_buffer)
+		free(tip->ofile_buffer);
+	if (tip->fd_buf)
+		free(tip->fd_buf);
+
+	tip->fd = -1;
+	tip->ofile = NULL;
+	tip->ofile_buffer = NULL;
+	tip->fd_buf = NULL;
+}
+
 static void *extract(void *arg)
 {
 	struct thread_information *tip = arg;
@@ -559,27 +581,8 @@ static void *extract(void *arg)
 		tip->events_processed++;
 	}
 
-	exit_trace(1);
+	close_thread(tip);
 	return NULL;
-}
-
-static void close_thread(struct thread_information *tip)
-{
-	if (tip_closed(tip))
-		return;
-
-	set_tip_closed(tip);
-
-	if (tip->fd != -1)
-		close(tip->fd);
-	if (tip->ofile)
-		fclose(tip->ofile);
-	if (tip->ofile_buffer)
-		free(tip->ofile_buffer);
-
-	tip->fd = -1;
-	tip->ofile = NULL;
-	tip->ofile_buffer = NULL;
 }
 
 static int start_threads(struct device_information *dip)
@@ -643,15 +646,11 @@ static int start_threads(struct device_information *dip)
 static void stop_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
-	long ret;
+	unsigned long ret;
 	int i;
 
-	for_each_tip(dip, tip, i) {
-		if (pthread_join(tip->thread, (void *) &ret))
-			perror("thread_join");
-
-		close_thread(tip);
-	}
+	for_each_tip(dip, tip, i)
+		(void) pthread_join(tip->thread, (void *) &ret);
 }
 
 static void stop_all_threads(void)
@@ -666,19 +665,15 @@ static void stop_all_threads(void)
 static void stop_all_tracing(void)
 {
 	struct device_information *dip;
-	struct thread_information *tip;
-	int i, j;
+	int i;
 
-	for_each_dip(dip, i) {
-		for_each_tip(dip, tip, j)
-			close_thread(tip);
-
+	for_each_dip(dip, i)
 		stop_trace(dip);
-	}
 }
 
 static void exit_trace(int status)
 {
+	stop_all_threads();
 	stop_all_tracing();
 	exit(status);
 }
@@ -847,6 +842,9 @@ static void show_usage(char *program)
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
+	stopped_and_shown = 1;
+	stop_all_threads();
+	stop_all_traces();
 	show_stats();
 }
 
@@ -993,9 +991,11 @@ int main(int argc, char *argv[])
 	while (!is_done())
 		sleep(1);
 
-	stop_all_threads();
-	stop_all_traces();
-	show_stats();
+	if (!stopped_and_shown) {
+		stop_all_threads();
+		stop_all_traces();
+		show_stats();
+	}
 
 	return 0;
 }
