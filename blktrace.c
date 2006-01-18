@@ -29,6 +29,7 @@
 #include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/statfs.h>
+#include <sys/poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
@@ -53,7 +54,7 @@ static char blktrace_version[] = "0.99";
 #define RELAYFS_TYPE	0xF0B4A981
 
 #define RING_INIT_NR	(2)
-#define RING_MAX_NR	(16)
+#define RING_MAX_NR	(16UL)
 
 #define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:"
 static struct option l_opts[] = {
@@ -152,6 +153,7 @@ struct device_information {
 	char *path;
 	char buts_name[32];
 	volatile int trace_started;
+	unsigned long drop_count;
 	struct thread_information *threads;
 };
 
@@ -166,14 +168,17 @@ static char *output_name;
 static char *output_dir;
 static int act_mask = ~0U;
 static int kill_running_trace;
-static unsigned int buf_size = BUF_SIZE;
-static unsigned int buf_nr = BUF_NR;
+static unsigned long buf_size = BUF_SIZE;
+static unsigned long buf_nr = BUF_NR;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
 
-#define stopped_and_shown()	(*(volatile int *)(&stopped_and_shown))
-static volatile int stopped_and_shown;
+#define is_trace_stopped()	(*(volatile int *)(&trace_stopped))
+static volatile int trace_stopped;
+
+#define is_stat_shown()	(*(volatile int *)(&stat_shown))
+static volatile int stat_shown;
 
 static pthread_mutex_t stdout_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -188,6 +193,37 @@ static void exit_trace(int status);
 #define for_each_dip(__d, __i)	__for_each_dip(__d, __i, ndevs)
 #define for_each_tip(__d, __t, __i)	\
 	for (__i = 0, __t = (__d)->threads; __i < ncpus; __i++, __t++)
+
+static int get_dropped_count(const char *buts_name)
+{
+	int fd;
+	char tmp[MAXPATHLEN + 64];
+
+	snprintf(tmp, sizeof(tmp), "%s/block/%s/dropped",
+		 relay_path, buts_name);
+
+	fd = open(tmp, O_RDONLY);
+	if (fd < 0) {
+		/*
+		 * this may be ok, if the kernel doesn't support dropped counts
+		 */
+		if (errno == ENOENT)
+			return 0;
+
+		fprintf(stderr, "Couldn't open dropped file %s\n", tmp);
+		return -1;
+	}
+
+	if (read(fd, tmp, sizeof(tmp)) < 0) {
+		perror(tmp);
+		close(fd);
+		return -1;
+	}
+
+	close(fd);
+
+	return atoi(tmp);
+}
 
 static int start_trace(struct device_information *dip)
 {
@@ -226,11 +262,25 @@ static void stop_all_traces(void)
 	struct device_information *dip;
 	int i;
 
-	for_each_dip(dip, i)
+	for_each_dip(dip, i) {
+		dip->drop_count = get_dropped_count(dip->buts_name);
 		stop_trace(dip);
+	}
 }
 
-static int __read_data(struct thread_information *tip, void *buf, int len)
+static void wait_for_data(struct thread_information *tip)
+{
+	struct pollfd pfd = { .fd = tip->fd, .events = POLLIN };
+
+	while (!is_done()) {
+		poll(&pfd, 1, 10);
+		if (pfd.revents & POLLIN)
+			break;
+	}
+}
+
+static int __read_data(struct thread_information *tip, void *buf, int len,
+		       int block)
 {
 	char *p = buf;
 	int ret, bytes_done = 0;
@@ -242,9 +292,9 @@ static int __read_data(struct thread_information *tip, void *buf, int len)
 
 		if (ret < 0) {
 			if (errno == EAGAIN) {
-				if (bytes_done)
+				if (bytes_done || !block)
 					break;
-				usleep(1000);
+				wait_for_data(tip);
 			} else {
 				perror(tip->fn);
 				fprintf(stderr,"Thread %d failed read of %s\n",
@@ -254,36 +304,46 @@ static int __read_data(struct thread_information *tip, void *buf, int len)
 		} else if (ret > 0) {
 			p += ret;
 			bytes_done += ret;
-		} else if (bytes_done)
+		} else if (bytes_done || !block)
 			break;
 		else
-			usleep(1000);
+			wait_for_data(tip);
 	}
 
 	if (bytes_done)
 		return bytes_done;
+	if (!block)
+		return 0;
 
 	return -1;
 }
 
+#define can_grow_ring(tip)	((tip)->fd_max_size < RING_MAX_NR * buf_size * buf_nr)
+
 static int resize_ringbuffer(struct thread_information *tip)
 {
-	if (tip->fd_max_size >= RING_MAX_NR * buf_size * buf_nr)
+	if (!can_grow_ring(tip))
 		return 1;
 
 	tip->fd_buf = realloc(tip->fd_buf, 2 * tip->fd_max_size);
+
+	/*
+	 * if the ring currently wraps, copy range over
+	 */
+	if (tip->fd_off + tip->fd_size > tip->fd_max_size) {
+		unsigned long wrap_size = tip->fd_size - (tip->fd_max_size - tip->fd_off);
+		memmove(tip->fd_buf + tip->fd_off, tip->fd_buf, wrap_size);
+	}
+
 	tip->fd_max_size <<= 1;
 	return 0;
 }
 
-static int __refill_ringbuffer(struct thread_information *tip, unsigned int len)
+static int __refill_ringbuffer(struct thread_information *tip, unsigned int len,
+			       int block)
 {
 	unsigned long off;
 	int ret;
-
-	if (len + tip->fd_size > tip->fd_max_size)
-		if (resize_ringbuffer(tip))
-			return 1;
 
 	off = (tip->fd_size + tip->fd_off) & (tip->fd_max_size - 1);
 	if (off + len > tip->fd_max_size)
@@ -291,7 +351,7 @@ static int __refill_ringbuffer(struct thread_information *tip, unsigned int len)
 
 	assert(len > 0);
 
-	ret = __read_data(tip, tip->fd_buf + off, len);
+	ret = __read_data(tip, tip->fd_buf + off, len, block);
 	if (ret < 0)
 		return -1;
 
@@ -305,32 +365,27 @@ static int __refill_ringbuffer(struct thread_information *tip, unsigned int len)
 /*
  * keep filling ring until we get a short read
  */
-static void refill_ringbuffer(struct thread_information *tip, unsigned int len)
+static void refill_ringbuffer(struct thread_information *tip, int block)
 {
+	int len = buf_size;
 	int ret;
 
-	if (is_done())
-		return;
+	if (len + tip->fd_size > tip->fd_max_size)
+		resize_ringbuffer(tip);
 
 	do {
-		ret = __refill_ringbuffer(tip, len);
-	} while (ret == len);
+		ret = __refill_ringbuffer(tip, len, block);
+	} while (ret == len && !is_done());
 }
 
 static int read_data(struct thread_information *tip, void *buf, int len)
 {
 	unsigned int start_size, end_size;
 
-	/*
-	 * if our ringbuffer is less than 50% full, fill it as much as we can
-	 */
-	if (!tip->fd_size || (tip->fd_max_size / tip->fd_size) >= 2)
-		refill_ringbuffer(tip, buf_size);
+	refill_ringbuffer(tip, len > tip->fd_size);
 
-	if (len > tip->fd_size) {
-		assert(is_done());
+	if (len > tip->fd_size)
 		return -1;
-	}
 
 	/*
 	 * see if we wrap the ring
@@ -663,8 +718,12 @@ static void stop_all_tracing(void)
 
 static void exit_trace(int status)
 {
-	stop_all_threads();
-	stop_all_tracing();
+	if (!is_trace_stopped()) {
+		trace_stopped = 1;
+		stop_all_threads();
+		stop_all_tracing();
+	}
+
 	exit(status);
 }
 
@@ -746,43 +805,18 @@ static int start_devices(void)
 	return 0;
 }
 
-static int get_dropped_count(const char *buts_name)
-{
-	int fd;
-	char tmp[MAXPATHLEN + 64];
-
-	snprintf(tmp, sizeof(tmp), "%s/block/%s/dropped",
-		 relay_path, buts_name);
-
-	fd = open(tmp, O_RDONLY);
-	if (fd < 0) {
-		/*
-		 * this may be ok, if the kernel doesn't support dropped counts
-		 */
-		if (errno == ENOENT)
-			return 0;
-
-		fprintf(stderr, "Couldn't open dropped file %s\n", tmp);
-		return -1;
-	}
-
-	if (read(fd, tmp, sizeof(tmp)) < 0) {
-		perror(tmp);
-		close(fd);
-		return -1;
-	}
-
-	close(fd);
-
-	return atoi(tmp);
-}
-
 static void show_stats(void)
 {
-	int i, j, dropped, total_drops, no_stdout = 0;
+	int i, j, no_stdout = 0;
 	struct device_information *dip;
 	struct thread_information *tip;
 	unsigned long long events_processed;
+	unsigned long total_drops;
+
+	if (is_stat_shown())
+		return;
+
+	stat_shown = 1;
 
 	if (output_name && !strcmp(output_name, "-"))
 		no_stdout = 1;
@@ -798,11 +832,10 @@ static void show_stats(void)
 			       		tip->cpu, tip->events_processed);
 			events_processed += tip->events_processed;
 		}
-		dropped = get_dropped_count(dip->buts_name);
-		total_drops += dropped;
+		total_drops += dip->drop_count;
 		if (!no_stdout)
-			printf("  Total:  %20lld events (dropped %d)\n",
-					events_processed, dropped);
+			printf("  Total:  %20lld events (dropped %lu)\n",
+					events_processed, dip->drop_count);
 	}
 
 	if (total_drops)
@@ -828,13 +861,15 @@ static void show_usage(char *program)
 {
 	fprintf(stderr, "Usage: %s %s %s",program, blktrace_version, usage_str);
 }
-
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
-	stopped_and_shown = 1;
-	stop_all_threads();
-	stop_all_traces();
+	if (!is_trace_stopped()) {
+		trace_stopped = 1;
+		stop_all_threads();
+		stop_all_traces();
+	}
+
 	show_stats();
 }
 
@@ -897,19 +932,19 @@ int main(int argc, char *argv[])
 			printf("%s version %s\n", argv[0], blktrace_version);
 			return 0;
 		case 'b':
-			buf_size = atoi(optarg);
+			buf_size = strtoul(optarg, NULL, 10);
 			if (buf_size <= 0 || buf_size > 16*1024) {
 				fprintf(stderr,
-					"Invalid buffer size (%d)\n", buf_size);
+					"Invalid buffer size (%lu)\n",buf_size);
 				return 1;
 			}
 			buf_size <<= 10;
 			break;
 		case 'n':
-			buf_nr = atoi(optarg);
+			buf_nr = strtoul(optarg, NULL, 10);
 			if (buf_nr <= 0) {
 				fprintf(stderr,
-					"Invalid buffer nr (%d)\n", buf_nr);
+					"Invalid buffer nr (%lu)\n", buf_nr);
 				return 1;
 			}
 			break;
@@ -981,11 +1016,13 @@ int main(int argc, char *argv[])
 	while (!is_done())
 		sleep(1);
 
-	if (!stopped_and_shown) {
+	if (!is_trace_stopped()) {
+		trace_stopped = 1;
 		stop_all_threads();
 		stop_all_traces();
-		show_stats();
 	}
+
+	show_stats();
 
 	return 0;
 }
