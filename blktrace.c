@@ -356,10 +356,7 @@ static int __refill_ringbuffer(struct thread_information *tip, int len,
 		return -1;
 
 	tip->fd_size += ret;
-	if (ret == len)
-		return 0;
-
-	return 1;
+	return ret;
 }
 
 /*
