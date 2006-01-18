@@ -370,12 +370,12 @@ static void refill_ringbuffer(struct thread_information *tip, int block)
 	int len = buf_size;
 	int ret;
 
-	if (len + tip->fd_size > tip->fd_max_size)
-		resize_ringbuffer(tip);
-
 	do {
+		if (len + tip->fd_size > tip->fd_max_size)
+			resize_ringbuffer(tip);
+
 		ret = __refill_ringbuffer(tip, len, block);
-	} while (ret == len && !is_done());
+	} while ((ret = len) && !is_done());
 }
 
 static int read_data(struct thread_information *tip, void *buf, int len)
