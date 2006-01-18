@@ -282,7 +282,6 @@ static int __read_data(struct thread_information *tip, void *buf, int len,
 
 	while (!is_done()) {
 		ret = read(tip->fd, buf, len);
-		fprintf(stderr, "got %d, block %d\n", ret, block);
 		if (ret > 0)
 			break;
 		else if (!ret) {
