@@ -272,33 +272,24 @@ static void wait_for_data(struct thread_information *tip)
 {
 	struct pollfd pfd = { .fd = tip->fd, .events = POLLIN };
 
-	while (!is_done()) {
-		poll(&pfd, 1, 10);
-		if (pfd.revents & POLLIN)
-			break;
-	}
+	poll(&pfd, 1, 10);
 }
 
 static int __read_data(struct thread_information *tip, void *buf, int len,
 		       int block)
 {
-	int ret = 0, waited = 0;
+	int ret = 0;
 
-	while (!is_done() || waited) {
+	while (!is_done()) {
 		ret = read(tip->fd, buf, len);
-		waited = 0;
 		fprintf(stderr, "got %d, block %d\n", ret, block);
 		if (ret > 0)
 			break;
 		else if (!ret) {
 			if (!block)
 				break;
-			/*
-			 * the waited logic is needed, because the relayfs
-			 * poll works on a sub-buffer granularity
-			 */
+
 			wait_for_data(tip);
-			waited = 1;
 		} else {
 			if (errno != EAGAIN) {
 				perror(tip->fn);
@@ -312,7 +303,6 @@ static int __read_data(struct thread_information *tip, void *buf, int len,
 			}
 
 			wait_for_data(tip);
-			waited = 0;
 		}
 	}
 
