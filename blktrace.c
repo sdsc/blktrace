@@ -339,7 +339,7 @@ static int resize_ringbuffer(struct thread_information *tip)
 	return 0;
 }
 
-static int __refill_ringbuffer(struct thread_information *tip, unsigned int len,
+static int __refill_ringbuffer(struct thread_information *tip, int len,
 			       int block)
 {
 	unsigned long off;
@@ -378,7 +378,8 @@ static void refill_ringbuffer(struct thread_information *tip, int block)
 	} while ((ret = len) && !is_done());
 }
 
-static int read_data(struct thread_information *tip, void *buf, int len)
+static int read_data(struct thread_information *tip, void *buf,
+		     unsigned int len)
 {
 	unsigned int start_size, end_size;
 
