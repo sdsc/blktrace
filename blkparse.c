@@ -37,6 +37,11 @@
 
 static char blkparse_version[] = "0.99";
 
+struct skip_info {
+	unsigned long start, end;
+	struct skip_info *prev, *next;
+};
+
 struct per_dev_info {
 	dev_t dev;
 	char *name;
@@ -63,6 +68,8 @@ struct per_dev_info {
 	unsigned int cpu_map_max;
 
 	struct per_cpu_info *cpus;
+	struct skip_info *skips_head;
+	struct skip_info *skips_tail;
 };
 
 struct per_process_info {
@@ -257,6 +264,95 @@ static volatile int done;
 #define CPUS_PER_LONG	(8 * sizeof(unsigned long))
 #define CPU_IDX(cpu)	((cpu) / CPUS_PER_LONG)
 #define CPU_BIT(cpu)	((cpu) & (CPUS_PER_LONG - 1))
+
+static void insert_skip(struct per_dev_info *pdi, unsigned long start,
+			unsigned long end)
+{
+	struct skip_info *sip;
+
+	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
+		if (end == (sip->start - 1)) {
+			sip->start = start;
+			return;
+		} else if (start == (sip->end + 1)) {
+			sip->end = end;
+			return;
+		}
+	}
+
+	sip = malloc(sizeof(struct skip_info));
+	sip->start = start;
+	sip->end = end;
+	sip->prev = sip->next = NULL;
+	if (pdi->skips_tail == NULL)
+		pdi->skips_head = pdi->skips_tail = sip;
+	else {
+		sip->prev = pdi->skips_tail;
+		pdi->skips_tail->next = sip;
+		pdi->skips_tail = sip;
+	}
+}
+
+static void remove_sip(struct per_dev_info *pdi, struct skip_info *sip)
+{
+	if (sip->prev == NULL) {
+		if (sip->next == NULL)
+			pdi->skips_head = pdi->skips_tail = NULL;
+		else {
+			pdi->skips_head = sip->next;
+			sip->next->prev = NULL;
+		}
+	} else if (sip->next == NULL) {
+		pdi->skips_tail = sip->prev;
+		sip->prev->next = NULL;
+	} else {
+		sip->prev->next = sip->next;
+		sip->next->prev = sip->prev;
+	}
+
+	sip->prev = sip->next = NULL;
+	free(sip);
+}
+
+#define IN_SKIP(sip,seq) (((sip)->start <= (seq)) && ((seq) <= sip->end))
+static int check_current_skips(struct per_dev_info *pdi, unsigned long seq)
+{
+	struct skip_info *sip;
+
+	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
+		if (IN_SKIP(sip,seq)) {
+			if (sip->start == seq) {
+				if (sip->end == seq)
+					remove_sip(pdi,sip);
+				else
+					sip->start += 1;
+			} else if (sip->end == seq)
+				sip->end -= 1;
+			else {
+				sip->end = seq - 1;
+				insert_skip(pdi,seq+1,sip->end);
+			}
+			return 1;
+		}
+	}
+	return 0;
+}
+
+static void collect_pdi_skips(struct per_dev_info *pdi)
+{
+	struct skip_info *sip;
+
+	pdi->skips = 0;
+	pdi->seq_skips = 0;
+	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
+		pdi->skips += 1;
+		pdi->seq_skips += (sip->end - sip->start + 1);
+		if (verbose)
+			fprintf(stderr, "(%d,%d): skipping %lu -> %lu\n",
+				MAJOR(pdi->dev), MINOR(pdi->dev),
+				sip->start, sip->end);
+	}
+}
 
 static void cpu_mark_online(struct per_dev_info *pdi, unsigned int cpu)
 {
@@ -458,7 +554,7 @@ static struct trace *trace_rb_find(dev_t device, unsigned long sequence,
 
 		while (((n = rb_next(prev)) != NULL) && max--) {
 			__t = rb_entry(n, struct trace, rb_node);
-			
+
 			if (__t->bit->device == device &&
 			    __t->bit->sequence == sequence)
 				return __t;
@@ -466,7 +562,7 @@ static struct trace *trace_rb_find(dev_t device, unsigned long sequence,
 			prev = n;
 		}
 	}
-			
+
 	return NULL;
 }
 
@@ -781,6 +877,9 @@ static struct per_dev_info *get_dev_info(dev_t dev)
 	pdi->last_read_time = 0;
 	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
 	pdi->rb_last_entries = 0;
+
+	pdi->skips_head = pdi->skips_tail = NULL;
+
 	return pdi;
 }
 
@@ -1308,12 +1407,11 @@ static void show_device_and_cpu_stats(void)
 			rrate, wrate);
 		fprintf(ofp, "Events (%s): %'Lu entries\n",
 			get_dev_name(pdi, line, sizeof(line)), pdi->events);
-		fprintf(ofp, "Skips: %'lu forward (%'llu - %5.1lf%%) %'lu backward (%'llu - %5.1lf%%)\n",
+
+		collect_pdi_skips(pdi);
+		fprintf(ofp, "Skips: %'lu forward (%'llu - %5.1lf%%)\n",
 			pdi->skips,pdi->seq_skips,
 			100.0 * ((double)pdi->seq_skips /
-				(double)(pdi->events + pdi->seq_skips)),
-			pdi->nskips,pdi->seq_nskips,
-			100.0 * ((double)pdi->seq_nskips /
 				(double)(pdi->events + pdi->seq_skips)));
 	}
 }
@@ -1501,7 +1599,7 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 	unsigned long expected_sequence = pdi->last_sequence + 1;
 	struct blk_io_trace *bit = t->bit;
 	struct trace *__t;
-	
+
 	if (!expected_sequence) {
 		/*
 		 * 1 should be the first entry, just allow it
@@ -1530,18 +1628,10 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 		return 1;
 	} else {
 skip:
-		if (verbose) {
-			fprintf(stderr, "(%d,%d): skipping %lu -> %u\n",
-				MAJOR(pdi->dev), MINOR(pdi->dev),
-				pdi->last_sequence, bit->sequence);
-		}
-		if (bit->sequence > pdi->last_sequence) {
-			pdi->skips++;
-			pdi->seq_skips += (bit->sequence - pdi->last_sequence);
-		} else {
-			pdi->nskips++;
-			pdi->seq_nskips += (pdi->last_sequence - bit->sequence);
-		}
+		if (check_current_skips(pdi,bit->sequence))
+			return 0;
+
+		insert_skip(pdi,expected_sequence,bit->sequence-1);
 		return 0;
 	}
 }
