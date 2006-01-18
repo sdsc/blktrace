@@ -282,40 +282,41 @@ static void wait_for_data(struct thread_information *tip)
 static int __read_data(struct thread_information *tip, void *buf, int len,
 		       int block)
 {
-	char *p = buf;
-	int ret, bytes_done = 0;
+	int ret = 0, waited = 0;
 
-	while (!is_done() && bytes_done < len) {
-		ret = read(tip->fd, p, len - bytes_done);
-		if (ret == (len - bytes_done))
-			return len;
-
-		if (ret < 0) {
-			if (errno == EAGAIN) {
-				if (bytes_done || !block)
-					break;
-				wait_for_data(tip);
-			} else {
+	while (!is_done() || waited) {
+		ret = read(tip->fd, buf, len);
+		waited = 0;
+		fprintf(stderr, "got %d, block %d\n", ret, block);
+		if (ret > 0)
+			break;
+		else if (!ret) {
+			if (!block)
+				break;
+			/*
+			 * the waited logic is needed, because the relayfs
+			 * poll works on a sub-buffer granularity
+			 */
+			wait_for_data(tip);
+			waited = 1;
+		} else {
+			if (errno != EAGAIN) {
 				perror(tip->fn);
 				fprintf(stderr,"Thread %d failed read of %s\n",
 					tip->cpu, tip->fn);
 				break;
 			}
-		} else if (ret > 0) {
-			p += ret;
-			bytes_done += ret;
-		} else if (bytes_done || !block)
-			break;
-		else
+			if (!block) {
+				ret = 0;
+				break;
+			}
+
 			wait_for_data(tip);
+			waited = 0;
+		}
 	}
 
-	if (bytes_done)
-		return bytes_done;
-	if (!block)
-		return 0;
-
-	return -1;
+	return ret;
 }
 
 #define can_grow_ring(tip)	((tip)->fd_max_size < RING_MAX_NR * buf_size * buf_nr)
