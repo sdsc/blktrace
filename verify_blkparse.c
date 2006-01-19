@@ -22,8 +22,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	last_seq = -1;
 	last_time = 0;
-	last_seq = alias = nr = 0;
+	alias = nr = 0;
 	total_entries = 0;
 	while ((p = fgets(line, sizeof(line), f)) != NULL) {
 		if (sscanf(p, "%3d,%3d %2d %8d %lf", &major, &minor, &cpu, &seq, &this_time) != 5)
