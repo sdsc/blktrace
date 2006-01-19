@@ -344,7 +344,7 @@ static void collect_pdi_skips(struct per_dev_info *pdi)
 
 	pdi->skips = 0;
 	pdi->seq_skips = 0;
-	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
+	for (sip = pdi->skips_head; sip != NULL; sip = sip->next) {
 		pdi->skips += 1;
 		pdi->seq_skips += (sip->end - sip->start + 1);
 		if (verbose)
