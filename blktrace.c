@@ -322,7 +322,7 @@ static int resize_ringbuffer(struct thread_information *tip)
 	 */
 	if (tip->fd_off + tip->fd_size > tip->fd_max_size) {
 		unsigned long wrap_size = tip->fd_size - (tip->fd_max_size - tip->fd_off);
-		memmove(tip->fd_buf + tip->fd_off, tip->fd_buf, wrap_size);
+		memmove(tip->fd_buf + tip->fd_max_size, tip->fd_buf, wrap_size);
 	}
 
 	tip->fd_max_size <<= 1;
