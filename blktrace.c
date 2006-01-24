@@ -362,7 +362,7 @@ static void refill_ringbuffer(struct thread_information *tip, int block)
 			resize_ringbuffer(tip);
 
 		ret = __refill_ringbuffer(tip, len, block);
-	} while ((ret = len) && !is_done());
+	} while ((ret == len) && !is_done());
 }
 
 static int read_data(struct thread_information *tip, void *buf,

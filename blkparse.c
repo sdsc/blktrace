@@ -1982,7 +1982,7 @@ static char usage_str[] = \
 	"\t-o Output file. If not given, output is stdout\n" \
 	"\t-b stdin read batching\n" \
 	"\t-s Show per-program io statistics\n" \
-	"\t-n Hash processes by name, not pid\n" \
+	"\t-h Hash processes by name, not pid\n" \
 	"\t-t Track individual ios. Will tell you the time a request took\n" \
 	"\t   to get queued, to get dispatched, and to get completed\n" \
 	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
