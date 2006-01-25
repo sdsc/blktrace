@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..876f07b
+index 0000000..aa1b4f8
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,309 @@
+@@ -0,0 +1,310 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -85,12 +85,12 @@ index 0000000..876f07b
 +	memcpy(t.comm, current->comm, sizeof(t.comm));
 +
 +	/*
-+	 * need to serialize this part on the local processor to prevent
-+	 * interrupts for messing with sequence <-> time relation
++	 * need to serialize this part completely to prevent multiple CPUs
++	 * from misordering events
 +	 */
-+	local_irq_save(flags);
++	spin_lock_irqsave(&bt->lock, flags);
 +
-+	t.sequence	= atomic_add_return(1, &bt->sequence);
++	t.sequence	= ++bt->sequence;
 +
 +	cpu = smp_processor_id();
 +	t.cpu		= cpu;
@@ -100,7 +100,7 @@ index 0000000..876f07b
 +	if (pdu_len)
 +		__relay_write(bt->rchan, pdu_data, pdu_len);
 +
-+	local_irq_restore(flags);
++	spin_unlock_irqrestore(&bt->lock, flags);
 +}
 +
 +EXPORT_SYMBOL_GPL(__blk_add_trace);
@@ -267,7 +267,8 @@ index 0000000..876f07b
 +
 +	bt->dir = dir;
 +	bt->dev = bdev->bd_dev;
-+	atomic_set(&bt->sequence, 0);
++	bt->sequence = 0;
++	spin_lock_init(&bt->lock);
 +	atomic_set(&bt->dropped, 0);
 +
 +	ret = -EIO;
@@ -676,10 +677,10 @@ index 02a585f..195c3b9 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..89d1fce
+index 0000000..d6b4317
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,216 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -783,7 +784,8 @@ index 0000000..89d1fce
 +	struct rchan *rchan;
 +	struct dentry *dropped_file;
 +	atomic_t dropped;
-+	atomic_t sequence;
++	spinlock_t lock;
++	unsigned long sequence;
 +	u32 dev;
 +	u16 act_mask;
 +	u64 start_lba;
