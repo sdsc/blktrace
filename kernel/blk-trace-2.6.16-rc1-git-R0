@@ -344,7 +344,7 @@ index 0000000..876f07b
 +module_init(blk_trace_init);
 +
 diff --git a/block/elevator.c b/block/elevator.c
-index 99a4d7b..e0b8179 100644
+index c9f424d..793c686 100644
 --- a/block/elevator.c
 +++ b/block/elevator.c
 @@ -33,6 +33,7 @@
@@ -355,7 +355,7 @@ index 99a4d7b..e0b8179 100644
  
  #include <asm/uaccess.h>
  
-@@ -326,6 +327,8 @@ void __elv_add_request(request_queue_t *
+@@ -333,6 +334,8 @@ void __elv_add_request(request_queue_t *
  	struct list_head *pos;
  	unsigned ordseq;
  
@@ -364,15 +364,14 @@ index 99a4d7b..e0b8179 100644
  	if (q->ordcolor)
  		rq->flags |= REQ_ORDERED_COLOR;
  
-@@ -486,6 +489,8 @@ struct request *elv_next_request(request
+@@ -491,6 +494,7 @@ struct request *elv_next_request(request
+ 			 * not be passed by new incoming requests
+ 			 */
  			rq->flags |= REQ_STARTED;
++			blk_add_trace_rq(q, rq, BLK_TA_ISSUE);
  		}
  
-+		blk_add_trace_rq(q, rq, BLK_TA_ISSUE);
-+
  		if (!q->boundary_rq || q->boundary_rq == rq) {
- 			q->end_sector = rq_end_sector(rq);
- 			q->boundary_rq = NULL;
 diff --git a/block/ioctl.c b/block/ioctl.c
 index e110949..63e67a2 100644
 --- a/block/ioctl.c
@@ -573,7 +572,7 @@ index 12d7b9b..880892a 100644
  }
  
 diff --git a/drivers/md/dm.c b/drivers/md/dm.c
-index 097d1e5..0411900 100644
+index 8c16359..8c979c2 100644
 --- a/drivers/md/dm.c
 +++ b/drivers/md/dm.c
 @@ -17,6 +17,7 @@
@@ -584,7 +583,7 @@ index 097d1e5..0411900 100644
  
  static const char *_name = DM_NAME;
  
-@@ -303,6 +304,8 @@ static inline void dec_pending(struct dm
+@@ -303,6 +304,8 @@ static void dec_pending(struct dm_io *io
  			/* nudge anyone waiting on suspend queue */
  			wake_up(&io->md->wait);
  
@@ -621,7 +620,7 @@ index 097d1e5..0411900 100644
  	else if (r < 0) {
  		/* error the io and bail out */
 diff --git a/fs/bio.c b/fs/bio.c
-index 7b30695..c0cbbd4 100644
+index bbc442b..8a1b0b6 100644
 --- a/fs/bio.c
 +++ b/fs/bio.c
 @@ -25,6 +25,7 @@
@@ -643,7 +642,7 @@ index 7b30695..c0cbbd4 100644
  	BUG_ON(bi->bi_idx != 0);
  	atomic_set(&bp->cnt, 3);
 diff --git a/fs/compat_ioctl.c b/fs/compat_ioctl.c
-index f0b7256..67e901a 100644
+index 5dd0207..010e02b 100644
 --- a/fs/compat_ioctl.c
 +++ b/fs/compat_ioctl.c
 @@ -72,6 +72,7 @@
@@ -910,7 +909,7 @@ index 8fad50f..5bed09a 100644
  ULONG_IOCTL(BLKFRASET)
  /* RAID */
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index d1e370d..98b381e 100644
+index b77f260..5575284 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
 @@ -196,6 +196,8 @@ extern int dir_notify_enable;
