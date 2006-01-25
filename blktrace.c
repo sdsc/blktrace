@@ -623,7 +623,7 @@ static int start_threads(struct device_information *dip)
 	struct thread_information *tip;
 	char op[64];
 	int j, pipeline = output_name && !strcmp(output_name, "-");
-	int len, mode;
+	int len, mode, vbuf_size;
 
 	for_each_tip(dip, tip, j) {
 		tip->cpu = j;
@@ -635,7 +635,7 @@ static int start_threads(struct device_information *dip)
 			tip->ofile = fdopen(STDOUT_FILENO, "w");
 			tip->fd_lock = &stdout_mutex;
 			mode = _IOLBF;
-			buf_size = 512;
+			vbuf_size = 512;
 		} else {
 			len = 0;
 
@@ -651,7 +651,7 @@ static int start_threads(struct device_information *dip)
 			}
 			tip->ofile = fopen(op, "w");
 			mode = _IOFBF;
-			buf_size = OFILE_BUF;
+			vbuf_size = OFILE_BUF;
 		}
 
 		if (tip->ofile == NULL) {
@@ -659,8 +659,8 @@ static int start_threads(struct device_information *dip)
 			return 1;
 		}
 
-		tip->ofile_buffer = malloc(buf_size);
-		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, buf_size)) {
+		tip->ofile_buffer = malloc(vbuf_size);
+		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, vbuf_size)) {
 			perror("setvbuf");
 			close_thread(tip);
 			return 1;
