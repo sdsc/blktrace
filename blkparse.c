@@ -55,6 +55,8 @@ struct per_dev_info {
 	unsigned long last_sequence;
 	unsigned long skips, nskips;
 	unsigned long long seq_skips, seq_nskips;
+	unsigned int max_depth[2];
+	unsigned int cur_depth[2];
 
 	struct rb_root rb_last;
 	unsigned long rb_last_entries;
@@ -1139,7 +1141,7 @@ static void dump_trace_pc(struct blk_io_trace *t, struct per_cpu_info *pci)
 static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			  struct per_cpu_info *pci)
 {
-	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
+	int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 	int act = t->action & 0xffff;
 
 	switch (act) {
@@ -1166,14 +1168,19 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			log_generic(pci, t, "S");
 			break;
 		case __BLK_TA_REQUEUE:
+			pdi->cur_depth[w]--;
 			account_requeue(t, pci, w);
 			log_queue(pci, t, "R");
 			break;
 		case __BLK_TA_ISSUE:
 			account_issue(t, pci, w);
+			pdi->cur_depth[w]++;
+			if (pdi->cur_depth[w] > pdi->max_depth[w])
+				pdi->max_depth[w] = pdi->cur_depth[w];
 			log_issue(pdi, pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
+			pdi->cur_depth[w]--;
 			account_c(t, pci, w, t->bytes);
 			log_complete(pdi, pci, t, "C");
 			break;
@@ -1238,7 +1245,8 @@ static char *size_cnv(char *dst, unsigned long long num, int in_kb)
 	return dst;
 }
 
-static void dump_io_stats(struct io_stats *ios, char *msg)
+static void dump_io_stats(struct per_dev_info *pdi, struct io_stats *ios,
+			  char *msg)
 {
 	static char x[256], y[256];
 
@@ -1255,6 +1263,10 @@ static void dump_io_stats(struct io_stats *ios, char *msg)
 	fprintf(ofp, " Writes Completed: %s, %siB\n", size_cnv(x, ios->cwrites, 0), size_cnv(y, ios->cwrite_kb, 1));
 	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
 	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
+	if (pdi) {
+		fprintf(ofp, " Read depth:      %'8u%8c\t", pdi->max_depth[0], ' ');
+		fprintf(ofp, " Write depth:      %'8u\n", pdi->max_depth[1]);
+	}
 	fprintf(ofp, " IO unplugs:      %'8lu%8c\t", ios->io_unplugs, ' ');
 	fprintf(ofp, " Timer unplugs:    %'8lu\n", ios->timer_unplugs);
 }
@@ -1333,7 +1345,7 @@ static void show_process_stats(void)
 		else
 			sprintf(name, "%s (%u)", ppi->name, ppi->pid);
 
-		dump_io_stats(&ppi->io_stats, name);
+		dump_io_stats(NULL, &ppi->io_stats, name);
 		dump_wait_stats(ppi);
 		ppi = ppi->list_next;
 	}
@@ -1385,7 +1397,7 @@ static void show_device_and_cpu_stats(void)
 
 			snprintf(line, sizeof(line) - 1, "CPU%d (%s):",
 				 j, get_dev_name(pdi, name, sizeof(name)));
-			dump_io_stats(ios, line);
+			dump_io_stats(pdi, ios, line);
 			pci_events++;
 		}
 
@@ -1393,7 +1405,7 @@ static void show_device_and_cpu_stats(void)
 			fprintf(ofp, "\n");
 			snprintf(line, sizeof(line) - 1, "Total (%s):",
 				 get_dev_name(pdi, name, sizeof(name)));
-			dump_io_stats(&total, line);
+			dump_io_stats(NULL, &total, line);
 		}
 
 		wrate = rrate = 0;
