@@ -810,6 +810,7 @@ static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
 	int ncpus = pdi->ncpus;
 	int new_count = cpu + 1;
 	int new_space, size;
+	int i;
 	char *new_start;
 
 	size = new_count * sizeof(struct per_cpu_info);
@@ -827,6 +828,9 @@ static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
 
 	pdi->ncpus = new_count;
 	pdi->cpus = cpus;
+
+	for (i = cpu; i < new_count; i++)
+		pdi->cpus[i].fd = -1;
 }
 
 static struct per_cpu_info *get_cpu_info(struct per_dev_info *pdi, int cpu)
