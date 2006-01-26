@@ -143,6 +143,7 @@ struct thread_information {
 	pthread_mutex_t *fd_lock;
 	FILE *ofile;
 	char *ofile_buffer;
+	int ofile_flush;
 
 	unsigned long events_processed;
 	struct device_information *device;
@@ -394,14 +395,13 @@ static int read_data(struct thread_information *tip, void *buf,
 	return 0;
 }
 
-static int write_data(FILE *file, void *buf, unsigned int buf_len)
+static int write_data(struct thread_information *tip,
+		      void *buf, unsigned int buf_len)
 {
-	int ret, bytes_left;
-	char *p = buf;
+	int ret;
 
-	bytes_left = buf_len;
-	while (bytes_left > 0) {
-		ret = fwrite(p, bytes_left, 1, file);
+	while (1) {
+		ret = fwrite(buf, buf_len, 1, tip->ofile);
 		if (ret == 1)
 			break;
 
@@ -410,6 +410,9 @@ static int write_data(FILE *file, void *buf, unsigned int buf_len)
 			return 1;
 		}
 	}
+
+	if (tip->ofile_flush)
+		fflush(tip->ofile);
 
 	return 0;
 }
@@ -594,12 +597,12 @@ static void *extract(void *arg)
 		 */
 		tip_fd_lock(tip);
 
-		if (write_data(tip->ofile, &t, sizeof(t))) {
+		if (write_data(tip, &t, sizeof(t))) {
 			tip_fd_unlock(tip);
 			break;
 		}
 
-		if (pdu_data && write_data(tip->ofile, pdu_data, pdu_len)) {
+		if (pdu_data && write_data(tip, pdu_data, pdu_len)) {
 			tip_fd_unlock(tip);
 			break;
 		}
@@ -634,6 +637,7 @@ static int start_threads(struct device_information *dip)
 		if (pipeline) {
 			tip->ofile = fdopen(STDOUT_FILENO, "w");
 			tip->fd_lock = &stdout_mutex;
+			tip->ofile_flush = 1;
 			mode = _IOLBF;
 			vbuf_size = 512;
 		} else {
@@ -650,6 +654,7 @@ static int start_threads(struct device_information *dip)
 					dip->buts_name, tip->cpu);
 			}
 			tip->ofile = fopen(op, "w");
+			tip->ofile_flush = 0;
 			mode = _IOFBF;
 			vbuf_size = OFILE_BUF;
 		}
