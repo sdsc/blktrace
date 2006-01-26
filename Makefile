@@ -1,7 +1,7 @@
 CC	= gcc
 CFLAGS	= -Wall -O2 -g
 ALL_CFLAGS = $(CFLAGS) -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
-PROGS	= blkparse blktrace verify_blkparse
+PROGS	= blkparse blktrace verify_blkparse blkrawverify
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
@@ -17,6 +17,9 @@ blktrace: blktrace.o act_mask.o $(LIBS)
 	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
 
 verify_blkparse: verify_blkparse.o
+	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^)
+
+blkrawverify: blkrawverify.o
 	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^)
 
 docs:

@@ -126,6 +126,14 @@ $ verify_blkparse filename
 	the events in the file are correctly time ordered. If an entry
 	is found that isn't ordered, it's dumped to stdout.
 
+$ blkrawverify <dev> [<dev>...]
+
+	The blkrawverify utility can be used to verify data retrieved
+	via blktrace. It will check for valid event formats, forward
+	progressing sequence numbers and time stamps, also does reasonable
+	checks for other potential issues within invidividual events.
+
+	Errors found will be tracked in <dev>.verify.out.
 
 If you want to do live tracing, you can pipe the data between blktrace
 and blkparse:
@@ -141,7 +149,6 @@ the network with eg netcat:
 
 Which will send the traces from tracehost to parsehost over the network on
 the defined port number.
-
 
 Documentation
 -------------
