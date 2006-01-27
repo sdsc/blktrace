@@ -1622,6 +1622,8 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 		 */
 		if (bit->sequence == 1)
 			return 0;
+		if (bit->sequence == smallest_seq_read)
+			return 0;
 
 		return check_cpu_map(pdi);
 	}
