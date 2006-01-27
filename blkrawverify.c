@@ -77,9 +77,9 @@ static struct act_info acts[] = {
 static char *act_to_str(__u32 action)
 {
 	static char buf[1024];
-	int i;
-	int act = action & 0xffff;
-	int trace = (action >> BLK_TC_SHIFT) & 0xffff;
+	unsigned int i;
+	unsigned int act = action & 0xffff;
+	unsigned int trace = (action >> BLK_TC_SHIFT) & 0xffff;
 
 	if (act <= N_ACTS) {
 		sprintf(buf, "%s ", acts[act].string);
@@ -113,7 +113,7 @@ static void dump_trace(FILE *ofp, char *prefix, struct blk_io_trace *bit)
 						           MINOR(bit->device));
 }
 
-static int process(FILE *ofp, char *file, int cpu)
+static int process(FILE *ofp, char *file, unsigned int cpu)
 {
 #	define SWAP_BITS() do {						\
 		if (bit_save) {						\
@@ -159,7 +159,7 @@ static int process(FILE *ofp, char *file, int cpu)
 
 			pdu_buf = malloc(bit->pdu_len);
 			n = fread(pdu_buf, bit->pdu_len, 1, ifp);
-			if (n <= 0) {
+			if (n == 0) {
 				INC_BAD("bad pdu");
 				nbad_seq++;
 				break;
@@ -199,7 +199,7 @@ static int process(FILE *ofp, char *file, int cpu)
 		SWAP_BITS();
 	}
 
-	if (n < 0)
+	if (n == 0)
 		fprintf(stderr,"%s: fread failed %d/%s\n",
 		        file, errno, strerror(errno));
 	fclose(ifp);

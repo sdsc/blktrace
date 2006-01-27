@@ -133,8 +133,8 @@ static struct option l_opts[] = {
 struct tip_subbuf {
 	struct list_head list;
 	void *buf;
-	int len;
-	int max_len;
+	unsigned int len;
+	unsigned int max_len;
 };
 
 struct thread_information {
@@ -334,7 +334,7 @@ static inline void tip_fd_lock(struct thread_information *tip)
 static int get_subbuf(struct thread_information *tip)
 {
 	struct tip_subbuf *ts;
-	int ts_size;
+	int ts_size, ret;
 
 	/*
 	 * live tracing should get a lower count to make it more "realtime"
@@ -348,8 +348,9 @@ static int get_subbuf(struct thread_information *tip)
 	ts->buf = malloc(ts_size);
 	ts->max_len = ts_size;
 
-	ts->len = read_data(tip, ts->buf, ts_size);
-	if (ts->len > 0) {
+	ret = read_data(tip, ts->buf, ts_size);
+	if (ret > 0) {
+		ts->len = ret;
 		tip_fd_lock(tip);
 		list_add_tail(&ts->list, &tip->subbuf_list);
 		tip_fd_unlock(tip);
