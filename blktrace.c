@@ -740,26 +740,29 @@ static void show_stats(void)
 	struct thread_information *tip;
 	unsigned long long events_processed;
 	unsigned long total_drops;
-	int i, j;
+	int i, j, no_stdout = 0;
 
 	if (is_stat_shown())
 		return;
+
+	if (output_name && !strcmp(output_name, "-"))
+		no_stdout = 1;
 
 	stat_shown = 1;
 
 	total_drops = 0;
 	for_each_dip(dip, i) {
-		if (!tip->ofile_stdout)
+		if (!no_stdout)
 			printf("Device: %s\n", dip->path);
 		events_processed = 0;
 		for_each_tip(dip, tip, j) {
-			if (!tip->ofile_stdout)
+			if (!no_stdout)
 				printf("  CPU%3d: %20ld events\n",
 			       		tip->cpu, tip->events_processed);
 			events_processed += tip->events_processed;
 		}
 		total_drops += dip->drop_count;
-		if (!tip->ofile_stdout)
+		if (!no_stdout)
 			printf("  Total:  %20lld events (dropped %lu)\n",
 					events_processed, dip->drop_count);
 	}
