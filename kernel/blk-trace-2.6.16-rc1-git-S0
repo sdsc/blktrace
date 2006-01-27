@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..aa1b4f8
+index 0000000..5ffd46f
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,310 @@
+@@ -0,0 +1,338 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -306,13 +306,10 @@ index 0000000..aa1b4f8
 +	return ret;
 +}
 +
-+static void blk_trace_check_cpu_time(void *data)
++static void blk_check_time(unsigned long long *t)
 +{
-+	unsigned long long a, b, *t;
++	unsigned long long a, b;
 +	struct timeval tv;
-+	int cpu = get_cpu();
-+
-+	t = &per_cpu(blk_trace_cpu_offset, cpu);
 +
 +	a = sched_clock();
 +	do_gettimeofday(&tv);
@@ -320,10 +317,22 @@ index 0000000..aa1b4f8
 +
 +	*t = tv.tv_sec * 1000000000 + tv.tv_usec * 1000;
 +	*t -= (a + b) / 2;
++}
++
++static void blk_trace_check_cpu_time(void *data)
++{
++	unsigned long long *t;
++	int cpu = get_cpu();
++
++	t = &per_cpu(blk_trace_cpu_offset, cpu);
++
++	blk_check_time(t);
++	blk_check_time(t);
++
 +	put_cpu();
 +}
 +
-+static int blk_trace_calibrate_offsets(void)
++static void blk_trace_calibrate_offsets(void)
 +{
 +	unsigned long flags;
 +
@@ -331,15 +340,34 @@ index 0000000..aa1b4f8
 +	local_irq_save(flags);
 +	blk_trace_check_cpu_time(NULL);
 +	local_irq_restore(flags);
-+
-+	return 0;
 +}
 +
 +static __init int blk_trace_init(void)
 +{
-+	mutex_init(&blk_tree_mutex);
++	int cpu, i;
 +
-+	return blk_trace_calibrate_offsets();
++	mutex_init(&blk_tree_mutex);
++	blk_trace_calibrate_offsets();
++
++	/*
++	 * now make sure HT siblings have the same time offset
++	 */
++	preempt_disable();
++	for_each_online_cpu(cpu) {
++		unsigned long long *cpu_off, *sibling_off;
++
++		for_each_cpu_mask(i, cpu_sibling_map[cpu]) {
++			if (i == cpu)
++				continue;
++
++			cpu_off = &per_cpu(blk_trace_cpu_offset, cpu);
++			sibling_off = &per_cpu(blk_trace_cpu_offset, i);
++			*sibling_off = *cpu_off;
++		}
++	}
++	preempt_enable();
++
++	return 0;
 +}
 +
 +module_init(blk_trace_init);
