@@ -159,9 +159,8 @@ struct thread_information {
 
 	pthread_mutex_t lock;
 	struct list_head subbuf_list;
-	void *leftover_ts;
-	int leftover_ts_len;
-	int leftover_ts_max;
+	struct tip_subbuf *leftover_ts;
+	unsigned int leftover_ts_offset;
 };
 
 struct device_information {
@@ -441,16 +440,25 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 	int pdu_len, events = 0;
 
 	/*
-	 * surplus from last run, a little ugly...
+	 * surplus from last run
 	 */
-	if (tip->leftover_ts_len) {
-		if (ts->len + tip->leftover_ts_len > ts->max_len)
-			ts->buf = realloc(ts->buf, ts->len + tip->leftover_ts_len);
+	if (tip->leftover_ts) {
+		struct tip_subbuf *prev_ts = tip->leftover_ts;
 
-		memmove(ts->buf + tip->leftover_ts_len, ts->buf, ts->len);
-		memcpy(ts->buf, tip->leftover_ts, tip->leftover_ts_len);
-		ts->len += tip->leftover_ts_len;
-		tip->leftover_ts_len = 0;
+		offset = tip->leftover_ts_offset;
+		if (offset + prev_ts->len + ts->len > prev_ts->max_len) {
+			prev_ts->max_len += ts->len;
+			prev_ts->buf = realloc(prev_ts->buf, prev_ts->max_len);
+		}
+
+		memcpy(prev_ts->buf + offset + ts->len, ts->buf, ts->len);
+		prev_ts->len += ts->len;
+
+		free(ts->buf);
+		free(ts);
+
+		ts = prev_ts;
+		tip->leftover_ts = NULL;
 	}
 
 	while (offset + sizeof(*t) <= ts->len) {
@@ -478,20 +486,13 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 	 * leftover bytes, save them for next time
 	 */
 	if (offset != ts->len) {
-		int surplus = ts->len - offset;
-
-		t = ts->buf + offset;
-		if (surplus > tip->leftover_ts_max) {
-			tip->leftover_ts = realloc(tip->leftover_ts, surplus);
-			tip->leftover_ts_max = surplus;
-		}
-
-		memcpy(tip->leftover_ts, ts->buf + offset, surplus);
-		tip->leftover_ts_len = surplus;
+		tip->leftover_ts = ts;
+		tip->leftover_ts_offset = offset;
+	} else {
+		free(ts->buf);
+		free(ts);
 	}
 
-	free(ts->buf);
-	free(ts);
 	return events;
 }
 
@@ -566,9 +567,8 @@ static int start_threads(struct device_information *dip)
 		tip->device = dip;
 		tip->events_processed = 0;
 		INIT_LIST_HEAD(&tip->subbuf_list);
-		tip->leftover_ts_len = 0;
-		tip->leftover_ts_max = 0;
 		tip->leftover_ts = NULL;
+		tip->leftover_ts_offset = 0;
 
 		if (pipeline) {
 			tip->ofile = fdopen(STDOUT_FILENO, "w");
