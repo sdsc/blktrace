@@ -101,8 +101,8 @@ static void dump_trace(FILE *ofp, char *prefix, struct blk_io_trace *bit)
 	fprintf(ofp, "    Dump %s\n", prefix);
 	fprintf(ofp, "        %8s: %08x\n", "magic", bit->magic);
 	fprintf(ofp, "        %8s: %u\n", "sequence", bit->sequence);
-	fprintf(ofp, "        %8s: %llu\n", "time", bit->time);
-	fprintf(ofp, "        %8s: %llu\n", "sector", bit->sector);
+	fprintf(ofp, "        %8s: %llu\n", "time", (unsigned long long) bit->time);
+	fprintf(ofp, "        %8s: %llu\n", "sector", (unsigned long long) bit->sector);
 	fprintf(ofp, "        %8s: %u\n", "bytes", bit->bytes);
 	fprintf(ofp, "        %8s: %s\n", "action", act_to_str(bit->action));
 	fprintf(ofp, "        %8s: %u\n", "bytes", bit->bytes);
