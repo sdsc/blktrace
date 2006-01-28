@@ -552,7 +552,7 @@ static void get_and_write_events(void)
 			}
 		}
 		usleep(10);
-	} while (events && !all_exited);
+	} while (events || !all_exited);
 }
 
 static int start_threads(struct device_information *dip)
