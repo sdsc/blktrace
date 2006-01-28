@@ -520,7 +520,7 @@ static void get_and_write_events(void)
 {
 	struct device_information *dip;
 	struct thread_information *tip;
-	int i, j, events, ret, all_exited;
+	int i, j, events, ret, tips_running;
 
 	while (!is_done()) {
 		events = 0;
@@ -542,17 +542,17 @@ static void get_and_write_events(void)
 	 */
 	do {
 		events = 0;
-		all_exited = 0;
+		tips_running = 0;
 		for_each_dip(dip, i) {
 			for_each_tip(dip, tip, j) {
 				ret = write_tip_events(tip);
 				if (ret > 0)
 					events += ret;
-				all_exited += !tip->exited;
+				tips_running += !tip->exited;
 			}
 		}
 		usleep(10);
-	} while (events || !all_exited);
+	} while (events || tips_running);
 }
 
 static int start_threads(struct device_information *dip)
