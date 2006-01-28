@@ -199,7 +199,7 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 		SWAP_BITS();
 	}
 
-	if (n == 0)
+	if (n == 0 && !feof(ifp))
 		fprintf(stderr,"%s: fread failed %d/%s\n",
 		        file, errno, strerror(errno));
 	fclose(ifp);
