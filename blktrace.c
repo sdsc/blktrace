@@ -285,7 +285,7 @@ static void wait_for_data(struct thread_information *tip)
 	struct pollfd pfd = { .fd = tip->fd, .events = POLLIN };
 
 	do {
-		poll(&pfd, 1, 10);
+		poll(&pfd, 1, 100);
 		if (pfd.revents & POLLIN)
 			break;
 		if (tip->ofile_stdout)
@@ -332,21 +332,13 @@ static inline void tip_fd_lock(struct thread_information *tip)
 static int get_subbuf(struct thread_information *tip)
 {
 	struct tip_subbuf *ts;
-	int ts_size, ret;
-
-	/*
-	 * live tracing should get a lower count to make it more "realtime"
-	 */
-	if (tip->ofile_stdout)
-		ts_size = 1024;
-	else
-		ts_size = buf_size;
+	int ret;
 
 	ts = malloc(sizeof(*ts));
-	ts->buf = malloc(ts_size);
-	ts->max_len = ts_size;
+	ts->buf = malloc(buf_size);
+	ts->max_len = buf_size;
 
-	ret = read_data(tip, ts->buf, ts_size);
+	ret = read_data(tip, ts->buf, ts->max_len);
 	if (ret > 0) {
 		ts->len = ret;
 		tip_fd_lock(tip);
