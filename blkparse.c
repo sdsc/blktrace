@@ -1951,7 +1951,6 @@ static void show_stats(void)
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
 	done = 1;
-	show_stats();
 }
 
 /*
