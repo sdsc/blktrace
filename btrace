@@ -8,11 +8,11 @@
 
 TRACEOPTS=""
 PARSEOPTS="-b100000"
-SUMMARIZE="-q"	# quiet (no dev/cpu summary by default)
+SUMMARIZE=""
 USAGE="Usage: btrace [-s] [-t] [-S] [-w N] [-a <trace>...] <dev>..."
 DIRNAME=`dirname $0`
 
-while getopts "a:stSw:" c
+while getopts "a:stSw:h" c
 do
 	case $c in
 	a)	TRACEOPTS=$TRACEOPTS" -a "$OPTARG" ";;
