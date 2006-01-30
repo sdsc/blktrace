@@ -160,7 +160,6 @@ struct thread_information {
 	pthread_mutex_t lock;
 	struct list_head subbuf_list;
 	struct tip_subbuf *leftover_ts;
-	unsigned int leftover_ts_offset;
 };
 
 struct device_information {
@@ -445,13 +444,12 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 	if (tip->leftover_ts) {
 		struct tip_subbuf *prev_ts = tip->leftover_ts;
 
-		offset = tip->leftover_ts_offset;
-		if (offset + prev_ts->len + ts->len > prev_ts->max_len) {
+		if (prev_ts->len + ts->len > prev_ts->max_len) {
 			prev_ts->max_len += ts->len;
 			prev_ts->buf = realloc(prev_ts->buf, prev_ts->max_len);
 		}
 
-		memcpy(prev_ts->buf + offset + ts->len, ts->buf, ts->len);
+		memcpy(prev_ts->buf + prev_ts->len, ts->buf, ts->len);
 		prev_ts->len += ts->len;
 
 		free(ts->buf);
@@ -487,7 +485,8 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 	 */
 	if (offset != ts->len) {
 		tip->leftover_ts = ts;
-		tip->leftover_ts_offset = offset;
+		ts->len -= offset;
+		memmove(ts->buf, ts->buf + offset, ts->len);
 	} else {
 		free(ts->buf);
 		free(ts);
@@ -568,7 +567,6 @@ static int start_threads(struct device_information *dip)
 		tip->events_processed = 0;
 		INIT_LIST_HEAD(&tip->subbuf_list);
 		tip->leftover_ts = NULL;
-		tip->leftover_ts_offset = 0;
 
 		if (pipeline) {
 			tip->ofile = fdopen(STDOUT_FILENO, "w");
