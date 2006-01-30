@@ -1649,7 +1649,8 @@ skip:
 		if (check_current_skips(pdi,bit->sequence))
 			return 0;
 
-		insert_skip(pdi,expected_sequence,bit->sequence-1);
+		if (expected_sequence < bit->sequence)
+			insert_skip(pdi, expected_sequence, bit->sequence - 1);
 		return 0;
 	}
 }
