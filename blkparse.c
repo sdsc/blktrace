@@ -1701,17 +1701,22 @@ static void show_entries_rb(int force)
 	}
 }
 
-static int read_data(int fd, void *buffer, int bytes, int block)
+static int read_data(int fd, void *buffer, int bytes, int block, int *fdblock)
 {
 	int ret, bytes_left, fl;
 	void *p;
 
-	fl = fcntl(fd, F_GETFL);
+	if (block != *fdblock) {
+		fl = fcntl(fd, F_GETFL);
 
-	if (!block)
-		fcntl(fd, F_SETFL, fl | O_NONBLOCK);
-	else
-		fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
+		if (!block) {
+			*fdblock = 0;
+			fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+		} else {
+			*fdblock = 1;
+			fcntl(fd, F_SETFL, fl & ~O_NONBLOCK);
+		}
+	}
 
 	bytes_left = bytes;
 	p = buffer;
@@ -1742,7 +1747,7 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 	return 0;
 }
 
-static int read_events(int fd, int always_block)
+static int read_events(int fd, int always_block, int *fdblock)
 {
 	struct per_dev_info *pdi = NULL;
 	unsigned int events = 0;
@@ -1750,12 +1755,14 @@ static int read_events(int fd, int always_block)
 	while (!is_done() && events < rb_batch) {
 		struct blk_io_trace *bit;
 		struct trace *t;
-		int pdu_len;
+		int pdu_len, should_block;
 		__u32 magic;
 
 		bit = bit_alloc();
 
-		if (read_data(fd, bit, sizeof(*bit), !events || always_block)) {
+		should_block = !events || always_block;
+
+		if (read_data(fd, bit, sizeof(*bit), should_block, fdblock)) {
 			bit_free(bit);
 			break;
 		}
@@ -1770,7 +1777,7 @@ static int read_events(int fd, int always_block)
 		if (pdu_len) {
 			void *ptr = realloc(bit, sizeof(*bit) + pdu_len);
 
-			if (read_data(fd, ptr + sizeof(*bit), pdu_len, 1)) {
+			if (read_data(fd, ptr + sizeof(*bit), pdu_len, 1, fdblock)) {
 				bit_free(ptr);
 				break;
 			}
@@ -1826,6 +1833,7 @@ static int do_file(void)
 			pci = get_cpu_info(pdi, j);
 			pci->cpu = j;
 			pci->fd = -1;
+			pci->fdblock = -1;
 	
 			p = strdup(pdi->name);
 			dname = dirname(p);
@@ -1877,7 +1885,7 @@ static int do_file(void)
 				if (pci->fd == -1)
 					continue;
 
-				events = read_events(pci->fd, 1);
+				events = read_events(pci->fd, 1, &pci->fdblock);
 				if (!events) {
 					cpu_mark_offline(pdi, pci->cpu);
 					close(pci->fd);
@@ -1911,7 +1919,7 @@ static int do_file(void)
 static int do_stdin(void)
 {
 	unsigned long long youngest;
-	int fd, events;
+	int fd, events, fdblock;
 
 	last_allowed_time = -1ULL;
 	fd = dup(STDIN_FILENO);
@@ -1920,7 +1928,8 @@ static int do_stdin(void)
 		return -1;
 	}
 
-	while ((events = read_events(fd, 0)) != 0) {
+	fdblock = -1;
+	while ((events = read_events(fd, 0, &fdblock)) != 0) {
 	
 		smallest_seq_read = -1U;
 
