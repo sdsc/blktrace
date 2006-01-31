@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..5ffd46f
+index 0000000..d12d166
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,360 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -50,6 +50,7 @@ index 0000000..5ffd46f
 +{
 +	struct blk_io_trace t;
 +	unsigned long flags;
++	void *rbuf;
 +	pid_t pid;
 +	int cpu;
 +
@@ -96,9 +97,12 @@ index 0000000..5ffd46f
 +	t.cpu		= cpu;
 +	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
 +
-+	__relay_write(bt->rchan, &t, sizeof(t));
-+	if (pdu_len)
-+		__relay_write(bt->rchan, pdu_data, pdu_len);
++	rbuf = relay_reserve(bt->rchan, sizeof(t) + pdu_len);
++	if (rbuf) {
++		memcpy(rbuf, &t, sizeof(t));
++		if (pdu_len)
++			memcpy(rbuf + sizeof(t), pdu_data, pdu_len);
++	}
 +
 +	spin_unlock_irqrestore(&bt->lock, flags);
 +}
@@ -306,6 +310,10 @@ index 0000000..5ffd46f
 +	return ret;
 +}
 +
++/*
++ * Average offset over two calls to sched_clock() with a gettimeofday()
++ * in the middle
++ */
 +static void blk_check_time(unsigned long long *t)
 +{
 +	unsigned long long a, b;
@@ -326,12 +334,20 @@ index 0000000..5ffd46f
 +
 +	t = &per_cpu(blk_trace_cpu_offset, cpu);
 +
++	/*
++	 * Just call it twice, hopefully the second call will be cache hot
++	 * and a little more precise
++	 */
 +	blk_check_time(t);
 +	blk_check_time(t);
 +
 +	put_cpu();
 +}
 +
++/*
++ * Call blk_trace_check_cpu_time() on each CPU to calibrate our inter-CPU
++ * timings
++ */
 +static void blk_trace_calibrate_offsets(void)
 +{
 +	unsigned long flags;
@@ -342,12 +358,10 @@ index 0000000..5ffd46f
 +	local_irq_restore(flags);
 +}
 +
-+static __init int blk_trace_init(void)
++static void blk_trace_set_ht_offsets(void)
 +{
++#if defined(CONFIG_SCHED_SMT)
 +	int cpu, i;
-+
-+	mutex_init(&blk_tree_mutex);
-+	blk_trace_calibrate_offsets();
 +
 +	/*
 +	 * now make sure HT siblings have the same time offset
@@ -366,6 +380,14 @@ index 0000000..5ffd46f
 +		}
 +	}
 +	preempt_enable();
++#endif
++}
++
++static __init int blk_trace_init(void)
++{
++	mutex_init(&blk_tree_mutex);
++	blk_trace_calibrate_offsets();
++	blk_trace_set_ht_offsets();
 +
 +	return 0;
 +}
