@@ -1725,8 +1725,10 @@ static int read_data(int fd, void *buffer, int bytes, int block, int *fdblock)
 		if (!ret)
 			return 1;
 		else if (ret < 0) {
-			if (errno != EAGAIN)
+			if (errno != EAGAIN) {
 				perror("read");
+				return -1;
+			}
 
 			/*
 			 * never do partial reads. we can return if we
@@ -1755,15 +1757,18 @@ static int read_events(int fd, int always_block, int *fdblock)
 	while (!is_done() && events < rb_batch) {
 		struct blk_io_trace *bit;
 		struct trace *t;
-		int pdu_len, should_block;
+		int pdu_len, should_block, ret;
 		__u32 magic;
 
 		bit = bit_alloc();
 
 		should_block = !events || always_block;
 
-		if (read_data(fd, bit, sizeof(*bit), should_block, fdblock)) {
+		ret = read_data(fd, bit, sizeof(*bit), should_block, fdblock);
+		if (ret) {
 			bit_free(bit);
+			if (!events && ret < 0)
+				events = ret;
 			break;
 		}
 
@@ -1886,7 +1891,7 @@ static int do_file(void)
 					continue;
 
 				events = read_events(pci->fd, 1, &pci->fdblock);
-				if (!events) {
+				if (events <= 0) {
 					cpu_mark_offline(pdi, pci->cpu);
 					close(pci->fd);
 					pci->fd = -1;
@@ -1929,7 +1934,7 @@ static int do_stdin(void)
 	}
 
 	fdblock = -1;
-	while ((events = read_events(fd, 0, &fdblock)) != 0) {
+	while ((events = read_events(fd, 0, &fdblock)) > 0) {
 	
 		smallest_seq_read = -1U;
 
