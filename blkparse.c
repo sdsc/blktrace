@@ -1723,7 +1723,16 @@ static int read_data(int fd, void *buffer, int bytes, int block)
 			if (errno != EAGAIN)
 				perror("read");
 
-			return -1;
+			/*
+			 * never do partial reads. we can return if we
+			 * didn't read anything and we should not block,
+			 * otherwise wait for data
+			 */
+			if ((bytes_left == bytes) && !block)
+				return 1;
+
+			usleep(10);
+			continue;
 		} else {
 			p += ret;
 			bytes_left -= ret;
