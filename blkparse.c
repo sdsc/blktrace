@@ -1956,6 +1956,7 @@ static int do_stdin(void)
 
 	fdblock = -1;
 	while ((events = read_events(fd, 0, &fdblock)) > 0) {
+		read_sequence++;
 	
 #if 0
 		smallest_seq_read = -1U;
