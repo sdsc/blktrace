@@ -557,6 +557,7 @@ static int start_threads(struct device_information *dip)
 		tip->cpu = j;
 		tip->device = dip;
 		tip->events_processed = 0;
+		pthread_mutex_init(&tip->lock, NULL);
 		INIT_LIST_HEAD(&tip->subbuf_list);
 		tip->leftover_ts = NULL;
 
