@@ -65,7 +65,7 @@ enum {
 #define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
-#define BLK_IO_TRACE_VERSION	0x05
+#define BLK_IO_TRACE_VERSION	0x06
 
 /*
  * The trace itself

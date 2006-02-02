@@ -6,6 +6,7 @@
 #include <endian.h>
 
 #include "blktrace_api.h"
+#include "rbtree.h"
 
 #define MINORBITS	20
 #define MINORMASK	((1U << MINORBITS) - 1)
@@ -41,12 +42,17 @@ struct per_cpu_info {
 	char fname[128];
 
 	struct io_stats io_stats;
+
+	struct rb_root rb_last;
+	unsigned long rb_last_entries;
+	unsigned long last_sequence;
+	unsigned long smallest_seq_read;
 };
 
 extern FILE *ofp;
 
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
-#define SUPPORTED_VERSION	(0x05)
+#define SUPPORTED_VERSION	(0x06)
 
 #if __BYTE_ORDER == __LITTLE_ENDIAN
 #define be16_to_cpu(x)		__bswap_16(x)

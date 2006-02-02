@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..d12d166
+index 0000000..21b381d
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,360 @@
+@@ -0,0 +1,362 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -48,9 +48,9 @@ index 0000000..d12d166
 +void __blk_add_trace(struct blk_trace *bt, sector_t sector, int bytes,
 +		     int rw, u32 what, int error, int pdu_len, void *pdu_data)
 +{
-+	struct blk_io_trace t;
++	struct blk_io_trace *t;
 +	unsigned long flags;
-+	void *rbuf;
++	unsigned long *sequence;
 +	pid_t pid;
 +	int cpu;
 +
@@ -73,38 +73,35 @@ index 0000000..d12d166
 +	if (bt->pid && pid != bt->pid)
 +		return;
 +
-+	t.magic		= BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
++	local_irq_save(flags);
 +
-+	t.device	= bt->dev;
-+	t.sector	= sector;
-+	t.bytes		= bytes;
-+	t.action	= what;
-+	t.error		= error;
-+	t.pdu_len	= pdu_len;
-+
-+	t.pid		= pid;
-+	memcpy(t.comm, current->comm, sizeof(t.comm));
-+
-+	/*
-+	 * need to serialize this part completely to prevent multiple CPUs
-+	 * from misordering events
-+	 */
-+	spin_lock_irqsave(&bt->lock, flags);
-+
-+	t.sequence	= ++bt->sequence;
-+
-+	cpu = smp_processor_id();
-+	t.cpu		= cpu;
-+	t.time		= sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
-+
-+	rbuf = relay_reserve(bt->rchan, sizeof(t) + pdu_len);
-+	if (rbuf) {
-+		memcpy(rbuf, &t, sizeof(t));
-+		if (pdu_len)
-+			memcpy(rbuf + sizeof(t), pdu_data, pdu_len);
++	t = relay_reserve(bt->rchan, sizeof(*t) + pdu_len);
++	if (unlikely(!t)) {
++		local_irq_restore(flags);
++		return;
 +	}
 +
-+	spin_unlock_irqrestore(&bt->lock, flags);
++	cpu = smp_processor_id();
++	sequence = per_cpu_ptr(bt->sequence, cpu);
++	t->sequence = ++(*sequence);
++	t->time = sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
++	t->cpu = cpu;
++
++	local_irq_restore(flags);
++
++	t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
++	t->device = bt->dev;
++	t->sector = sector;
++	t->bytes = bytes;
++	t->action = what;
++	t->error = error;
++	t->pdu_len = pdu_len;
++
++	t->pid = pid;
++	memcpy(t->comm, current->comm, sizeof(t->comm));
++
++	if (pdu_len)
++		memcpy((void *) t + sizeof(*t), pdu_data, pdu_len);
 +}
 +
 +EXPORT_SYMBOL_GPL(__blk_add_trace);
@@ -260,8 +257,12 @@ index 0000000..d12d166
 +		goto err;
 +
 +	ret = -ENOMEM;
-+	bt = kmalloc(sizeof(*bt), GFP_KERNEL);
++	bt = kzalloc(sizeof(*bt), GFP_KERNEL);
 +	if (!bt)
++		goto err;
++
++	bt->sequence = alloc_percpu(unsigned long);
++	if (!bt->sequence)
 +		goto err;
 +
 +	ret = -ENOENT;
@@ -271,8 +272,6 @@ index 0000000..d12d166
 +
 +	bt->dir = dir;
 +	bt->dev = bdev->bd_dev;
-+	bt->sequence = 0;
-+	spin_lock_init(&bt->lock);
 +	atomic_set(&bt->dropped, 0);
 +
 +	ret = -EIO;
@@ -305,8 +304,11 @@ index 0000000..d12d166
 +		relayfs_remove_file(bt->dropped_file);
 +	if (dir)
 +		blk_remove_tree(dir);
-+	if (bt)
++	if (bt) {
++		if (bt->sequence)
++			free_percpu(bt->sequence);
 +		kfree(bt);
++	}
 +	return ret;
 +}
 +
@@ -727,10 +729,10 @@ index 02a585f..195c3b9 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..d6b4317
+index 0000000..026b995
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,215 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -800,7 +802,7 @@ index 0000000..d6b4317
 +#define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
-+#define BLK_IO_TRACE_VERSION	0x05
++#define BLK_IO_TRACE_VERSION	0x06
 +
 +/*
 + * The trace itself
@@ -834,8 +836,7 @@ index 0000000..d6b4317
 +	struct rchan *rchan;
 +	struct dentry *dropped_file;
 +	atomic_t dropped;
-+	spinlock_t lock;
-+	unsigned long sequence;
++	unsigned long *sequence;
 +	u32 dev;
 +	u16 act_mask;
 +	u64 start_lba;

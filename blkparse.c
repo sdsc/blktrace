@@ -52,14 +52,10 @@ struct per_dev_info {
 	unsigned long long last_reported_time;
 	unsigned long long last_read_time;
 	struct io_stats io_stats;
-	unsigned long last_sequence;
 	unsigned long skips, nskips;
 	unsigned long long seq_skips, seq_nskips;
 	unsigned int max_depth[2];
 	unsigned int cur_depth[2];
-
-	struct rb_root rb_last;
-	unsigned long rb_last_entries;
 
 	struct rb_root rb_track;
 
@@ -231,6 +227,7 @@ struct io_track {
 static int ndevices;
 static struct per_dev_info *devices;
 static char *get_dev_name(struct per_dev_info *, char *, int);
+static int trace_rb_insert_last(struct per_dev_info *, struct trace *);
 
 FILE *ofp = NULL;
 static char *output_name;
@@ -238,7 +235,6 @@ static char *input_dir;
 
 static unsigned long long genesis_time;
 static unsigned long long last_allowed_time;
-static unsigned int smallest_seq_read;
 static unsigned long long stopwatch_start;	/* start from zero by default */
 static unsigned long long stopwatch_end = -1ULL;	/* "infinity" */
 
@@ -266,6 +262,94 @@ static volatile int done;
 #define CPUS_PER_LONG	(8 * sizeof(unsigned long))
 #define CPU_IDX(cpu)	((cpu) / CPUS_PER_LONG)
 #define CPU_BIT(cpu)	((cpu) & (CPUS_PER_LONG - 1))
+
+static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
+{
+	struct per_cpu_info *cpus = pdi->cpus;
+	int ncpus = pdi->ncpus;
+	int new_count = cpu + 1;
+	int new_space, size;
+	char *new_start;
+
+	size = new_count * sizeof(struct per_cpu_info);
+	cpus = realloc(cpus, size);
+	if (!cpus) {
+		char name[20];
+		fprintf(stderr, "Out of memory, CPU info for device %s (%d)\n",
+			get_dev_name(pdi, name, sizeof(name)), size);
+		exit(1);
+	}
+
+	new_start = (char *)cpus + (ncpus * sizeof(struct per_cpu_info));
+	new_space = (new_count - ncpus) * sizeof(struct per_cpu_info);
+	memset(new_start, 0, new_space);
+
+	pdi->ncpus = new_count;
+	pdi->cpus = cpus;
+
+	for (new_count = 0; new_count < pdi->ncpus; new_count++) {
+		struct per_cpu_info *pci = &pdi->cpus[new_count];
+
+		if (!pci->fd) {
+			pci->fd = -1;
+			memset(&pci->rb_last, 0, sizeof(pci->rb_last));
+			pci->rb_last_entries = 0;
+			pci->last_sequence = -1;
+		}
+	}
+}
+
+static struct per_cpu_info *get_cpu_info(struct per_dev_info *pdi, int cpu)
+{
+	struct per_cpu_info *pci;
+
+	if (cpu >= pdi->ncpus)
+		resize_cpu_info(pdi, cpu);
+
+	pci = &pdi->cpus[cpu];
+	pci->cpu = cpu;
+	return pci;
+}
+
+
+static int resize_devices(char *name)
+{
+	int size = (ndevices + 1) * sizeof(struct per_dev_info);
+
+	devices = realloc(devices, size);
+	if (!devices) {
+		fprintf(stderr, "Out of memory, device %s (%d)\n", name, size);
+		return 1;
+	}
+	memset(&devices[ndevices], 0, sizeof(struct per_dev_info));
+	devices[ndevices].name = name;
+	ndevices++;
+	return 0;
+}
+
+static struct per_dev_info *get_dev_info(dev_t dev)
+{
+	struct per_dev_info *pdi;
+	int i;
+
+	for (i = 0; i < ndevices; i++) {
+		if (!devices[i].dev)
+			devices[i].dev = dev;
+		if (devices[i].dev == dev)
+			return &devices[i];
+	}
+
+	if (resize_devices(NULL))
+		return NULL;
+
+	pdi = &devices[ndevices - 1];
+	pdi->dev = dev;
+	pdi->first_reported_time = 0;
+	pdi->last_read_time = 0;
+	pdi->skips_head = pdi->skips_tail = NULL;
+
+	return pdi;
+}
 
 static void insert_skip(struct per_dev_info *pdi, unsigned long start,
 			unsigned long end)
@@ -465,6 +549,80 @@ static struct per_process_info *find_process(__u32 pid, char *name)
 	return ppi;
 }
 
+/*
+ * struct trace and blktrace allocation cache, we do potentially
+ * millions of mallocs for these structures while only using at most
+ * a few thousand at the time
+ */
+static inline void t_free(struct trace *t)
+{
+	if (t_alloc_cache < 1024) {
+		t->next = t_alloc_list;
+		t_alloc_list = t;
+		t_alloc_cache++;
+	} else
+		free(t);
+}
+
+static inline struct trace *t_alloc(void)
+{
+	struct trace *t = t_alloc_list;
+
+	if (t) {
+		t_alloc_list = t->next;
+		t_alloc_cache--;
+		return t;
+	}
+
+	return malloc(sizeof(*t));
+}
+
+static inline void bit_free(struct blk_io_trace *bit)
+{
+	if (bit_alloc_cache < 1024 && !bit->pdu_len) {
+		/*
+		 * abuse a 64-bit field for a next pointer for the free item
+		 */
+		bit->time = (__u64) (unsigned long) bit_alloc_list;
+		bit_alloc_list = (struct blk_io_trace *) bit;
+		bit_alloc_cache++;
+	} else
+		free(bit);
+}
+
+static inline struct blk_io_trace *bit_alloc(void)
+{
+	struct blk_io_trace *bit = bit_alloc_list;
+
+	if (bit) {
+		bit_alloc_list = (struct blk_io_trace *) (unsigned long) \
+				 bit->time;
+		bit_alloc_cache--;
+		return bit;
+	}
+
+	return malloc(sizeof(*bit));
+}
+
+static inline void __put_trace_last(struct per_dev_info *pdi, struct trace *t)
+{
+	struct per_cpu_info *pci = get_cpu_info(pdi, t->bit->cpu);
+
+	rb_erase(&t->rb_node, &pci->rb_last);
+	pci->rb_last_entries--;
+
+	bit_free(t->bit);
+	t_free(t);
+}
+
+static void put_trace(struct per_dev_info *pdi, struct trace *t)
+{
+	rb_erase(&t->rb_node, &rb_sort_root);
+	rb_sort_entries--;
+
+	trace_rb_insert_last(pdi, t);
+}
+
 static inline int trace_rb_insert(struct trace *t, struct rb_root *root)
 {
 	struct rb_node **p = &root->rb_node;
@@ -505,14 +663,23 @@ static inline int trace_rb_insert_sort(struct trace *t)
 	return 1;
 }
 
-static inline int trace_rb_insert_last(struct per_dev_info *pdi,struct trace *t)
+static int trace_rb_insert_last(struct per_dev_info *pdi, struct trace *t)
 {
-	if (!trace_rb_insert(t, &pdi->rb_last)) {
-		pdi->rb_last_entries++;
-		return 0;
+	struct per_cpu_info *pci = get_cpu_info(pdi, t->bit->cpu);
+
+	if (trace_rb_insert(t, &pci->rb_last))
+		return 1;
+
+	pci->rb_last_entries++;
+
+	if (pci->rb_last_entries > rb_batch * pdi->nfiles) {
+		struct rb_node *n = rb_first(&pci->rb_last);
+
+		t = rb_entry(n, struct trace, rb_node);
+		__put_trace_last(pdi, t);
 	}
 
-	return 1;
+	return 0;
 }
 
 static struct trace *trace_rb_find(dev_t device, unsigned long sequence,
@@ -562,15 +729,11 @@ static struct trace *trace_rb_find(dev_t device, unsigned long sequence,
 	return NULL;
 }
 
-static inline struct trace *trace_rb_find_sort(dev_t dev, unsigned long seq)
-{
-	return trace_rb_find(dev, seq, &rb_sort_root, 1);
-}
-
 static inline struct trace *trace_rb_find_last(struct per_dev_info *pdi,
+					       struct per_cpu_info *pci,
 					       unsigned long seq)
 {
-	return trace_rb_find(pdi->dev, seq, &pdi->rb_last, 0);
+	return trace_rb_find(pdi->dev, seq, &pci->rb_last, 0);
 }
 
 static inline int track_rb_insert(struct per_dev_info *pdi,struct io_track *iot)
@@ -796,91 +959,6 @@ static struct io_stats *find_process_io_stats(__u32 pid, char *name)
 	}
 
 	return &ppi->io_stats;
-}
-
-static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
-{
-	struct per_cpu_info *cpus = pdi->cpus;
-	int ncpus = pdi->ncpus;
-	int new_count = cpu + 1;
-	int new_space, size;
-	char *new_start;
-
-	size = new_count * sizeof(struct per_cpu_info);
-	cpus = realloc(cpus, size);
-	if (!cpus) {
-		char name[20];
-		fprintf(stderr, "Out of memory, CPU info for device %s (%d)\n",
-			get_dev_name(pdi, name, sizeof(name)), size);
-		exit(1);
-	}
-
-	new_start = (char *)cpus + (ncpus * sizeof(struct per_cpu_info));
-	new_space = (new_count - ncpus) * sizeof(struct per_cpu_info);
-	memset(new_start, 0, new_space);
-
-	pdi->ncpus = new_count;
-	pdi->cpus = cpus;
-
-	for (new_count = 0; new_count < pdi->ncpus; new_count++)
-		if (!pdi->cpus[new_count].fd)
-			pdi->cpus[new_count].fd = -1;
-}
-
-static struct per_cpu_info *get_cpu_info(struct per_dev_info *pdi, int cpu)
-{
-	struct per_cpu_info *pci;
-
-	if (cpu >= pdi->ncpus)
-		resize_cpu_info(pdi, cpu);
-
-	pci = &pdi->cpus[cpu];
-	pci->cpu = cpu;
-	return pci;
-}
-
-
-static int resize_devices(char *name)
-{
-	int size = (ndevices + 1) * sizeof(struct per_dev_info);
-
-	devices = realloc(devices, size);
-	if (!devices) {
-		fprintf(stderr, "Out of memory, device %s (%d)\n", name, size);
-		return 1;
-	}
-	memset(&devices[ndevices], 0, sizeof(struct per_dev_info));
-	devices[ndevices].name = name;
-	ndevices++;
-	return 0;
-}
-
-static struct per_dev_info *get_dev_info(dev_t dev)
-{
-	struct per_dev_info *pdi;
-	int i;
-
-	for (i = 0; i < ndevices; i++) {
-		if (!devices[i].dev)
-			devices[i].dev = dev;
-		if (devices[i].dev == dev)
-			return &devices[i];
-	}
-
-	if (resize_devices(NULL))
-		return NULL;
-
-	pdi = &devices[ndevices - 1];
-	pdi->dev = dev;
-	pdi->first_reported_time = 0;
-	pdi->last_sequence = -1;
-	pdi->last_read_time = 0;
-	memset(&pdi->rb_last, 0, sizeof(pdi->rb_last));
-	pdi->rb_last_entries = 0;
-
-	pdi->skips_head = pdi->skips_tail = NULL;
-
-	return pdi;
 }
 
 static char *get_dev_name(struct per_dev_info *pdi, char *buffer, int size)
@@ -1426,61 +1504,6 @@ static void show_device_and_cpu_stats(void)
 	}
 }
 
-/*
- * struct trace and blktrace allocation cache, we do potentially
- * millions of mallocs for these structures while only using at most
- * a few thousand at the time
- */
-static inline void t_free(struct trace *t)
-{
-	if (t_alloc_cache < 1024) {
-		t->next = t_alloc_list;
-		t_alloc_list = t;
-		t_alloc_cache++;
-	} else
-		free(t);
-}
-
-static inline struct trace *t_alloc(void)
-{
-	struct trace *t = t_alloc_list;
-
-	if (t) {
-		t_alloc_list = t->next;
-		t_alloc_cache--;
-		return t;
-	}
-
-	return malloc(sizeof(*t));
-}
-
-static inline void bit_free(struct blk_io_trace *bit)
-{
-	if (bit_alloc_cache < 1024 && !bit->pdu_len) {
-		/*
-		 * abuse a 64-bit field for a next pointer for the free item
-		 */
-		bit->time = (__u64) (unsigned long) bit_alloc_list;
-		bit_alloc_list = (struct blk_io_trace *) bit;
-		bit_alloc_cache++;
-	} else
-		free(bit);
-}
-
-static inline struct blk_io_trace *bit_alloc(void)
-{
-	struct blk_io_trace *bit = bit_alloc_list;
-
-	if (bit) {
-		bit_alloc_list = (struct blk_io_trace *) (unsigned long) \
-				 bit->time;
-		bit_alloc_cache--;
-		return bit;
-	}
-
-	return malloc(sizeof(*bit));
-}
-
 static void find_genesis(void)
 {
 	struct trace *t = trace_list;
@@ -1508,6 +1531,8 @@ static inline int check_stopwatch(struct blk_io_trace *bit)
  */
 static int sort_entries(unsigned long long *youngest)
 {
+	struct per_dev_info *pdi = NULL;
+	struct per_cpu_info *pci = NULL;
 	struct trace *t;
 
 	if (!genesis_time)
@@ -1524,8 +1549,16 @@ static int sort_entries(unsigned long long *youngest)
 		if (bit->time < *youngest || !*youngest)
 			*youngest = bit->time;
 
-		if (bit->sequence < smallest_seq_read)
-			smallest_seq_read = bit->sequence;
+		if (!pdi || pdi->dev != bit->device) {
+			pdi = get_dev_info(bit->device);
+			pci = NULL;
+		}
+
+		if (!pci || pci->cpu != bit->cpu)
+			pci = get_cpu_info(pdi, bit->cpu);
+
+		if (bit->sequence < pci->smallest_seq_read)
+			pci->smallest_seq_read = bit->sequence;
 
 		if (check_stopwatch(bit)) {
 			bit_free(bit);
@@ -1538,30 +1571,6 @@ static int sort_entries(unsigned long long *youngest)
 	}
 
 	return 0;
-}
-
-static inline void __put_trace_last(struct per_dev_info *pdi, struct trace *t)
-{
-	rb_erase(&t->rb_node, &pdi->rb_last);
-	pdi->rb_last_entries--;
-
-	bit_free(t->bit);
-	t_free(t);
-}
-
-static void put_trace(struct per_dev_info *pdi, struct trace *t)
-{
-	rb_erase(&t->rb_node, &rb_sort_root);
-	rb_sort_entries--;
-
-	trace_rb_insert_last(pdi, t);
-
-	if (pdi->rb_last_entries > rb_batch * pdi->nfiles) {
-		struct rb_node *n = rb_first(&pdi->rb_last);
-
-		t = rb_entry(n, struct trace, rb_node);
-		__put_trace_last(pdi, t);
-	}
 }
 
 /*
@@ -1606,9 +1615,13 @@ static int check_cpu_map(struct per_dev_info *pdi)
 
 static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 {
-	unsigned long expected_sequence = pdi->last_sequence + 1;
 	struct blk_io_trace *bit = t->bit;
+	unsigned long expected_sequence;
+	struct per_cpu_info *pci;
 	struct trace *__t;
+
+	pci = get_cpu_info(pdi, bit->cpu);
+	expected_sequence = pci->last_sequence + 1;
 
 	if (!expected_sequence) {
 		/*
@@ -1616,7 +1629,7 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 		 */
 		if (bit->sequence == 1)
 			return 0;
-		if (bit->sequence == smallest_seq_read)
+		if (bit->sequence == pci->smallest_seq_read)
 			return 0;
 
 		return check_cpu_map(pdi);
@@ -1629,8 +1642,8 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 	 * we may not have seen that sequence yet. if we are not doing
 	 * the final run, break and wait for more entries.
 	 */
-	if (expected_sequence < smallest_seq_read) {
-		__t = trace_rb_find_last(pdi, expected_sequence);
+	if (expected_sequence < pci->smallest_seq_read) {
+		__t = trace_rb_find_last(pdi, pci, expected_sequence);
 		if (!__t)
 			goto skip;
 
@@ -1664,8 +1677,10 @@ static void show_entries_rb(int force)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
-		if (!pdi || pdi->dev != bit->device)
+		if (!pdi || pdi->dev != bit->device) {
 			pdi = get_dev_info(bit->device);
+			pci = NULL;
+		}
 
 		if (!pdi) {
 			fprintf(stderr, "Unknown device ID? (%d,%d)\n",
@@ -1679,12 +1694,12 @@ static void show_entries_rb(int force)
 		if (!force && bit->time > last_allowed_time)
 			break;
 
-		pdi->last_sequence = bit->sequence;
-
 		check_time(pdi, bit);
 
 		if (!pci || pci->cpu != bit->cpu)
 			pci = get_cpu_info(pdi, bit->cpu);
+
+		pci->last_sequence = bit->sequence;
 
 		pci->nelems++;
 
@@ -1822,7 +1837,6 @@ static int do_file(void)
 	for (i = 0; i < ndevices; i++) {
 		pdi = &devices[i];
 		pdi->nfiles = 0;
-		pdi->last_sequence = -1;
 
 		for (j = 0;; j++) {
 			struct stat st;
@@ -1872,7 +1886,6 @@ static int do_file(void)
 
 		events_added = 0;
 		last_allowed_time = -1ULL;
-		smallest_seq_read = -1U;
 
 		for (i = 0; i < ndevices; i++) {
 			pdi = &devices[i];
@@ -1883,6 +1896,8 @@ static int do_file(void)
 
 				if (pci->fd == -1)
 					continue;
+
+				pci->smallest_seq_read = -1;
 
 				events = read_events(pci->fd, 1, &pci->fdblock);
 				if (events <= 0) {
@@ -1930,7 +1945,9 @@ static int do_stdin(void)
 	fdblock = -1;
 	while ((events = read_events(fd, 0, &fdblock)) > 0) {
 	
+#if 0
 		smallest_seq_read = -1U;
+#endif
 
 		if (sort_entries(&youngest))
 			break;
