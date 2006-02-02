@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <string.h>
 #include <unistd.h>
 
 #define MAX_CPUS	(512)
@@ -8,7 +9,7 @@
 int main(int argc, char *argv[])
 {
 	double this_time, last_time;
-	char line[256], *p;
+	char line[256], last_line[256], *p;
 	int major, minor, cpu, seq, nr, alias;
 	unsigned long long total_entries;
 	unsigned long last_seq[MAX_CPUS];
@@ -36,10 +37,12 @@ int main(int argc, char *argv[])
 			break;
 
 		if (this_time < last_time) {
-			fprintf(stdout, "%s", p);
+			fprintf(stdout, "last: %s", last_line);
+			fprintf(stdout, "this: %s", p);
 			nr++;
-		} else
-			last_time = this_time;
+		}
+
+		last_time = this_time;
 
 		if (cpu >= MAX_CPUS) {
 			fprintf(stderr, "cpu%d too large\n", cpu);
@@ -53,6 +56,7 @@ int main(int argc, char *argv[])
 
 		last_seq[cpu] = seq;
 		total_entries++;
+		strcpy(last_line, line);
 	}
 
 	fprintf(stdout, "Events %Lu: %d unordered, %d aliases\n", total_entries, nr, alias);
