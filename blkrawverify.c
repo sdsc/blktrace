@@ -268,6 +268,7 @@ int main(int argc, char *argv[])
 			printf("\n");
 		}
 		fclose(ofp);
+		fprintf(stdout, "Wrote output to %s\n", ofname);
 	}
 
 	return 0;
