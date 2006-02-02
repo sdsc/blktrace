@@ -47,6 +47,9 @@ struct per_cpu_info {
 	unsigned long rb_last_entries;
 	unsigned long last_sequence;
 	unsigned long smallest_seq_read;
+
+	struct skip_info *skips_head;
+	struct skip_info *skips_tail;
 };
 
 extern FILE *ofp;

@@ -66,8 +66,6 @@ struct per_dev_info {
 	unsigned int cpu_map_max;
 
 	struct per_cpu_info *cpus;
-	struct skip_info *skips_head;
-	struct skip_info *skips_tail;
 };
 
 struct per_process_info {
@@ -346,17 +344,16 @@ static struct per_dev_info *get_dev_info(dev_t dev)
 	pdi->dev = dev;
 	pdi->first_reported_time = 0;
 	pdi->last_read_time = 0;
-	pdi->skips_head = pdi->skips_tail = NULL;
 
 	return pdi;
 }
 
-static void insert_skip(struct per_dev_info *pdi, unsigned long start,
+static void insert_skip(struct per_cpu_info *pci, unsigned long start,
 			unsigned long end)
 {
 	struct skip_info *sip;
 
-	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
+	for (sip = pci->skips_tail; sip != NULL; sip = sip->prev) {
 		if (end == (sip->start - 1)) {
 			sip->start = start;
 			return;
@@ -370,26 +367,26 @@ static void insert_skip(struct per_dev_info *pdi, unsigned long start,
 	sip->start = start;
 	sip->end = end;
 	sip->prev = sip->next = NULL;
-	if (pdi->skips_tail == NULL)
-		pdi->skips_head = pdi->skips_tail = sip;
+	if (pci->skips_tail == NULL)
+		pci->skips_head = pci->skips_tail = sip;
 	else {
-		sip->prev = pdi->skips_tail;
-		pdi->skips_tail->next = sip;
-		pdi->skips_tail = sip;
+		sip->prev = pci->skips_tail;
+		pci->skips_tail->next = sip;
+		pci->skips_tail = sip;
 	}
 }
 
-static void remove_sip(struct per_dev_info *pdi, struct skip_info *sip)
+static void remove_sip(struct per_cpu_info *pci, struct skip_info *sip)
 {
 	if (sip->prev == NULL) {
 		if (sip->next == NULL)
-			pdi->skips_head = pdi->skips_tail = NULL;
+			pci->skips_head = pci->skips_tail = NULL;
 		else {
-			pdi->skips_head = sip->next;
+			pci->skips_head = sip->next;
 			sip->next->prev = NULL;
 		}
 	} else if (sip->next == NULL) {
-		pdi->skips_tail = sip->prev;
+		pci->skips_tail = sip->prev;
 		sip->prev->next = NULL;
 	} else {
 		sip->prev->next = sip->next;
@@ -401,42 +398,49 @@ static void remove_sip(struct per_dev_info *pdi, struct skip_info *sip)
 }
 
 #define IN_SKIP(sip,seq) (((sip)->start <= (seq)) && ((seq) <= sip->end))
-static int check_current_skips(struct per_dev_info *pdi, unsigned long seq)
+static int check_current_skips(struct per_cpu_info *pci, unsigned long seq)
 {
 	struct skip_info *sip;
 
-	for (sip = pdi->skips_tail; sip != NULL; sip = sip->prev) {
-		if (IN_SKIP(sip,seq)) {
+	for (sip = pci->skips_tail; sip != NULL; sip = sip->prev) {
+		if (IN_SKIP(sip, seq)) {
 			if (sip->start == seq) {
 				if (sip->end == seq)
-					remove_sip(pdi,sip);
+					remove_sip(pci, sip);
 				else
 					sip->start += 1;
 			} else if (sip->end == seq)
 				sip->end -= 1;
 			else {
 				sip->end = seq - 1;
-				insert_skip(pdi,seq+1,sip->end);
+				insert_skip(pci, seq + 1, sip->end);
 			}
 			return 1;
 		}
 	}
+
 	return 0;
 }
 
 static void collect_pdi_skips(struct per_dev_info *pdi)
 {
 	struct skip_info *sip;
+	int cpu;
 
 	pdi->skips = 0;
 	pdi->seq_skips = 0;
-	for (sip = pdi->skips_head; sip != NULL; sip = sip->next) {
-		pdi->skips += 1;
-		pdi->seq_skips += (sip->end - sip->start + 1);
-		if (verbose)
-			fprintf(stderr, "(%d,%d): skipping %lu -> %lu\n",
-				MAJOR(pdi->dev), MINOR(pdi->dev),
-				sip->start, sip->end);
+
+	for (cpu = 0; cpu < pdi->ncpus; cpu++) {
+		struct per_cpu_info *pci = &pdi->cpus[cpu];
+
+		for (sip = pci->skips_head; sip != NULL; sip = sip->next) {
+			pdi->skips++;
+			pdi->seq_skips += (sip->end - sip->start + 1);
+			if (verbose)
+				fprintf(stderr,"(%d,%d): skipping %lu -> %lu\n",
+					MAJOR(pdi->dev), MINOR(pdi->dev),
+					sip->start, sip->end);
+		}
 	}
 }
 
@@ -1653,11 +1657,11 @@ static int check_sequence(struct per_dev_info *pdi, struct trace *t, int force)
 		return 1;
 	} else {
 skip:
-		if (check_current_skips(pdi,bit->sequence))
+		if (check_current_skips(pci, bit->sequence))
 			return 0;
 
 		if (expected_sequence < bit->sequence)
-			insert_skip(pdi, expected_sequence, bit->sequence - 1);
+			insert_skip(pci, expected_sequence, bit->sequence - 1);
 		return 0;
 	}
 }
@@ -1703,7 +1707,7 @@ static void show_entries_rb(int force)
 
 		pci->nelems++;
 
-		if (bit->action & (act_mask << BLK_TC_SHIFT)) 
+		if (bit->action & (act_mask << BLK_TC_SHIFT))
 			dump_trace(bit, pci, pdi);
 
 		put_trace(pdi, t);
@@ -1889,6 +1893,7 @@ static int do_file(void)
 
 		for (i = 0; i < ndevices; i++) {
 			pdi = &devices[i];
+			pdi->last_read_time = -1ULL;
 
 			for (j = 0; j < pdi->nfiles; j++) {
 
