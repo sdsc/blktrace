@@ -3,13 +3,19 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#define MAX_CPUS	(512)
+
 int main(int argc, char *argv[])
 {
 	double this_time, last_time;
 	char line[256], *p;
-	int major, minor, cpu, seq, nr, alias, last_seq;
+	int major, minor, cpu, seq, nr, alias;
 	unsigned long long total_entries;
+	unsigned long last_seq[MAX_CPUS];
 	FILE *f;
+
+	for (nr = 0; nr < MAX_CPUS; nr++)
+		last_seq[nr] = -1;
 
 	if (argc < 2) {
 		fprintf(stderr, "%s: file\n", argv[0]);
@@ -22,7 +28,6 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	last_seq = -1;
 	last_time = 0;
 	alias = nr = 0;
 	total_entries = 0;
@@ -36,12 +41,17 @@ int main(int argc, char *argv[])
 		} else
 			last_time = this_time;
 
-		if (last_seq == seq) {
+		if (cpu >= MAX_CPUS) {
+			fprintf(stderr, "cpu%d too large\n", cpu);
+			break;
+		}
+
+		if (last_seq[cpu] == seq) {
 			fprintf(stdout, "alias on sequence %u\n", seq);
 			alias++;
 		}
 
-		last_seq = seq;
+		last_seq[cpu] = seq;
 		total_entries++;
 	}
 
