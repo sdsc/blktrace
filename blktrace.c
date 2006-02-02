@@ -454,8 +454,10 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 	while (offset + sizeof(*t) <= ts->len) {
 		t = ts->buf + offset;
 
-		if (verify_trace(t))
+		if (verify_trace(t)) {
+			write_data(tip, ts->buf, offset);
 			return -1;
+		}
 
 		pdu_len = t->pdu_len;
 
@@ -464,13 +466,13 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 
 		trace_to_be(t);
 
-		if (write_data(tip, t, sizeof(*t) + pdu_len))
-			return -1;
-
 		offset += sizeof(*t) + pdu_len;
 		tip->events_processed++;
 		events++;
 	}
+
+	if (write_data(tip, ts->buf, offset))
+		return -1;
 
 	/*
 	 * leftover bytes, save them for next time
