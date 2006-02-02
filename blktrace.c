@@ -407,6 +407,9 @@ static int write_data(struct thread_information *tip,
 {
 	int ret;
 
+	if (!buf_len)
+		return 0;
+
 	while (1) {
 		ret = fwrite(buf, buf_len, 1, tip->ofile);
 		if (ret == 1)
