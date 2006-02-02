@@ -2,5 +2,6 @@
 *.o
 blkparse
 blktrace
+blkrawverify
 doc/.depend
 verify_blkparse
