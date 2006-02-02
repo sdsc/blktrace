@@ -194,6 +194,7 @@ struct trace {
 	struct blk_io_trace *bit;
 	struct rb_node rb_node;
 	struct trace *next;
+	unsigned long read_sequence;
 };
 
 static struct rb_root rb_sort_root;
@@ -235,6 +236,7 @@ static unsigned long long genesis_time;
 static unsigned long long last_allowed_time;
 static unsigned long long stopwatch_start;	/* start from zero by default */
 static unsigned long long stopwatch_end = -1ULL;	/* "infinity" */
+static unsigned long read_sequence;
 
 static int per_process_stats;
 static int per_device_and_cpu_stats = 1;
@@ -1681,6 +1683,9 @@ static void show_entries_rb(int force)
 		t = rb_entry(n, struct trace, rb_node);
 		bit = t->bit;
 
+		if (read_sequence - t->read_sequence < 1 && !force)
+			break;
+
 		if (!pdi || pdi->dev != bit->device) {
 			pdi = get_dev_info(bit->device);
 			pci = NULL;
@@ -1813,6 +1818,7 @@ static int read_events(int fd, int always_block, int *fdblock)
 		t = t_alloc();
 		memset(t, 0, sizeof(*t));
 		t->bit = bit;
+		t->read_sequence = read_sequence;
 
 		t->next = trace_list;
 		trace_list = t;
@@ -1890,6 +1896,7 @@ static int do_file(void)
 
 		events_added = 0;
 		last_allowed_time = -1ULL;
+		read_sequence++;
 
 		for (i = 0; i < ndevices; i++) {
 			pdi = &devices[i];
