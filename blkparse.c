@@ -1250,7 +1250,12 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			log_generic(pci, t, "S");
 			break;
 		case __BLK_TA_REQUEUE:
-			pdi->cur_depth[w]--;
+			/*
+			 * can happen if we miss traces, don't let it go
+			 * below zero
+			 */
+			if (pdi->cur_depth[w])
+				pdi->cur_depth[w]--;
 			account_requeue(t, pci, w);
 			log_queue(pci, t, "R");
 			break;
@@ -1262,7 +1267,8 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			log_issue(pdi, pci, t, "D");
 			break;
 		case __BLK_TA_COMPLETE:
-			pdi->cur_depth[w]--;
+			if (pdi->cur_depth[w])
+				pdi->cur_depth[w]--;
 			account_c(t, pci, w, t->bytes);
 			log_complete(pdi, pci, t, "C");
 			break;
