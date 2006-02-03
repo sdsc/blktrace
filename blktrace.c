@@ -39,7 +39,7 @@
 #include <assert.h>
 
 #include "blktrace.h"
-#include "list.h"
+#include "barrier.h"
 
 static char blktrace_version[] = "0.99";
 
@@ -131,10 +131,18 @@ static struct option l_opts[] = {
 };
 
 struct tip_subbuf {
-	struct list_head list;
 	void *buf;
 	unsigned int len;
 	unsigned int max_len;
+};
+
+#define FIFO_SIZE	(1024)	/* should be plenty big! */
+#define CL_SIZE		(128)	/* cache line, any bigger? */
+
+struct tip_subbuf_fifo {
+	int tail __attribute__((aligned(CL_SIZE)));
+	int head __attribute__((aligned(CL_SIZE)));
+	struct tip_subbuf *q[FIFO_SIZE];
 };
 
 struct thread_information {
@@ -157,8 +165,7 @@ struct thread_information {
 
 	int exited;
 
-	pthread_mutex_t lock;
-	struct list_head subbuf_list;
+	struct tip_subbuf_fifo fifo;
 	struct tip_subbuf *leftover_ts;
 };
 
@@ -319,14 +326,37 @@ static int read_data(struct thread_information *tip, void *buf, int len)
 	return ret;
 }
 
-static inline void tip_fd_unlock(struct thread_information *tip)
+static inline struct tip_subbuf *subbuf_fifo_dequeue(struct thread_information *tip)
 {
-	pthread_mutex_unlock(&tip->lock);
+	const int head = tip->fifo.head;
+	const int next = (head + 1) & (FIFO_SIZE - 1);
+
+	if (head != tip->fifo.tail) {
+		struct tip_subbuf *ts = tip->fifo.q[head];
+
+		store_barrier();
+		tip->fifo.head = next;
+		return ts;
+	}
+
+	return NULL;
 }
 
-static inline void tip_fd_lock(struct thread_information *tip)
+static inline int subbuf_fifo_queue(struct thread_information *tip,
+				    struct tip_subbuf *ts)
 {
-	pthread_mutex_lock(&tip->lock);
+	const int tail = tip->fifo.tail;
+	const int next = (tail + 1) & (FIFO_SIZE - 1);
+
+	if (next != tip->fifo.head) {
+		tip->fifo.q[tail] = ts;
+		store_barrier();
+		tip->fifo.tail = next;
+		return 0;
+	}
+
+	fprintf(stderr, "fifo too small!\n");
+	return 1;
 }
 
 static int get_subbuf(struct thread_information *tip)
@@ -341,10 +371,7 @@ static int get_subbuf(struct thread_information *tip)
 	ret = read_data(tip, ts->buf, ts->max_len);
 	if (ret > 0) {
 		ts->len = ret;
-		tip_fd_lock(tip);
-		list_add_tail(&ts->list, &tip->subbuf_list);
-		tip_fd_unlock(tip);
-		return 0;
+		return subbuf_fifo_queue(tip, ts);
 	}
 
 	free(ts->buf);
@@ -494,14 +521,7 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 
 static int write_tip_events(struct thread_information *tip)
 {
-	struct tip_subbuf *ts = NULL;
-
-	tip_fd_lock(tip);
-	if (!list_empty(&tip->subbuf_list)) {
-		ts = list_entry(tip->subbuf_list.next, struct tip_subbuf, list);
-		list_del(&ts->list);
-	}
-	tip_fd_unlock(tip);
+	struct tip_subbuf *ts = subbuf_fifo_dequeue(tip);
 
 	if (ts)
 		return flush_subbuf(tip, ts);
@@ -562,8 +582,7 @@ static int start_threads(struct device_information *dip)
 		tip->cpu = j;
 		tip->device = dip;
 		tip->events_processed = 0;
-		pthread_mutex_init(&tip->lock, NULL);
-		INIT_LIST_HEAD(&tip->subbuf_list);
+		memset(&tip->fifo, 0, sizeof(tip->fifo));
 		tip->leftover_ts = NULL;
 
 		if (pipeline) {
