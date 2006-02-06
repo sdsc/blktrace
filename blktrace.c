@@ -494,8 +494,6 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 		if (offset + sizeof(*t) + pdu_len > ts->len)
 			break;
 
-		trace_to_be(t);
-
 		offset += sizeof(*t) + pdu_len;
 		tip->events_processed++;
 		events++;

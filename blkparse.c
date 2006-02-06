@@ -245,6 +245,7 @@ static int ppi_hash_by_pid = 1;
 static int verbose;
 static unsigned int act_mask = -1U;
 static int stats_printed;
+static int data_is_native = -1;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
@@ -1773,6 +1774,22 @@ static int read_data(int fd, void *buffer, int bytes, int block, int *fdblock)
 	return 0;
 }
 
+static inline __u16 get_pdulen(struct blk_io_trace *bit)
+{
+	if (data_is_native)
+		return bit->pdu_len;
+
+	return __bswap_16(bit->pdu_len);
+}
+
+static inline __u32 get_magic(struct blk_io_trace *bit)
+{
+	if (data_is_native)
+		return bit->magic;
+
+	return __bswap_32(bit->magic);
+}
+
 static int read_events(int fd, int always_block, int *fdblock)
 {
 	struct per_dev_info *pdi = NULL;
@@ -1796,13 +1813,20 @@ static int read_events(int fd, int always_block, int *fdblock)
 			break;
 		}
 
-		magic = be32_to_cpu(bit->magic);
+		/*
+		 * look at first trace to check whether we need to convert
+		 * data in the future
+		 */
+		if (data_is_native == -1 && check_data_endianness(bit))
+			break;
+
+		magic = get_magic(bit);
 		if ((magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
 			fprintf(stderr, "Bad magic %x\n", magic);
 			break;
 		}
 
-		pdu_len = be16_to_cpu(bit->pdu_len);
+		pdu_len = get_pdulen(bit);
 		if (pdu_len) {
 			void *ptr = realloc(bit, sizeof(*bit) + pdu_len);
 

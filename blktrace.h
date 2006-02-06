@@ -53,6 +53,7 @@ struct per_cpu_info {
 };
 
 extern FILE *ofp;
+extern int data_is_native;
 
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 #define SUPPORTED_VERSION	(0x06)
@@ -90,24 +91,11 @@ static inline int verify_trace(struct blk_io_trace *t)
 	return 0;
 }
 
-static inline void trace_to_be(struct blk_io_trace *t)
-{
-	t->magic	= cpu_to_be32(t->magic);
-	t->sequence	= cpu_to_be32(t->sequence);
-	t->time		= cpu_to_be64(t->time);
-	t->sector	= cpu_to_be64(t->sector);
-	t->bytes	= cpu_to_be32(t->bytes);
-	t->action	= cpu_to_be32(t->action);
-	t->pid		= cpu_to_be32(t->pid);
-	t->cpu		= cpu_to_be32(t->cpu);
-	t->error	= cpu_to_be16(t->error);
-	t->pdu_len	= cpu_to_be16(t->pdu_len);
-	t->device	= cpu_to_be32(t->device);
-	/* t->comm is a string (endian neutral) */
-}
-
 static inline void trace_to_cpu(struct blk_io_trace *t)
 {
+	if (data_is_native)
+		return;
+
 	t->magic	= be32_to_cpu(t->magic);
 	t->sequence	= be32_to_cpu(t->sequence);
 	t->time		= be64_to_cpu(t->time);
@@ -120,6 +108,29 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 	t->pdu_len	= be16_to_cpu(t->pdu_len);
 	t->device	= be32_to_cpu(t->device);
 	/* t->comm is a string (endian neutral) */
+}
+
+/*
+ * check whether data is native or not
+ */
+static inline int check_data_endianness(struct blk_io_trace *bit)
+{
+	u32 magic;
+
+	if ((bit->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
+		fprintf(stderr, "data is native\n");
+		data_is_native = 1;
+		return 0;
+	}
+
+	magic = __bswap_32(bit->magic);
+	if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
+		fprintf(stderr, "data is not native\n");
+		data_is_native = 0;
+		return 0;
+	}
+
+	return 1;
 }
 
 extern void set_all_format_specs(char *);
