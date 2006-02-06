@@ -118,14 +118,12 @@ static inline int check_data_endianness(struct blk_io_trace *bit)
 	u32 magic;
 
 	if ((bit->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
-		fprintf(stderr, "data is native\n");
 		data_is_native = 1;
 		return 0;
 	}
 
 	magic = __bswap_32(bit->magic);
 	if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
-		fprintf(stderr, "data is not native\n");
 		data_is_native = 0;
 		return 0;
 	}
