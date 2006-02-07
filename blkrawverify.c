@@ -33,7 +33,7 @@ struct trace_info {
 	char *string;
 };
 
-static int data_is_native = -1;
+int data_is_native = -1;
 
 #define TRACE_TO_STRING(f)	{.bit_field = f, .string = #f}
 static struct trace_info traces[] = {

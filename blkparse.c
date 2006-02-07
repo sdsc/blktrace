@@ -245,7 +245,7 @@ static int ppi_hash_by_pid = 1;
 static int verbose;
 static unsigned int act_mask = -1U;
 static int stats_printed;
-static int data_is_native = -1;
+int data_is_native = -1;
 
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
