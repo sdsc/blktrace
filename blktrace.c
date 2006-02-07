@@ -54,9 +54,6 @@ static char blktrace_version[] = "0.99";
 
 #define RELAYFS_TYPE	0xF0B4A981
 
-#define RING_INIT_NR	(2)
-#define RING_MAX_NR	(16UL)
-
 #define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:"
 static struct option l_opts[] = {
 	{
