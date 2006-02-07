@@ -30,13 +30,13 @@
 #include <sys/param.h>
 #include <sys/statfs.h>
 #include <sys/poll.h>
+#include <sys/mman.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sched.h>
 #include <ctype.h>
 #include <getopt.h>
 #include <errno.h>
-#include <assert.h>
 
 #include "blktrace.h"
 #include "barrier.h"
@@ -151,9 +151,6 @@ struct thread_information {
 
 	int fd;
 	void *fd_buf;
-	unsigned long fd_off;
-	unsigned long fd_size;
-	unsigned long fd_max_size;
 	char fn[MAXPATHLEN + 64];
 
 	FILE *ofile;
@@ -161,12 +158,25 @@ struct thread_information {
 	int ofile_stdout;
 
 	unsigned long events_processed;
+	unsigned long long data_read;
 	struct device_information *device;
 
 	int exited;
 
+	/*
+	 * piped fifo buffers
+	 */
 	struct tip_subbuf_fifo fifo;
 	struct tip_subbuf *leftover_ts;
+
+	/*
+	 * mmap controlled output files
+	 */
+	unsigned long long fs_size;
+	unsigned long long fs_max_size;
+	unsigned long fs_off;
+	void *fs_buf;
+	unsigned long fs_buf_len;
 };
 
 struct device_information {
@@ -191,6 +201,7 @@ static int act_mask = ~0U;
 static int kill_running_trace;
 static unsigned long buf_size = BUF_SIZE;
 static unsigned long buf_nr = BUF_NR;
+static unsigned int page_size;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -359,6 +370,54 @@ static inline int subbuf_fifo_queue(struct thread_information *tip,
 	return 1;
 }
 
+/*
+ * For file output, truncate and mmap the file appropriately
+ */
+static int mmap_subbuf(struct thread_information *tip)
+{
+	int ofd = fileno(tip->ofile);
+	int ret;
+
+	/*
+	 * extend file, if we have to. use chunks of 16 subbuffers.
+	 */
+	if (tip->fs_off + buf_size > tip->fs_buf_len) {
+		if (tip->fs_buf) {
+			munmap(tip->fs_buf, tip->fs_buf_len);
+			tip->fs_buf = NULL;
+		}
+
+		tip->fs_off = tip->fs_size & (page_size - 1);
+		tip->fs_buf_len = (16 * buf_size) - tip->fs_off;
+		tip->fs_max_size += tip->fs_buf_len;
+
+		if (ftruncate(ofd, tip->fs_max_size) < 0) {
+			perror("ftruncate");
+			return -1;
+		}
+
+		tip->fs_buf = mmap(NULL, tip->fs_buf_len, PROT_WRITE,
+				   MAP_SHARED, ofd, tip->fs_size - tip->fs_off);
+		if (tip->fs_buf == MAP_FAILED) {
+			perror("mmap");
+			return -1;
+		}
+	}
+
+	ret = read_data(tip, tip->fs_buf + tip->fs_off, buf_size);
+	if (ret >= 0) {
+		tip->data_read += ret;
+		tip->fs_size += ret;
+		tip->fs_off += ret;
+		return 0;
+	}
+
+	return -1;
+}
+
+/*
+ * Use the copy approach for pipes
+ */
 static int get_subbuf(struct thread_information *tip)
 {
 	struct tip_subbuf *ts;
@@ -376,7 +435,7 @@ static int get_subbuf(struct thread_information *tip)
 
 	free(ts->buf);
 	free(ts);
-	return -1;
+	return ret;
 }
 
 static void close_thread(struct thread_information *tip)
@@ -420,9 +479,26 @@ static void *thread_main(void *arg)
 		exit_trace(1);
 	}
 
-	for (;;) {
-		if (get_subbuf(tip))
-			break;
+	while (!is_done()) {
+		if (tip->ofile_stdout) {
+			if (get_subbuf(tip))
+				break;
+		} else {
+			if (mmap_subbuf(tip))
+				break;
+		}
+	}
+
+	/*
+	 * truncate to right size and cleanup mmap
+	 */
+	if (!tip->ofile_stdout) {
+		int ofd = fileno(tip->ofile);
+
+		if (tip->fs_buf)
+			munmap(tip->fs_buf, tip->fs_buf_len);
+
+		ftruncate(ofd, tip->fs_size);
 	}
 
 	tip->exited = 1;
@@ -496,6 +572,7 @@ static int flush_subbuf(struct thread_information *tip, struct tip_subbuf *ts)
 
 		offset += sizeof(*t) + pdu_len;
 		tip->events_processed++;
+		tip->data_read += sizeof(*t) + pdu_len;
 		events++;
 	}
 
@@ -569,6 +646,30 @@ static void get_and_write_events(void)
 	} while (events || tips_running);
 }
 
+static void wait_for_threads(void)
+{
+	/*
+	 * for piped output, poll and fetch data for writeout. for files,
+	 * we just wait around for trace threads to exit
+	 */
+	if (output_name && !strcmp(output_name, "-"))
+		get_and_write_events();
+	else {
+		struct device_information *dip;
+		struct thread_information *tip;
+		int i, j, tips_running;
+
+		do {
+			tips_running = 0;
+			usleep(1000);
+
+			for_each_dip(dip, i)
+				for_each_tip(dip, tip, j)
+					tips_running += !tip->exited;
+		} while (tips_running);
+	}
+}
+
 static int start_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
@@ -601,7 +702,7 @@ static int start_threads(struct device_information *dip)
 				sprintf(op + len, "%s.blktrace.%d",
 					dip->buts_name, tip->cpu);
 			}
-			tip->ofile = fopen(op, "w");
+			tip->ofile = fopen(op, "w+");
 			tip->ofile_stdout = 0;
 			mode = _IOFBF;
 			vbuf_size = OFILE_BUF;
@@ -752,7 +853,7 @@ static void show_stats(void)
 {
 	struct device_information *dip;
 	struct thread_information *tip;
-	unsigned long long events_processed;
+	unsigned long long events_processed, data_read;
 	unsigned long total_drops;
 	int i, j, no_stdout = 0;
 
@@ -769,16 +870,20 @@ static void show_stats(void)
 		if (!no_stdout)
 			printf("Device: %s\n", dip->path);
 		events_processed = 0;
+		data_read = 0;
 		for_each_tip(dip, tip, j) {
 			if (!no_stdout)
-				printf("  CPU%3d: %20ld events\n",
-			       		tip->cpu, tip->events_processed);
+				printf("  CPU%3d: %20lu events, %8llu KiB data\n",
+			       		tip->cpu, tip->events_processed,
+					tip->data_read >> 10);
 			events_processed += tip->events_processed;
+			data_read += tip->data_read;
 		}
 		total_drops += dip->drop_count;
 		if (!no_stdout)
-			printf("  Total:  %20lld events (dropped %lu)\n",
-					events_processed, dip->drop_count);
+			printf("  Total:  %20llu events (dropped %lu), %8llu KiB data\n",
+					events_processed, dip->drop_count,
+					data_read >> 10);
 	}
 
 	if (total_drops)
@@ -936,6 +1041,8 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	page_size = getpagesize();
+
 	if (start_devices() != 0)
 		return 1;
 
@@ -949,7 +1056,7 @@ int main(int argc, char *argv[])
 	if (stop_watch)
 		alarm(stop_watch);
 
-	get_and_write_events();
+	wait_for_threads();
 
 	if (!is_trace_stopped()) {
 		trace_stopped = 1;
