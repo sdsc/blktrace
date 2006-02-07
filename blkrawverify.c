@@ -151,9 +151,15 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 	ifp = fopen(file, "r");
 	while ((n = fread(bit, sizeof(struct blk_io_trace), 1, ifp)) == 1) {
 		trace_to_cpu(bit);
-		if (verify_trace(bit)) {
+
+		if (!CHECK_MAGIC(bit)) {
 			INC_BAD("bad trace");
 			continue;
+		}
+
+		if ((bit->magic & 0xff) != SUPPORTED_VERSION) {
+			fprintf(stderr, "unsupported trace version\n");
+			break;
 		}
 
 		if (bit->pdu_len) {
