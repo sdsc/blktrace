@@ -261,8 +261,13 @@ static int start_trace(struct device_information *dip)
 	buts.buf_nr = buf_nr;
 	buts.act_mask = act_mask;
 
-	if (ioctl(dip->fd, BLKSTARTTRACE, &buts) < 0) {
-		perror("BLKSTARTTRACE");
+	if (ioctl(dip->fd, BLKTRACESETUP, &buts) < 0) {
+		perror("BLKTRACESETUP");
+		return 1;
+	}
+
+	if (ioctl(dip->fd, BLKTRACESTART) < 0) {
+		perror("BLKTRACESTART");
 		return 1;
 	}
 
@@ -276,8 +281,10 @@ static void stop_trace(struct device_information *dip)
 	if (dip_tracing(dip) || kill_running_trace) {
 		dip_set_tracing(dip, 0);
 
-		if (ioctl(dip->fd, BLKSTOPTRACE) < 0)
-			perror("BLKSTOPTRACE");
+		if (ioctl(dip->fd, BLKTRACESTOP) < 0)
+			perror("BLKTRACESTOP");
+		if (ioctl(dip->fd, BLKTRACETEARDOWN) < 0)
+			perror("BLKTRACETEARDOWN");
 
 		close(dip->fd);
 		dip->fd = -1;
