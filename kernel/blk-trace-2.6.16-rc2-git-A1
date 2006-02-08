@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..911f5e4
+index 0000000..f309f85
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,463 @@
+@@ -0,0 +1,448 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -172,22 +172,17 @@ index 0000000..911f5e4
 +
 +static int blk_trace_remove(request_queue_t *q)
 +{
-+	struct blk_trace *bt = NULL;
-+	int ret = -EINVAL;
++	struct blk_trace *bt;
 +
-+	if (q->blk_trace) {
-+		bt = q->blk_trace;
-+		q->blk_trace = NULL;
-+		ret = 0;
-+	}
++	bt = xchg(&q->blk_trace, NULL);
++	if (!bt)
++		return -EINVAL;
 +
-+	if (bt) {
-+		if (bt->trace_state == Blktrace_setup ||
-+		    bt->trace_state == Blktrace_stopped)
-+			blk_trace_cleanup(bt);
-+	}
++	if (bt->trace_state == Blktrace_setup ||
++	    bt->trace_state == Blktrace_stopped)
++		blk_trace_cleanup(bt);
 +
-+	return ret;
++	return 0;
 +}
 +
 +static int blk_dropped_open(struct inode *inode, struct file *filp)
@@ -307,14 +302,10 @@ index 0000000..911f5e4
 +	bt->trace_state = Blktrace_setup;
 +
 +	ret = -EBUSY;
-+	spin_lock_irq(q->queue_lock);
-+	if (!q->blk_trace) {
-+		q->blk_trace = bt;
-+		ret = 0;
-+	}
-+	spin_unlock_irq(q->queue_lock);
-+	if (!ret)
-+		return 0;
++	if (xchg(&q->blk_trace, bt))
++		goto err;
++
++	return 0;
 +err:
 +	if (bt && bt->dropped_file)
 +		relayfs_remove_file(bt->dropped_file);
@@ -333,30 +324,26 @@ index 0000000..911f5e4
 +	struct blk_trace *bt;
 +	int ret;
 +
-+	ret = -EINVAL;
-+
-+	spin_lock_irq(q->queue_lock);
++	if ((bt = q->blk_trace) == NULL)
++		return -EINVAL;
 +
 +	/*
 +	 * For starting a trace, we can transition from a setup or stopped
 +	 * trace. For stopping a trace, the state must be running
 +	 */
-+	bt = q->blk_trace;
-+	if (bt) {
-+		if (start) {
-+			if (bt->trace_state == Blktrace_setup ||
-+			    bt->trace_state == Blktrace_stopped) {
-+				bt->trace_state = Blktrace_running;
-+				ret = 0;
-+			}
-+		} else {
-+			if (bt->trace_state == Blktrace_running) {
-+				bt->trace_state = Blktrace_stopped;
-+				ret = 0;
-+			}
++	ret = -EINVAL;
++	if (start) {
++		if (bt->trace_state == Blktrace_setup ||
++		    bt->trace_state == Blktrace_stopped) {
++			bt->trace_state = Blktrace_running;
++			ret = 0;
++		}
++	} else {
++		if (bt->trace_state == Blktrace_running) {
++			bt->trace_state = Blktrace_stopped;
++			ret = 0;
 +		}
 +	}
-+	spin_unlock_irq(q->queue_lock);
 +
 +	return ret;
 +}
@@ -389,9 +376,7 @@ index 0000000..911f5e4
 +		ret = blk_trace_startstop(q, start);
 +		break;
 +	case BLKTRACETEARDOWN:
-+		spin_lock_irq(q->queue_lock);
 +		ret = blk_trace_remove(q);
-+		spin_unlock_irq(q->queue_lock);
 +		break;
 +	default:
 +		ret = -ENOTTY;
