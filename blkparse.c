@@ -840,6 +840,30 @@ static void log_track_getrq(struct per_dev_info *pdi, struct blk_io_trace *t)
 	iot->allocation_time = t->time;
 }
 
+static inline int is_remapper(struct per_dev_info *pdi)
+{
+	int major = MAJOR(pdi->dev);
+
+	return (major == 253 || major == 9);
+}
+
+/*
+ * for md/dm setups, the interesting cycle is Q -> C. So track queueing
+ * time here, as dispatch time
+ */
+static void log_track_queue(struct per_dev_info *pdi, struct blk_io_trace *t)
+{
+	struct io_track *iot;
+
+	if (!track_ios)
+		return;
+	if (!is_remapper(pdi))
+		return;
+
+	iot = find_track(pdi, t->pid, t->comm, t->sector);
+	iot->dispatch_time = t->time;
+}
+
 /*
  * return time between rq allocation and insertion
  */
@@ -918,8 +942,6 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 	struct io_track *iot;
 
 	if (!track_ios)
-		return -1;
-	if ((t->action & BLK_TC_ACT(BLK_TC_FS)) == 0)
 		return -1;
 
 	iot = __find_track(pdi, t->sector);
@@ -1229,6 +1251,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 
 	switch (act) {
 		case __BLK_TA_QUEUE:
+			log_track_queue(pdi, t);
 			account_queue(t, pci, w);
 			log_queue(pci, t, "Q");
 			break;
