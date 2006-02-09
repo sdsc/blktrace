@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..92c979d
+index 0000000..41351dd
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,494 @@
+@@ -0,0 +1,501 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -111,6 +111,8 @@ index 0000000..92c979d
 +	struct blk_io_trace *t;
 +	unsigned long flags;
 +	unsigned long *sequence;
++	unsigned long seq;
++	u64 cpu_time;
 +	pid_t pid;
 +	int cpu;
 +
@@ -147,20 +149,22 @@ index 0000000..92c979d
 +	cpu = get_cpu();
 +
 +	sequence = per_cpu_ptr(bt->sequence, cpu);
-+	t->sequence = ++(*sequence);
-+	t->time = sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
-+	t->cpu = cpu;
++	seq = ++(*sequence);
++	cpu_time = sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
 +
 +	local_irq_restore(flags);
 +
 +	t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
-+	t->device = bt->dev;
++	t->sequence = seq;
++	t->time = cpu_time;
 +	t->sector = sector;
 +	t->bytes = bytes;
 +	t->action = what;
++	t->pid = pid;
++	t->device = bt->dev;
++	t->cpu = cpu;
 +	t->error = error;
 +	t->pdu_len = pdu_len;
-+	t->pid = pid;
 +
 +	if (pdu_len)
 +		memcpy((void *) t + sizeof(*t), pdu_data, pdu_len);
@@ -283,7 +287,7 @@ index 0000000..92c979d
 +			   char __user *arg)
 +{
 +	struct blk_user_trace_setup buts;
-+	struct blk_trace *bt = NULL;
++	struct blk_trace *old_bt, *bt = NULL;
 +	struct dentry *dir = NULL;
 +	char b[BDEVNAME_SIZE];
 +	int ret, i;
@@ -348,8 +352,11 @@ index 0000000..92c979d
 +	bt->trace_state = Blktrace_setup;
 +
 +	ret = -EBUSY;
-+	if (xchg(&q->blk_trace, bt))
++	old_bt = xchg(&q->blk_trace, bt);
++	if (old_bt) {
++		xchg(&q->blk_trace, old_bt);
 +		goto err;
++	}
 +
 +	return 0;
 +err:
@@ -529,7 +536,7 @@ index 0000000..92c979d
 +module_init(blk_trace_init);
 +
 diff --git a/block/elevator.c b/block/elevator.c
-index 2fc269f..208e769 100644
+index 24b702d..0c9fafe 100644
 --- a/block/elevator.c
 +++ b/block/elevator.c
 @@ -33,6 +33,7 @@
@@ -540,16 +547,16 @@ index 2fc269f..208e769 100644
  
  #include <asm/uaccess.h>
  
-@@ -316,6 +317,8 @@ void __elv_add_request(request_queue_t *
+@@ -315,6 +316,8 @@ void elv_insert(request_queue_t *q, stru
  	struct list_head *pos;
  	unsigned ordseq;
  
 +	blk_add_trace_rq(q, rq, BLK_TA_INSERT);
 +
- 	if (q->ordcolor)
- 		rq->flags |= REQ_ORDERED_COLOR;
+ 	rq->q = q;
  
-@@ -475,6 +478,7 @@ struct request *elv_next_request(request
+ 	switch (where) {
+@@ -481,6 +484,7 @@ struct request *elv_next_request(request
  			 * not be passed by new incoming requests
  			 */
  			rq->flags |= REQ_STARTED;
@@ -582,7 +589,7 @@ index e110949..7acb56c 100644
  	return -ENOIOCTLCMD;
  }
 diff --git a/block/ll_rw_blk.c b/block/ll_rw_blk.c
-index ee5ed98..7367c4f 100644
+index 03d9c82..41387f5 100644
 --- a/block/ll_rw_blk.c
 +++ b/block/ll_rw_blk.c
 @@ -28,6 +28,7 @@
@@ -826,7 +833,7 @@ index 1f3bb50..0dd0d81 100644
  	BUG_ON(bi->bi_idx != 0);
  	atomic_set(&bp->cnt, 3);
 diff --git a/fs/compat_ioctl.c b/fs/compat_ioctl.c
-index 5dd0207..010e02b 100644
+index 057e602..893d600 100644
 --- a/fs/compat_ioctl.c
 +++ b/fs/compat_ioctl.c
 @@ -72,6 +72,7 @@
