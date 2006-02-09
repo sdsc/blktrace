@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..41351dd
+index 0000000..3b03587
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,501 @@
+@@ -0,0 +1,499 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -44,17 +44,14 @@ index 0000000..41351dd
 +#include <asm/uaccess.h>
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
++static unsigned int blktrace_seq = 1;
 +
 +static void trace_note_tsk(struct blk_trace *bt, struct task_struct *tsk)
 +{
 +	struct blk_io_trace *t;
-+	unsigned long flags;
-+
-+	local_irq_save(flags);
 +
 +	t = relay_reserve(bt->rchan, sizeof(*t) + sizeof(tsk->comm));
 +	if (t) {
-+		memset(t, 0, sizeof(*t));
 +		t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
 +		t->device = bt->dev;
 +		t->action = BLK_TC_ACT(BLK_TC_NOTIFY);
@@ -62,10 +59,8 @@ index 0000000..41351dd
 +		t->cpu = smp_processor_id();
 +		t->pdu_len = sizeof(tsk->comm);
 +		memcpy((void *) t + sizeof(*t), tsk->comm, t->pdu_len);
-+		tsk_set_btrace_seen(tsk);
++		tsk->btrace_seq = blktrace_seq;
 +	}
-+	
-+	local_irq_restore(flags);
 +}
 +
 +static int act_log_check(struct blk_trace *bt, u32 what, sector_t sector,
@@ -127,9 +122,6 @@ index 0000000..41351dd
 +	if (unlikely(act_log_check(bt, what, sector, pid)))
 +		return;
 +
-+	if (unlikely(!tsk_btrace_seen(tsk)))
-+		trace_note_tsk(bt, tsk);
-+
 +	/*
 +	 * A word about the locking here - we disable interrupts to reserve
 +	 * some space in the relayfs per-cpu buffer, to prevent an irq
@@ -139,6 +131,9 @@ index 0000000..41351dd
 +	 * for us
 +	 */
 +	local_irq_save(flags);
++
++	if (unlikely(tsk->btrace_seq != blktrace_seq))
++		trace_note_tsk(bt, tsk);
 +
 +	t = relay_reserve(bt->rchan, sizeof(*t) + pdu_len);
 +	if (unlikely(!t)) {
@@ -217,6 +212,7 @@ index 0000000..41351dd
 +	relay_close(bt->rchan);
 +	relayfs_remove_file(bt->dropped_file);
 +	blk_remove_tree(bt->dir);
++	free_percpu(bt->sequence);
 +	kfree(bt);
 +}
 +
@@ -388,6 +384,8 @@ index 0000000..41351dd
 +	if (start) {
 +		if (bt->trace_state == Blktrace_setup ||
 +		    bt->trace_state == Blktrace_stopped) {
++			blktrace_seq++;
++			smp_mb();
 +			bt->trace_state = Blktrace_running;
 +			ret = 0;
 +		}
@@ -1179,26 +1177,29 @@ index e059da9..c7a63cd 100644
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 0cfcd1c..803fcfa 100644
+index 0cfcd1c..69cd119 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -931,6 +931,7 @@ static inline void put_task_struct(struc
- #define PF_BORROWED_MM	0x00400000	/* I am a kthread doing use_mm */
- #define PF_RANDOMIZE	0x00800000	/* randomize virtual address space */
- #define PF_SWAPWRITE	0x01000000	/* Allowed to write to swap */
-+#define PF_BTRACE_SEEN	0x02000000	/* Already seen by blktrace */
+@@ -708,6 +708,7 @@ struct task_struct {
+ 	prio_array_t *array;
  
- /*
-  * Only the _current_ task can read/write to tsk->flags, but other
-@@ -956,6 +957,8 @@ static inline void put_task_struct(struc
- /* NOTE: this will return 0 or PF_USED_MATH, it will never return 1 */
- #define tsk_used_math(p) ((p)->flags & PF_USED_MATH)
- #define used_math() tsk_used_math(current)
-+#define tsk_btrace_seen(p) ((p)->flags & PF_BTRACE_SEEN)
-+#define tsk_set_btrace_seen(p) ((p)->flags |= PF_BTRACE_SEEN)
+ 	unsigned short ioprio;
++	unsigned int btrace_seq;
  
- #ifdef CONFIG_SMP
- extern int set_cpus_allowed(task_t *p, cpumask_t new_mask);
+ 	unsigned long sleep_avg;
+ 	unsigned long long timestamp, last_ran;
+diff --git a/kernel/fork.c b/kernel/fork.c
+index 8e88b37..60f838f 100644
+--- a/kernel/fork.c
++++ b/kernel/fork.c
+@@ -179,6 +179,7 @@ static struct task_struct *dup_task_stru
+ 	/* One for us, one for whoever does the "release_task()" (usually parent) */
+ 	atomic_set(&tsk->usage,2);
+ 	atomic_set(&tsk->fs_excl, 0);
++	tsk->btrace_seq = 0;
+ 	return tsk;
+ }
+ 
 diff --git a/mm/highmem.c b/mm/highmem.c
 index ce2e7e8..d0ea1ee 100644
 --- a/mm/highmem.c
