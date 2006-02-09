@@ -516,17 +516,14 @@ static void add_ppm_hash(pid_t pid, const char *name)
 	struct process_pid_map *ppm;
 
 	ppm = find_ppm(pid);
-	if (ppm) {
-		fprintf(stderr, "Hmm ppm hash already exists %s/%d, this %s/%d\n", ppm->comm, ppm->pid, name, pid);
-		return;
+	if (!ppm) {
+		ppm = malloc(sizeof(*ppm));
+		memset(ppm, 0, sizeof(*ppm));
+		ppm->pid = pid;
+		strcpy(ppm->comm, name);
+		ppm->hash_next = ppm_hash_table[hash_idx];
+		ppm_hash_table[hash_idx] = ppm;
 	}
-
-	ppm = malloc(sizeof(*ppm));
-	memset(ppm, 0, sizeof(*ppm));
-	ppm->pid = pid;
-	strcpy(ppm->comm, name);
-	ppm->hash_next = ppm_hash_table[hash_idx];
-	ppm_hash_table[hash_idx] = ppm;
 }
 
 char *find_process_name(pid_t pid)
