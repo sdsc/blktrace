@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..f309f85
+index 0000000..92c979d
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,448 @@
+@@ -0,0 +1,494 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -45,6 +45,61 @@ index 0000000..f309f85
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
 +
++static void trace_note_tsk(struct blk_trace *bt, struct task_struct *tsk)
++{
++	struct blk_io_trace *t;
++	unsigned long flags;
++
++	local_irq_save(flags);
++
++	t = relay_reserve(bt->rchan, sizeof(*t) + sizeof(tsk->comm));
++	if (t) {
++		memset(t, 0, sizeof(*t));
++		t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
++		t->device = bt->dev;
++		t->action = BLK_TC_ACT(BLK_TC_NOTIFY);
++		t->pid = tsk->pid;
++		t->cpu = smp_processor_id();
++		t->pdu_len = sizeof(tsk->comm);
++		memcpy((void *) t + sizeof(*t), tsk->comm, t->pdu_len);
++		tsk_set_btrace_seen(tsk);
++	}
++	
++	local_irq_restore(flags);
++}
++
++static int act_log_check(struct blk_trace *bt, u32 what, sector_t sector,
++			 pid_t pid)
++{
++	if (((bt->act_mask << BLK_TC_SHIFT) & what) == 0)
++		return 1;
++	if (sector < bt->start_lba || sector > bt->end_lba)
++		return 1;
++	if (bt->pid && pid != bt->pid)
++		return 1;
++
++	return 0;
++}
++
++/*
++ * Data direction bit lookup
++ */
++static u32 ddir_act[2] __read_mostly = { BLK_TC_ACT(BLK_TC_READ), BLK_TC_ACT(BLK_TC_WRITE) };
++
++/*
++ * Bio action bits of interest
++ */
++static u32 bio_act[3] __read_mostly = { 0, BLK_TC_ACT(BLK_TC_BARRIER), BLK_TC_ACT(BLK_TC_SYNC) };
++
++/*
++ * More could be added as needed, taking care to increment the decrementer
++ * to get correct indexing
++ */
++#define trace_barrier_bit(rw)	\
++	(((rw) & (1 << BIO_RW_BARRIER)) >> (BIO_RW_BARRIER - 0))
++#define trace_sync_bit(rw)	\
++	(((rw) & (1 << BIO_RW_SYNC)) >> (BIO_RW_SYNC - 1))
++
 +/*
 + * The worker for the various blk_add_trace*() types. Fills out a
 + * blk_io_trace structure and places it in a per-cpu subbuffer.
@@ -52,33 +107,26 @@ index 0000000..f309f85
 +void __blk_add_trace(struct blk_trace *bt, sector_t sector, int bytes,
 +		     int rw, u32 what, int error, int pdu_len, void *pdu_data)
 +{
++	struct task_struct *tsk = current;
 +	struct blk_io_trace *t;
 +	unsigned long flags;
 +	unsigned long *sequence;
 +	pid_t pid;
 +	int cpu;
 +
-+	if (bt->trace_state != Blktrace_running)
++	if (unlikely(bt->trace_state != Blktrace_running))
 +		return;
 +
-+	if (rw & (1 << BIO_RW_BARRIER))
-+		what |= BLK_TC_ACT(BLK_TC_BARRIER);
-+	if (rw & (1 << BIO_RW_SYNC))
-+		what |= BLK_TC_ACT(BLK_TC_SYNC);
++	what |= ddir_act[rw & WRITE];
++	what |= bio_act[trace_barrier_bit(rw)];
++	what |= bio_act[trace_sync_bit(rw)];
 +
-+	if (rw & WRITE)
-+		what |= BLK_TC_ACT(BLK_TC_WRITE);
-+	else
-+		what |= BLK_TC_ACT(BLK_TC_READ);
-+
-+	if (((bt->act_mask << BLK_TC_SHIFT) & what) == 0)
-+		return;
-+	if (sector < bt->start_lba || sector > bt->end_lba)
++	pid = tsk->pid;
++	if (unlikely(act_log_check(bt, what, sector, pid)))
 +		return;
 +
-+	pid = current->pid;
-+	if (bt->pid && pid != bt->pid)
-+		return;
++	if (unlikely(!tsk_btrace_seen(tsk)))
++		trace_note_tsk(bt, tsk);
 +
 +	/*
 +	 * A word about the locking here - we disable interrupts to reserve
@@ -112,9 +160,7 @@ index 0000000..f309f85
 +	t->action = what;
 +	t->error = error;
 +	t->pdu_len = pdu_len;
-+
 +	t->pid = pid;
-+	strncpy(t->comm, current->comm, sizeof(t->comm));
 +
 +	if (pdu_len)
 +		memcpy((void *) t + sizeof(*t), pdu_data, pdu_len);
@@ -814,7 +860,7 @@ index 860e7a4..266ce9d 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..005c8d2
+index 0000000..fca40ef
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
 @@ -0,0 +1,277 @@
@@ -839,6 +885,7 @@ index 0000000..005c8d2
 +	BLK_TC_COMPLETE	= 1 << 7,	/* completions */
 +	BLK_TC_FS	= 1 << 8,	/* fs requests */
 +	BLK_TC_PC	= 1 << 9,	/* pc requests */
++	BLK_TC_NOTIFY	= 1 << 10,	/* special message */
 +
 +	BLK_TC_END	= 1 << 15,	/* only 16-bits, reminder */
 +};
@@ -887,7 +934,7 @@ index 0000000..005c8d2
 +#define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 +
 +#define BLK_IO_TRACE_MAGIC	0x65617400
-+#define BLK_IO_TRACE_VERSION	0x06
++#define BLK_IO_TRACE_VERSION	0x07
 +
 +/*
 + * The trace itself
@@ -900,11 +947,10 @@ index 0000000..005c8d2
 +	u32 bytes;		/* transfer length */
 +	u32 action;		/* what happened */
 +	u32 pid;		/* who did it */
++	u32 device;		/* device number */
 +	u32 cpu;		/* on what cpu did it happen */
 +	u16 error;		/* completion error */
 +	u16 pdu_len;		/* length of data after this trace */
-+	u32 device;		/* device number */
-+	char comm[16];		/* task command name (TASK_COMM_LEN) */
 +};
 +
 +/*
@@ -1125,6 +1171,27 @@ index e059da9..c7a63cd 100644
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
+diff --git a/include/linux/sched.h b/include/linux/sched.h
+index 0cfcd1c..803fcfa 100644
+--- a/include/linux/sched.h
++++ b/include/linux/sched.h
+@@ -931,6 +931,7 @@ static inline void put_task_struct(struc
+ #define PF_BORROWED_MM	0x00400000	/* I am a kthread doing use_mm */
+ #define PF_RANDOMIZE	0x00800000	/* randomize virtual address space */
+ #define PF_SWAPWRITE	0x01000000	/* Allowed to write to swap */
++#define PF_BTRACE_SEEN	0x02000000	/* Already seen by blktrace */
+ 
+ /*
+  * Only the _current_ task can read/write to tsk->flags, but other
+@@ -956,6 +957,8 @@ static inline void put_task_struct(struc
+ /* NOTE: this will return 0 or PF_USED_MATH, it will never return 1 */
+ #define tsk_used_math(p) ((p)->flags & PF_USED_MATH)
+ #define used_math() tsk_used_math(current)
++#define tsk_btrace_seen(p) ((p)->flags & PF_BTRACE_SEEN)
++#define tsk_set_btrace_seen(p) ((p)->flags |= PF_BTRACE_SEEN)
+ 
+ #ifdef CONFIG_SMP
+ extern int set_cpus_allowed(task_t *p, cpumask_t new_mask);
 diff --git a/mm/highmem.c b/mm/highmem.c
 index ce2e7e8..d0ea1ee 100644
 --- a/mm/highmem.c
