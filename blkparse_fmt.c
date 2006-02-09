@@ -154,9 +154,12 @@ static void print_field(char *act, struct per_cpu_info *pci,
 	case 'c':
 		fprintf(ofp, strcat(format, "d"), pci->cpu);
 		break;
-	case 'C':
-		fprintf(ofp, strcat(format, "s"), t->comm);
+	case 'C': {
+		char *name = find_process_name(t->pid);
+
+		fprintf(ofp, strcat(format, "s"), name);
 		break;
+	}
 	case 'd': {
 		char rwbs[4];
 
@@ -253,6 +256,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			    int pdu_len, unsigned char *pdu_buf)
 {
 	char rwbs[4];
+	char *name;
 
 	fill_rwbs(rwbs, t);
 
@@ -263,6 +267,8 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		MAJOR(t->device), MINOR(t->device), pci->cpu, t->sequence,
 		(int) SECONDS(t->time), (unsigned long) NANO_SECONDS(t->time),
 		t->pid, act, rwbs);
+
+	name = find_process_name(t->pid);
 
 	switch (act[0]) {
 	case 'R':	/* Requeue */
@@ -295,16 +301,16 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			p = dump_pdu(pdu_buf, pdu_len);
 			if (p)
 				fprintf(ofp, "(%s) ", p);
-			fprintf(ofp, "[%s]\n", t->comm);
+			fprintf(ofp, "[%s]\n", name);
 		} else {
 			if (elapsed != -1ULL) {
 				fprintf(ofp, "%llu + %u (%8llu) [%s]\n",
 					(unsigned long long) t->sector,
-					t_sec(t), elapsed, t->comm);
+					t_sec(t), elapsed, name);
 			} else {
 				fprintf(ofp, "%llu + %u [%s]\n",
 					(unsigned long long) t->sector,
-					t_sec(t), t->comm);
+					t_sec(t), name);
 			}
 		}
 		break;
@@ -315,16 +321,16 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	case 'G':	/* Get request */
 	case 'S':	/* Sleep request */
 		fprintf(ofp, "%llu + %u [%s]\n", (unsigned long long) t->sector,
-			t_sec(t), t->comm);
+			t_sec(t), name);
 		break;
 
 	case 'P':	/* Plug */
-		fprintf(ofp, "[%s]\n", t->comm);
+		fprintf(ofp, "[%s]\n", name);
 		break;
 
 	case 'U':	/* Unplug IO */
 	case 'T': 	/* Unplug timer */
-		fprintf(ofp, "[%s] %u\n", t->comm, get_pdu_int(t));
+		fprintf(ofp, "[%s] %u\n", name, get_pdu_int(t));
 		break;
 
 	case 'A': {	/* remap */
@@ -340,7 +346,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		
 	case 'X': 	/* Split */
 		fprintf(ofp, "%llu / %u [%s]\n", (unsigned long long) t->sector,
-			get_pdu_int(t), t->comm);
+			get_pdu_int(t), name);
 		break;
 
 	default:

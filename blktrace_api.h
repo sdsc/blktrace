@@ -17,6 +17,7 @@ enum {
 	BLK_TC_COMPLETE	= 1 << 7,	/* completions */
 	BLK_TC_FS	= 1 << 8,	/* fs requests */
 	BLK_TC_PC	= 1 << 9,	/* pc requests */
+	BLK_TC_NOTIFY	= 1 << 10,	/* special message */
 
 	BLK_TC_END	= 1 << 15,	/* only 16-bits, reminder */
 };
@@ -65,7 +66,7 @@ enum {
 #define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
-#define BLK_IO_TRACE_VERSION	0x06
+#define BLK_IO_TRACE_VERSION	0x07
 
 /*
  * The trace itself
@@ -78,11 +79,10 @@ struct blk_io_trace {
 	__u32 bytes;		/* transfer length */
 	__u32 action;		/* what happened */
 	__u32 pid;		/* who did it */
+	__u32 device;		/* device identifier (dev_t) */
 	__u32 cpu;		/* on what cpu did it happen */
 	__u16 error;		/* completion error */
 	__u16 pdu_len;		/* length of data after this trace */
-	__u32 device;		/* device identifier (dev_t) */
-	char  comm[16];		/* task command name (TASK_COMM_LEN) */
 };
 
 /*

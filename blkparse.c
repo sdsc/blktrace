@@ -90,6 +90,20 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
+/*
+ * some duplicated effort here, we can unify this hash and the ppi hash later
+ */
+struct process_pid_map {
+	pid_t pid;
+	char comm[16];
+	struct process_pid_map *hash_next, *list_next;
+};
+
+#define PPM_HASH_SHIFT	(8)
+#define PPM_HASH_SIZE	(1 << PPM_HASH_SHIFT)
+#define PPM_HASH_MASK	(PPM_HASH_SIZE - 1)
+static struct process_pid_map *ppm_hash_table[PPI_HASH_SIZE];
+
 #define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:"
 static struct option l_opts[] = {
  	{
@@ -477,6 +491,56 @@ static inline int cpu_is_online(struct per_dev_info *pdi, int cpu)
 	return (pdi->cpu_map[CPU_IDX(cpu)] & (1UL << CPU_BIT(cpu))) != 0;
 }
 
+static inline int ppm_hash_pid(pid_t pid)
+{
+	return jhash_1word(pid, JHASH_RANDOM) & PPM_HASH_MASK;
+}
+
+static struct process_pid_map *find_ppm(pid_t pid)
+{
+	const int hash_idx = ppm_hash_pid(pid);
+	struct process_pid_map *ppm;
+
+	ppm = ppm_hash_table[hash_idx];
+	while (ppm) {
+		if (ppm->pid == pid)
+			return ppm;
+
+		ppm = ppm->hash_next;
+	}
+
+	return NULL;
+}
+
+static void add_ppm_hash(pid_t pid, const char *name)
+{
+	const int hash_idx = ppm_hash_pid(pid);
+	struct process_pid_map *ppm;
+
+	ppm = find_ppm(pid);
+	if (ppm) {
+		fprintf(stderr, "Hmm ppm hash already exists %s/%d, this %s/%d\n", ppm->comm, ppm->pid, name, pid);
+		return;
+	}
+
+	ppm = malloc(sizeof(*ppm));
+	memset(ppm, 0, sizeof(*ppm));
+	ppm->pid = pid;
+	strcpy(ppm->comm, name);
+	ppm->hash_next = ppm_hash_table[hash_idx];
+	ppm_hash_table[hash_idx] = ppm;
+}
+
+char *find_process_name(pid_t pid)
+{
+	struct process_pid_map *ppm = find_ppm(pid);
+
+	if (ppm)
+		return ppm->comm;
+
+	return NULL;
+}
+
 static inline int ppi_hash_pid(__u32 pid)
 {
 	return jhash_1word(pid, JHASH_RANDOM) & PPI_HASH_MASK;
@@ -495,7 +559,7 @@ static inline int ppi_hash(struct per_process_info *ppi)
 	return ppi_hash_name(ppi->name);
 }
 
-static inline void add_process_to_hash(struct per_process_info *ppi)
+static inline void add_ppi_to_hash(struct per_process_info *ppi)
 {
 	const int hash_idx = ppi_hash(ppi);
 
@@ -503,14 +567,14 @@ static inline void add_process_to_hash(struct per_process_info *ppi)
 	ppi_hash_table[hash_idx] = ppi;
 }
 
-static inline void add_process_to_list(struct per_process_info *ppi)
+static inline void add_ppi_to_list(struct per_process_info *ppi)
 {
 	ppi->list_next = ppi_list;
 	ppi_list = ppi;
 	ppi_list_entries++;
 }
 
-static struct per_process_info *find_process_by_name(char *name)
+static struct per_process_info *find_ppi_by_name(char *name)
 {
 	const int hash_idx = ppi_hash_name(name);
 	struct per_process_info *ppi;
@@ -526,7 +590,7 @@ static struct per_process_info *find_process_by_name(char *name)
 	return NULL;
 }
 
-static struct per_process_info *find_process_by_pid(__u32 pid)
+static struct per_process_info *find_ppi_by_pid(__u32 pid)
 {
 	const int hash_idx = ppi_hash_pid(pid);
 	struct per_process_info *ppi;
@@ -542,14 +606,19 @@ static struct per_process_info *find_process_by_pid(__u32 pid)
 	return NULL;
 }
 
-static struct per_process_info *find_process(__u32 pid, char *name)
+static struct per_process_info *find_ppi(__u32 pid)
 {
 	struct per_process_info *ppi;
+	char *name;
 
 	if (ppi_hash_by_pid)
-		return find_process_by_pid(pid);
+		return find_ppi_by_pid(pid);
 
-	ppi = find_process_by_name(name);
+	name = find_process_name(pid);
+	if (!name)
+		return NULL;
+
+	ppi = find_ppi_by_name(name);
 	if (ppi && ppi->pid != pid)
 		ppi->more_than_one = 1;
 
@@ -791,15 +860,18 @@ static struct io_track *__find_track(struct per_dev_info *pdi, __u64 sector)
 }
 
 static struct io_track *find_track(struct per_dev_info *pdi, __u32 pid,
-				   char *comm, __u64 sector)
+				   __u64 sector)
 {
 	struct io_track *iot;
 
 	iot = __find_track(pdi, sector);
 	if (!iot) {
+		char *name = find_process_name(pid);
+
 		iot = malloc(sizeof(*iot));
 		iot->pid = pid;
-		memcpy(iot->comm, comm, sizeof(iot->comm));
+		if (name)
+			memcpy(iot->comm, name, sizeof(iot->comm));
 		iot->sector = sector;
 		track_rb_insert(pdi, iot);
 	}
@@ -836,7 +908,7 @@ static void log_track_getrq(struct per_dev_info *pdi, struct blk_io_trace *t)
 	if (!track_ios)
 		return;
 
-	iot = find_track(pdi, t->pid, t->comm, t->sector);
+	iot = find_track(pdi, t->pid, t->sector);
 	iot->allocation_time = t->time;
 }
 
@@ -860,7 +932,7 @@ static void log_track_queue(struct per_dev_info *pdi, struct blk_io_trace *t)
 	if (!is_remapper(pdi))
 		return;
 
-	iot = find_track(pdi, t->pid, t->comm, t->sector);
+	iot = find_track(pdi, t->pid, t->sector);
 	iot->dispatch_time = t->time;
 }
 
@@ -876,7 +948,7 @@ static unsigned long long log_track_insert(struct per_dev_info *pdi,
 	if (!track_ios)
 		return -1;
 
-	iot = find_track(pdi, t->pid, t->comm, t->sector);
+	iot = find_track(pdi, t->pid, t->sector);
 	iot->queue_time = t->time;
 
 	if (!iot->allocation_time)
@@ -885,7 +957,7 @@ static unsigned long long log_track_insert(struct per_dev_info *pdi,
 	elapsed = iot->queue_time - iot->allocation_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
+		struct per_process_info *ppi = find_ppi(iot->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_allocation_wait[w])
@@ -922,7 +994,7 @@ static unsigned long long log_track_issue(struct per_dev_info *pdi,
 	elapsed = iot->dispatch_time - iot->queue_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
+		struct per_process_info *ppi = find_ppi(iot->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_dispatch_wait[w])
@@ -957,7 +1029,7 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 	elapsed = iot->completion_time - iot->dispatch_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_process(iot->pid,iot->comm);
+		struct per_process_info *ppi = find_ppi(iot->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_completion_wait[w])
@@ -974,17 +1046,20 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 }
 
 
-static struct io_stats *find_process_io_stats(__u32 pid, char *name)
+static struct io_stats *find_process_io_stats(__u32 pid)
 {
-	struct per_process_info *ppi = find_process(pid, name);
+	struct per_process_info *ppi = find_ppi(pid);
 
 	if (!ppi) {
+		char *name = find_process_name(pid);
+
 		ppi = malloc(sizeof(*ppi));
 		memset(ppi, 0, sizeof(*ppi));
-		memcpy(ppi->name, name, 16);
+		if (name)
+			memcpy(ppi->name, name, 16);
 		ppi->pid = pid;
-		add_process_to_hash(ppi);
-		add_process_to_list(ppi);
+		add_ppi_to_hash(ppi);
+		add_ppi_to_list(ppi);
 	}
 
 	return &ppi->io_stats;
@@ -1026,7 +1101,7 @@ static inline void account_m(struct blk_io_trace *t, struct per_cpu_info *pci,
 	__account_m(&pci->io_stats, t, rw);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_m(ios, t, rw);
 	}
@@ -1050,7 +1125,7 @@ static inline void account_queue(struct blk_io_trace *t,
 	__account_queue(&pci->io_stats, t, rw);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_queue(ios, t, rw);
 	}
@@ -1073,7 +1148,7 @@ static inline void account_c(struct blk_io_trace *t, struct per_cpu_info *pci,
 	__account_c(&pci->io_stats, rw, bytes);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_c(ios, rw, bytes);
 	}
@@ -1097,7 +1172,7 @@ static inline void account_issue(struct blk_io_trace *t,
 	__account_issue(&pci->io_stats, rw, t->bytes);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_issue(ios, rw, t->bytes);
 	}
@@ -1117,7 +1192,7 @@ static inline void account_unplug(struct blk_io_trace *t,
 	__account_unplug(&pci->io_stats, timer);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_unplug(ios, timer);
 	}
@@ -1141,7 +1216,7 @@ static inline void account_requeue(struct blk_io_trace *t,
 	__account_requeue(&pci->io_stats, t, rw);
 
 	if (per_process_stats) {
-		struct io_stats *ios = find_process_io_stats(t->pid, t->comm);
+		struct io_stats *ios = find_process_io_stats(t->pid);
 
 		__account_requeue(ios, t, rw);
 	}
@@ -1865,6 +1940,14 @@ static int read_events(int fd, int always_block, int *fdblock)
 
 		if (verify_trace(bit)) {
 			bit_free(bit);
+			continue;
+		}
+
+		/*
+		 * not a real trace, so grab and handle it here
+		 */
+		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
+			add_ppm_hash(bit->pid, (char *) bit + sizeof(*bit));
 			continue;
 		}
 

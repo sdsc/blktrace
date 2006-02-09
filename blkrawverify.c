@@ -181,6 +181,12 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 			continue;
 		}
 
+		/*
+		 * skip notify traces, they don't have valid sequences
+		 */
+		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY))
+			continue;
+
 		if (ngood) {
 			if (bit->sequence <= save_sequence) {
 				INC_BAD("bad seq");
