@@ -387,6 +387,7 @@ static int mmap_subbuf(struct thread_information *tip)
 	 */
 	if (tip->fs_off + buf_size > tip->fs_buf_len) {
 		if (tip->fs_buf) {
+			munlock(tip->fs_buf, tip->fs_buf_len);
 			munmap(tip->fs_buf, tip->fs_buf_len);
 			tip->fs_buf = NULL;
 		}
@@ -406,6 +407,7 @@ static int mmap_subbuf(struct thread_information *tip)
 			perror("mmap");
 			return -1;
 		}
+		mlock(tip->fs_buf, tip->fs_buf_len);
 	}
 
 	ret = read_data(tip, tip->fs_buf + tip->fs_off, buf_size);
