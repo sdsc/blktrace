@@ -52,8 +52,8 @@ struct per_dev_info {
 	unsigned long long last_reported_time;
 	unsigned long long last_read_time;
 	struct io_stats io_stats;
-	unsigned long skips, nskips;
-	unsigned long long seq_skips, seq_nskips;
+	unsigned long skips;
+	unsigned long long seq_skips;
 	unsigned int max_depth[2];
 	unsigned int cur_depth[2];
 
@@ -68,9 +68,22 @@ struct per_dev_info {
 	struct per_cpu_info *cpus;
 };
 
+/*
+ * some duplicated effort here, we can unify this hash and the ppi hash later
+ */
+struct process_pid_map {
+	pid_t pid;
+	char comm[16];
+	struct process_pid_map *hash_next, *list_next;
+};
+
+#define PPM_HASH_SHIFT	(8)
+#define PPM_HASH_SIZE	(1 << PPM_HASH_SHIFT)
+#define PPM_HASH_MASK	(PPM_HASH_SIZE - 1)
+static struct process_pid_map *ppm_hash_table[PPM_HASH_SIZE];
+
 struct per_process_info {
-	char name[16];
-	__u32 pid;
+	struct process_pid_map *ppm;
 	struct io_stats io_stats;
 	struct per_process_info *hash_next, *list_next;
 	int more_than_one;
@@ -89,20 +102,6 @@ struct per_process_info {
 static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
-
-/*
- * some duplicated effort here, we can unify this hash and the ppi hash later
- */
-struct process_pid_map {
-	pid_t pid;
-	char comm[16];
-	struct process_pid_map *hash_next, *list_next;
-};
-
-#define PPM_HASH_SHIFT	(8)
-#define PPM_HASH_SIZE	(1 << PPM_HASH_SHIFT)
-#define PPM_HASH_MASK	(PPM_HASH_SIZE - 1)
-static struct process_pid_map *ppm_hash_table[PPI_HASH_SIZE];
 
 #define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:"
 static struct option l_opts[] = {
@@ -228,9 +227,8 @@ static struct trace *t_alloc_list;
 struct io_track {
 	struct rb_node rb_node;
 
+	struct process_pid_map *ppm;
 	__u64 sector;
-	__u32 pid;
-	char comm[16];
 	unsigned long long allocation_time;
 	unsigned long long queue_time;
 	unsigned long long dispatch_time;
@@ -553,10 +551,12 @@ static inline int ppi_hash_name(const char *name)
 
 static inline int ppi_hash(struct per_process_info *ppi)
 {
-	if (ppi_hash_by_pid)
-		return ppi_hash_pid(ppi->pid);
+	struct process_pid_map *ppm = ppi->ppm;
 
-	return ppi_hash_name(ppi->name);
+	if (ppi_hash_by_pid)
+		return ppi_hash_pid(ppm->pid);
+
+	return ppi_hash_name(ppm->comm);
 }
 
 static inline void add_ppi_to_hash(struct per_process_info *ppi)
@@ -581,7 +581,9 @@ static struct per_process_info *find_ppi_by_name(char *name)
 
 	ppi = ppi_hash_table[hash_idx];
 	while (ppi) {
-		if (!strcmp(ppi->name, name))
+		struct process_pid_map *ppm = ppi->ppm;
+
+		if (!strcmp(ppm->comm, name))
 			return ppi;
 
 		ppi = ppi->hash_next;
@@ -597,7 +599,9 @@ static struct per_process_info *find_ppi_by_pid(__u32 pid)
 
 	ppi = ppi_hash_table[hash_idx];
 	while (ppi) {
-		if (ppi->pid == pid)
+		struct process_pid_map *ppm = ppi->ppm;
+
+		if (ppm->pid == pid)
 			return ppi;
 
 		ppi = ppi->hash_next;
@@ -619,7 +623,7 @@ static struct per_process_info *find_ppi(__u32 pid)
 		return NULL;
 
 	ppi = find_ppi_by_name(name);
-	if (ppi && ppi->pid != pid)
+	if (ppi && ppi->ppm->pid != pid)
 		ppi->more_than_one = 1;
 
 	return ppi;
@@ -866,12 +870,8 @@ static struct io_track *find_track(struct per_dev_info *pdi, __u32 pid,
 
 	iot = __find_track(pdi, sector);
 	if (!iot) {
-		char *name = find_process_name(pid);
-
 		iot = malloc(sizeof(*iot));
-		iot->pid = pid;
-		if (name)
-			memcpy(iot->comm, name, sizeof(iot->comm));
+		iot->ppm = find_ppm(pid);
 		iot->sector = sector;
 		track_rb_insert(pdi, iot);
 	}
@@ -957,7 +957,7 @@ static unsigned long long log_track_insert(struct per_dev_info *pdi,
 	elapsed = iot->queue_time - iot->allocation_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_ppi(iot->pid);
+		struct per_process_info *ppi = find_ppi(iot->ppm->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_allocation_wait[w])
@@ -994,7 +994,7 @@ static unsigned long long log_track_issue(struct per_dev_info *pdi,
 	elapsed = iot->dispatch_time - iot->queue_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_ppi(iot->pid);
+		struct per_process_info *ppi = find_ppi(iot->ppm->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_dispatch_wait[w])
@@ -1029,7 +1029,7 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 	elapsed = iot->completion_time - iot->dispatch_time;
 
 	if (per_process_stats) {
-		struct per_process_info *ppi = find_ppi(iot->pid);
+		struct per_process_info *ppi = find_ppi(iot->ppm->pid);
 		int w = (t->action & BLK_TC_ACT(BLK_TC_WRITE)) != 0;
 
 		if (ppi && elapsed > ppi->longest_completion_wait[w])
@@ -1051,13 +1051,9 @@ static struct io_stats *find_process_io_stats(__u32 pid)
 	struct per_process_info *ppi = find_ppi(pid);
 
 	if (!ppi) {
-		char *name = find_process_name(pid);
-
 		ppi = malloc(sizeof(*ppi));
 		memset(ppi, 0, sizeof(*ppi));
-		if (name)
-			memcpy(ppi->name, name, 16);
-		ppi->pid = pid;
+		ppi->ppm = find_ppm(pid);
 		add_ppi_to_hash(ppi);
 		add_ppi_to_list(ppi);
 	}
@@ -1481,9 +1477,9 @@ static int ppi_name_compare(const void *p1, const void *p2)
 	struct per_process_info *ppi2 = *((struct per_process_info **) p2);
 	int res;
 
-	res = strverscmp(ppi1->name, ppi2->name);
+	res = strverscmp(ppi1->ppm->comm, ppi2->ppm->comm);
 	if (!res)
-		res = ppi1->pid > ppi2->pid;
+		res = ppi1->ppm->pid > ppi2->ppm->pid;
 
 	return res;
 }
@@ -1525,12 +1521,13 @@ static void show_process_stats(void)
 
 	ppi = ppi_list;
 	while (ppi) {
+		struct process_pid_map *ppm = ppi->ppm;
 		char name[64];
 
 		if (ppi->more_than_one)
-			sprintf(name, "%s (%u, ...)", ppi->name, ppi->pid);
+			sprintf(name, "%s (%u, ...)", ppm->comm, ppm->pid);
 		else
-			sprintf(name, "%s (%u)", ppi->name, ppi->pid);
+			sprintf(name, "%s (%u)", ppm->comm, ppm->pid);
 
 		dump_io_stats(NULL, &ppi->io_stats, name);
 		dump_wait_stats(ppi);
