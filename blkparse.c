@@ -536,7 +536,7 @@ char *find_process_name(pid_t pid)
 	return NULL;
 }
 
-static inline int ppi_hash_pid(__u32 pid)
+static inline int ppi_hash_pid(pid_t pid)
 {
 	return jhash_1word(pid, JHASH_RANDOM) & PPI_HASH_MASK;
 }
@@ -589,7 +589,7 @@ static struct per_process_info *find_ppi_by_name(char *name)
 	return NULL;
 }
 
-static struct per_process_info *find_ppi_by_pid(__u32 pid)
+static struct per_process_info *find_ppi_by_pid(pid_t pid)
 {
 	const int hash_idx = ppi_hash_pid(pid);
 	struct per_process_info *ppi;
@@ -607,7 +607,7 @@ static struct per_process_info *find_ppi_by_pid(__u32 pid)
 	return NULL;
 }
 
-static struct per_process_info *find_ppi(__u32 pid)
+static struct per_process_info *find_ppi(pid_t pid)
 {
 	struct per_process_info *ppi;
 	char *name;
@@ -860,7 +860,7 @@ static struct io_track *__find_track(struct per_dev_info *pdi, __u64 sector)
 	return NULL;
 }
 
-static struct io_track *find_track(struct per_dev_info *pdi, __u32 pid,
+static struct io_track *find_track(struct per_dev_info *pdi, pid_t pid,
 				   __u64 sector)
 {
 	struct io_track *iot;
@@ -1043,7 +1043,7 @@ static unsigned long long log_track_complete(struct per_dev_info *pdi,
 }
 
 
-static struct io_stats *find_process_io_stats(__u32 pid)
+static struct io_stats *find_process_io_stats(pid_t pid)
 {
 	struct per_process_info *ppi = find_ppi(pid);
 
@@ -1909,7 +1909,7 @@ static int read_events(int fd, int always_block, int *fdblock)
 		 * look at first trace to check whether we need to convert
 		 * data in the future
 		 */
-		if (data_is_native == -1 && check_data_endianness(bit))
+		if (data_is_native == -1 && check_data_endianness(bit->magic))
 			break;
 
 		magic = get_magic(bit);
