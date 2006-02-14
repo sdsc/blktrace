@@ -150,6 +150,9 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 
 	ifp = fopen(file, "r");
 	while ((n = fread(bit, sizeof(struct blk_io_trace), 1, ifp)) == 1) {
+		if (data_is_native == -1)
+			check_data_endianness(bit->magic);
+
 		trace_to_cpu(bit);
 
 		if (!CHECK_MAGIC(bit)) {
