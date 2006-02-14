@@ -154,7 +154,6 @@ struct tip_subbuf {
 	void *buf;
 	unsigned int len;
 	unsigned int max_len;
-	off_t offset;
 };
 
 #define FIFO_SIZE	(1024)	/* should be plenty big! */
@@ -174,10 +173,7 @@ struct thread_information {
 	void *fd_buf;
 	char fn[MAXPATHLEN + 64];
 
-	char ofname[64];
-
 	FILE *ofile;
-	off_t ofile_offset;
 	char *ofile_buffer;
 	int ofile_stdout;
 	int ofile_mmap;
@@ -257,8 +253,9 @@ static void exit_trace(int status);
  */
 struct blktrace_net_hdr {
 	u32 magic;		/* same as trace magic */
-	char ofname[64];	/* trace name */
+	char buts_name[32];	/* trace name */
 	u32 cpu;		/* for which cpu */
+	u32 max_cpus;
 	u32 len;		/* length of following trace data */
 };
 
@@ -522,48 +519,20 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 }
 
 /*
- * Use the copy approach for pipes
+ * Use the copy approach for pipes and network
  */
 static int get_subbuf(struct thread_information *tip)
 {
 	struct tip_subbuf *ts = malloc(sizeof(*ts));
-	int ret = 1;
+	int ret;
 
-	/*
-	 * for the net client, don't actually read the data in as we will
-	 * use sendfile to transmit it. just mark how much data we have
-	 */
-	if (net_mode == Net_client) {
-		struct stat sb;
+	ts->buf = malloc(buf_size);
+	ts->max_len = buf_size;
 
-		ts->buf = NULL;
-
-		if (fstat(tip->fd, &sb) < 0) {
-			perror("trace stat");
-			goto out;
-		}
-
-		ts->len = sb.st_size - tip->ofile_offset;
-		ts->max_len = ts->len;
-		ts->offset = tip->ofile_offset;
-		tip->ofile_offset += ts->len;
-		ret = subbuf_fifo_queue(tip, ts);
-	} else {
-		ts->buf = malloc(buf_size);
-		ts->max_len = buf_size;
-
-		ret = read_data(tip, ts->buf, ts->max_len);
-		if (ret > 0) {
-			ts->len = ret;
-			ret = subbuf_fifo_queue(tip, ts);
-		}
-	}
-
-out:
-	if (ret) {
-		if (ts->buf)
-			free(ts->buf);
-		free(ts);
+	ret = read_data(tip, ts->buf, ts->max_len);
+	if (ret > 0) {
+		ts->len = ret;
+		return subbuf_fifo_queue(tip, ts);
 	}
 
 	return ret;
@@ -663,20 +632,18 @@ static int flush_subbuf_net(struct thread_information *tip,
 			    struct tip_subbuf *ts)
 {
 	struct blktrace_net_hdr hdr;
-	int ret = 0;
 
 	hdr.magic = BLK_IO_TRACE_MAGIC;
-	strcpy(hdr.ofname, tip->ofname);
+	strcpy(hdr.buts_name, tip->device->buts_name);
 	hdr.cpu = tip->cpu;
+	hdr.max_cpus = ncpus;
 	hdr.len = ts->len;
 
 	if (write_data_net(net_out_fd, &hdr, sizeof(hdr)))
 		return 1;
 
-	if (sendfile(net_out_fd, tip->fd, &ts->offset, ts->len) < 0) {
-		perror("sendfile");
-		ret = 1;
-	}
+	if (write_data_net(net_out_fd, ts->buf, ts->len))
+		return 1;
 
 	free(ts);
 	return 0;
@@ -871,6 +838,7 @@ static int start_threads(struct device_information *dip)
 	struct thread_information *tip;
 	int j, pipeline = output_name && !strcmp(output_name, "-");
 	int mode, vbuf_size;
+	char op[64];
 
 	for_each_tip(dip, tip, j) {
 		tip->cpu = j;
@@ -886,8 +854,8 @@ static int start_threads(struct device_information *dip)
 			mode = _IOLBF;
 			vbuf_size = 512;
 		} else {
-			fill_ofname(tip->ofname, dip->buts_name, tip->cpu);
-			tip->ofile = fopen(tip->ofname, "w+");
+			fill_ofname(op, dip->buts_name, tip->cpu);
+			tip->ofile = fopen(op, "w+");
 			tip->ofile_stdout = 0;
 			tip->ofile_mmap = 1;
 			mode = _IOFBF;
@@ -895,7 +863,7 @@ static int start_threads(struct device_information *dip)
 		}
 
 		if (tip->ofile == NULL) {
-			perror(tip->ofname);
+			perror(op);
 			return 1;
 		}
 
@@ -1076,39 +1044,56 @@ static void show_stats(void)
 		fprintf(stderr, "You have dropped events, consider using a larger buffer size (-b)\n");
 }
 
-static struct thread_information *net_tip_list;
-static int net_tip_len;
+static struct device_information *net_get_dip(char *buts_name)
+{
+	struct device_information *dip;
+	int i;
+
+	for (i = 0; i < ndevs; i++) {
+		dip = &device_information[i];
+
+		if (!strcmp(dip->buts_name, buts_name))
+			return dip;
+	}
+
+	device_information = realloc(device_information, (ndevs + 1) * sizeof(*dip));
+	dip = &device_information[ndevs];
+	strcpy(dip->buts_name, buts_name);
+	ndevs++;
+	dip->threads = malloc(ncpus * sizeof(struct thread_information));
+	memset(dip->threads, 0, ncpus * sizeof(struct thread_information));
+
+	/*
+	 * open all files
+	 */
+	for (i = 0; i < ncpus; i++) {
+		struct thread_information *tip = &dip->threads[i];
+		char op[64];
+
+		tip->cpu = i;
+		tip->ofile_stdout = 0;
+		tip->ofile_mmap = 1;
+		tip->device = dip;
+
+		fill_ofname(op, dip->buts_name, tip->cpu);
+
+		tip->ofile = fopen(op, "w+");
+		if (!tip->ofile) {
+			perror("fopen");
+			return NULL;
+		}
+	}
+
+	return dip;
+}
 
 static struct thread_information *net_get_tip(struct blktrace_net_hdr *bnh)
 {
-	struct thread_information *tip;
-	int i;
+	struct device_information *dip;
 
-	for (i = 0; i < net_tip_len; i++) {
-		tip = &net_tip_list[i];
-
-		if (!strcmp(bnh->ofname, tip->ofname))
-			return tip;
-	}
-
-	net_tip_list = realloc(net_tip_list, (net_tip_len + 1) * sizeof(*tip));
-	tip = &net_tip_list[net_tip_len];
-	net_tip_len++;
-
-	memset(tip, 0, sizeof(*tip));
-
-	tip->cpu = bnh->cpu;
-	strcpy(tip->ofname, bnh->ofname);
-
-	tip->ofile = fopen(tip->ofname, "w+");
-	if (!tip->ofile) {
-		perror("fopen");
-		return NULL;
-	}
-
-	tip->ofile_stdout = 0;
-	tip->ofile_mmap = 1;
-	return tip;
+	ncpus = bnh->max_cpus;
+	dip = net_get_dip(bnh->buts_name);
+	return &dip->threads[bnh->cpu];
 }
 
 static int net_get_header(struct blktrace_net_hdr *bnh)
@@ -1176,7 +1161,7 @@ static int net_server(void)
 {
 	struct sockaddr_in addr;
 	socklen_t socklen;
-	int fd, opt, i;
+	int fd, opt, i, j;
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0) {
@@ -1226,8 +1211,12 @@ static int net_server(void)
 			break;
 	}
 
-	for (i = 0; i < net_tip_len; i++)
-		tip_ftrunc_final(&net_tip_list[i]);
+	for (i = 0; i < ndevs; i++) {
+		struct device_information *dip = &device_information[i];
+
+		for (j = 0; j < ncpus; j++)
+			tip_ftrunc_final(&dip->threads[j]);
+	}
 
 	return 0;
 }
@@ -1387,17 +1376,17 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	while (optind < argc) {
-		if (resize_devices(argv[optind++]) != 0)
-			return 1;
-	}
-
 	setlocale(LC_NUMERIC, "en_US");
 
 	page_size = getpagesize();
 
 	if (net_mode == Net_server)
 		return net_server();
+
+	while (optind < argc) {
+		if (resize_devices(argv[optind++]) != 0)
+			return 1;
+	}
 
 	if (ndevs == 0) {
 		show_usage(argv[0]);
