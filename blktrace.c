@@ -41,7 +41,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <sys/sendfile.h>
 
 #include "blktrace.h"
 #include "barrier.h"
@@ -426,15 +425,22 @@ static int read_data_net(struct thread_information *tip, void *buf, int len)
 		}
 	} while (!is_done() && bytes_left);
 
-	return len;
+	return len - bytes_left;
 }
 
 static int read_data(struct thread_information *tip, void *buf, int len)
 {
-	if (net_mode == Net_server)
-		return read_data_net(tip, buf, len);
+	int ret;
 
-	return read_data_file(tip, buf, len);
+	if (net_mode == Net_server)
+		ret = read_data_net(tip, buf, len);
+	else
+		ret = read_data_file(tip, buf, len);
+
+	if (ret > 0)
+		tip->data_read += ret;
+
+	return ret;
 }
 
 static inline struct tip_subbuf *
@@ -509,7 +515,6 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 
 	ret = read_data(tip, tip->fs_buf + tip->fs_off, maxlen);
 	if (ret >= 0) {
-		tip->data_read += ret;
 		tip->fs_size += ret;
 		tip->fs_off += ret;
 		return 0;
@@ -1060,6 +1065,7 @@ static struct device_information *net_get_dip(char *buts_name)
 	device_information = realloc(device_information, (ndevs + 1) * sizeof(*dip));
 	dip = &device_information[ndevs];
 	strcpy(dip->buts_name, buts_name);
+	strcpy(dip->path, buts_name);
 	ndevs++;
 	dip->threads = malloc(ncpus * sizeof(struct thread_information));
 	memset(dip->threads, 0, ncpus * sizeof(struct thread_information));
@@ -1219,6 +1225,7 @@ static int net_server(void)
 			tip_ftrunc_final(&dip->threads[j]);
 	}
 
+	show_stats();
 	return 0;
 }
 
