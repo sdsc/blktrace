@@ -112,16 +112,14 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 /*
  * check whether data is native or not
  */
-static inline int check_data_endianness(struct blk_io_trace *bit)
+static inline int check_data_endianness(u32 magic)
 {
-	u32 magic;
-
-	if ((bit->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
+	if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
 		data_is_native = 1;
 		return 0;
 	}
 
-	magic = __bswap_32(bit->magic);
+	magic = __bswap_32(magic);
 	if ((magic & 0xffffff00) == BLK_IO_TRACE_MAGIC) {
 		data_is_native = 0;
 		return 0;
