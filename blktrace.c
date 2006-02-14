@@ -645,6 +645,7 @@ static int flush_subbuf_net(struct thread_information *tip,
 	if (write_data_net(net_out_fd, ts->buf, ts->len))
 		return 1;
 
+	free(ts->buf);
 	free(ts);
 	return 0;
 }
