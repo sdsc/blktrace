@@ -1349,6 +1349,9 @@ repeat:
 	free(device_information);
 	device_information = NULL;
 	ncpus = ndevs = 0;
+
+	close(net_in_fd);
+	net_in_fd = -1;
 	goto repeat;
 }
 
