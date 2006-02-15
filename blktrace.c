@@ -1267,6 +1267,8 @@ static int net_server_loop(void)
  */
 static int net_server(void)
 {
+	struct device_information *dip;
+	struct thread_information *tip;
 	struct sockaddr_in addr;
 	socklen_t socklen;
 	int fd, opt, i, j;
@@ -1320,18 +1322,28 @@ repeat:
 			break;
 	}
 
-	for (i = 0; i < ndevs; i++) {
-		struct device_information *dip = &device_information[i];
-
-		for (j = 0; j < ncpus; j++)
-			tip_ftrunc_final(&dip->threads[j]);
-	}
+	for_each_dip(dip, i)
+		for_each_tip(dip, tip, j)
+			tip_ftrunc_final(tip);
 
 	show_stats();
 
 	if (is_done())
 		return 0;
 
+	/*
+	 * cleanup for next run
+	 */
+	for_each_dip(dip, i) {
+		for_each_tip(dip, tip, j)
+			fclose(tip->ofile);
+
+		free(dip->threads);
+	}
+
+	free(device_information);
+	device_information = NULL;
+	ncpus = ndevs = 0;
 	goto repeat;
 }
 
