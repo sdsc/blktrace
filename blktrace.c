@@ -1320,7 +1320,7 @@ repeat:
 	signal(SIGTERM, handle_sigint);
 	signal(SIGALRM, handle_sigint);
 
-	printf("blktrace: connected!\n");
+	printf("blktrace: connection from %s\n", inet_ntoa(addr.sin_addr));
 
 	while (!is_done()) {
 		if (net_server_loop())
