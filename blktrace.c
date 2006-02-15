@@ -1301,6 +1301,11 @@ static int net_server(void)
 	}
 
 repeat:
+	signal(SIGINT, NULL);
+	signal(SIGHUP, NULL);
+	signal(SIGTERM, NULL);
+	signal(SIGALRM, NULL);
+
 	printf("blktrace: waiting for incoming connection...\n");
 
 	socklen = sizeof(addr);
