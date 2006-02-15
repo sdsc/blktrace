@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..3b03587
+index 0000000..e00458e
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,499 @@
+@@ -0,0 +1,496 @@
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -44,8 +44,12 @@ index 0000000..3b03587
 +#include <asm/uaccess.h>
 +
 +static DEFINE_PER_CPU(unsigned long long, blk_trace_cpu_offset) = { 0, };
-+static unsigned int blktrace_seq = 1;
++static unsigned int blktrace_seq __read_mostly = 1;
 +
++/*
++ * Send out a notify for this process, if we haven't done so since a trace
++ * started
++ */
 +static void trace_note_tsk(struct blk_trace *bt, struct task_struct *tsk)
 +{
 +	struct blk_io_trace *t;
@@ -106,8 +110,6 @@ index 0000000..3b03587
 +	struct blk_io_trace *t;
 +	unsigned long flags;
 +	unsigned long *sequence;
-+	unsigned long seq;
-+	u64 cpu_time;
 +	pid_t pid;
 +	int cpu;
 +
@@ -136,35 +138,27 @@ index 0000000..3b03587
 +		trace_note_tsk(bt, tsk);
 +
 +	t = relay_reserve(bt->rchan, sizeof(*t) + pdu_len);
-+	if (unlikely(!t)) {
-+		local_irq_restore(flags);
-+		return;
++	if (t) {
++		cpu = smp_processor_id();
++		sequence = per_cpu_ptr(bt->sequence, cpu);
++
++		t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
++		t->sequence = ++(*sequence);
++		t->time = sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
++		t->sector = sector;
++		t->bytes = bytes;
++		t->action = what;
++		t->pid = pid;
++		t->device = bt->dev;
++		t->cpu = cpu;
++		t->error = error;
++		t->pdu_len = pdu_len;
++
++		if (pdu_len)
++			memcpy((void *) t + sizeof(*t), pdu_data, pdu_len);
 +	}
 +
-+	cpu = get_cpu();
-+
-+	sequence = per_cpu_ptr(bt->sequence, cpu);
-+	seq = ++(*sequence);
-+	cpu_time = sched_clock() - per_cpu(blk_trace_cpu_offset, cpu);
-+
 +	local_irq_restore(flags);
-+
-+	t->magic = BLK_IO_TRACE_MAGIC | BLK_IO_TRACE_VERSION;
-+	t->sequence = seq;
-+	t->time = cpu_time;
-+	t->sector = sector;
-+	t->bytes = bytes;
-+	t->action = what;
-+	t->pid = pid;
-+	t->device = bt->dev;
-+	t->cpu = cpu;
-+	t->error = error;
-+	t->pdu_len = pdu_len;
-+
-+	if (pdu_len)
-+		memcpy((void *) t + sizeof(*t), pdu_data, pdu_len);
-+
-+	put_cpu();
 +}
 +
 +EXPORT_SYMBOL_GPL(__blk_add_trace);
@@ -207,7 +201,7 @@ index 0000000..3b03587
 +	return dir;
 +}
 +
-+void blk_trace_cleanup(struct blk_trace *bt)
++static void blk_trace_cleanup(struct blk_trace *bt)
 +{
 +	relay_close(bt->rchan);
 +	relayfs_remove_file(bt->dropped_file);
@@ -363,6 +357,8 @@ index 0000000..3b03587
 +	if (bt) {
 +		if (bt->sequence)
 +			free_percpu(bt->sequence);
++		if (bt->rchan)
++			relay_close(bt->rchan);
 +		kfree(bt);
 +	}
 +	return ret;
@@ -392,6 +388,7 @@ index 0000000..3b03587
 +	} else {
 +		if (bt->trace_state == Blktrace_running) {
 +			bt->trace_state = Blktrace_stopped;
++			relay_flush(bt->rchan);
 +			ret = 0;
 +		}
 +	}
@@ -865,7 +862,7 @@ index 860e7a4..266ce9d 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..fca40ef
+index 0000000..86479af
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
 @@ -0,0 +1,277 @@
@@ -975,16 +972,16 @@ index 0000000..fca40ef
 +
 +struct blk_trace {
 +	int trace_state;
-+	struct dentry *dir;
 +	struct rchan *rchan;
-+	struct dentry *dropped_file;
-+	atomic_t dropped;
 +	unsigned long *sequence;
-+	u32 dev;
 +	u16 act_mask;
 +	u64 start_lba;
 +	u64 end_lba;
 +	u32 pid;
++	u32 dev;
++	struct dentry *dir;
++	struct dentry *dropped_file;
++	atomic_t dropped;
 +};
 +
 +/*
@@ -1177,10 +1174,10 @@ index e059da9..c7a63cd 100644
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index 0cfcd1c..69cd119 100644
+index b6f51e3..d9d465b 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -708,6 +708,7 @@ struct task_struct {
+@@ -705,6 +705,7 @@ struct task_struct {
  	prio_array_t *array;
  
  	unsigned short ioprio;
