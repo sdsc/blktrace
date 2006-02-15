@@ -177,6 +177,10 @@ struct thread_information {
 	int ofile_stdout;
 	int ofile_mmap;
 
+	int (*get_subbuf)(struct thread_information *, unsigned int);
+	int (*flush_subbuf)(struct thread_information *, struct tip_subbuf *);
+	int (*read_data)(struct thread_information *, void *, unsigned int);
+
 	unsigned long events_processed;
 	unsigned long long data_read;
 	struct device_information *device;
@@ -375,7 +379,8 @@ static void wait_for_data(struct thread_information *tip)
 	} while (!is_done());
 }
 
-static int read_data_file(struct thread_information *tip, void *buf, int len)
+static int read_data_file(struct thread_information *tip, void *buf,
+			  unsigned int len)
 {
 	int ret = 0;
 
@@ -402,7 +407,8 @@ static int read_data_file(struct thread_information *tip, void *buf, int len)
 
 }
 
-static int read_data_net(struct thread_information *tip, void *buf, int len)
+static int read_data_net(struct thread_information *tip, void *buf,
+			 unsigned int len)
 {
 	unsigned int bytes_left = len;
 	int ret = 0;
@@ -428,14 +434,10 @@ static int read_data_net(struct thread_information *tip, void *buf, int len)
 	return len - bytes_left;
 }
 
-static int read_data(struct thread_information *tip, void *buf, int len)
+static int read_data(struct thread_information *tip, void *buf,
+		     unsigned int len)
 {
-	int ret;
-
-	if (net_mode == Net_server)
-		ret = read_data_net(tip, buf, len);
-	else
-		ret = read_data_file(tip, buf, len);
+	int ret = tip->read_data(tip, buf, len);
 
 	if (ret > 0)
 		tip->data_read += ret;
@@ -526,13 +528,13 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 /*
  * Use the copy approach for pipes and network
  */
-static int get_subbuf(struct thread_information *tip)
+static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
 {
 	struct tip_subbuf *ts = malloc(sizeof(*ts));
 	int ret;
 
 	ts->buf = malloc(buf_size);
-	ts->max_len = buf_size;
+	ts->max_len = maxlen;
 
 	ret = read_data(tip, ts->buf, ts->max_len);
 	if (ret > 0) {
@@ -600,13 +602,8 @@ static void *thread_main(void *arg)
 	}
 
 	while (!is_done()) {
-		if (tip->ofile_mmap && net_mode != Net_client) {
-			if (mmap_subbuf(tip, buf_size))
-				break;
-		} else {
-			if (get_subbuf(tip))
-				break;
-		}
+		if (tip->get_subbuf(tip, buf_size))
+			break;
 	}
 
 	tip_ftrunc_final(tip);
@@ -749,12 +746,8 @@ static int write_tip_events(struct thread_information *tip)
 {
 	struct tip_subbuf *ts = subbuf_fifo_dequeue(tip);
 
-	if (ts) {
-		if (net_mode == Net_client)
-			return flush_subbuf_net(tip, ts);
-
-		return flush_subbuf_file(tip, ts);
-	}
+	if (ts)
+		return tip->flush_subbuf(tip, ts);
 
 	return 0;
 }
@@ -839,6 +832,27 @@ static void fill_ofname(char *dst, char *buts_name, int cpu)
 		sprintf(dst + len, "%s.blktrace.%d", buts_name, cpu);
 }
 
+static void fill_ops(struct thread_information *tip)
+{
+	/*
+	 * setup ops
+	 */
+	if (tip->ofile_mmap && net_mode != Net_client)
+		tip->get_subbuf = mmap_subbuf;
+	else
+		tip->get_subbuf = get_subbuf;
+
+	if (net_mode == Net_client)
+		tip->flush_subbuf = flush_subbuf_net;
+	else
+		tip->flush_subbuf = flush_subbuf_file;
+
+	if (net_mode == Net_server)
+		tip->read_data = read_data_net;
+	else
+		tip->read_data = read_data_file;
+}
+
 static int start_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
@@ -879,6 +893,8 @@ static int start_threads(struct device_information *dip)
 			close_thread(tip);
 			return 1;
 		}
+
+		fill_ops(tip);
 
 		if (pthread_create(&tip->thread, NULL, thread_main, tip)) {
 			perror("pthread_create");
