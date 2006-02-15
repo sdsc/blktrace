@@ -1356,7 +1356,11 @@ static char usage_str[] = \
 	"\t-A Give trace mask as a single value. See documentation\n" \
 	"\t-b Sub buffer size in KiB\n" \
 	"\t-n Number of sub buffers\n" \
-	"\t-v Print program version info\n\n";
+	"\t-l Run in network listen mode (blktrace server)\n" \
+	"\t-h Run in network client mode, connecting to the given host\n" \
+	"\t-p Network port to use (default 8462)\n" \
+	"\t-s Make the network client use sendfile() to transfer data\n" \
+	"\t-V Print program version info\n\n";
 
 static void show_usage(char *program)
 {
