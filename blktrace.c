@@ -1134,7 +1134,7 @@ static void show_stats(void)
 		if (!no_stdout)
 			printf("  Total:  %20llu events (dropped %lu), %8llu KiB data\n",
 					events_processed, dip->drop_count,
-					data_read >> 10);
+					(data_read + 1023) >> 10);
 	}
 
 	if (total_drops)
