@@ -10,9 +10,9 @@ int main(int argc, char *argv[])
 {
 	double this_time, last_time;
 	char line[256], last_line[256], *p;
-	int major, minor, cpu, seq, nr, alias;
+	int major, minor, cpu, nr, alias;
 	unsigned long long total_entries;
-	unsigned long last_seq[MAX_CPUS];
+	unsigned int last_seq[MAX_CPUS], seq;
 	FILE *f;
 
 	for (nr = 0; nr < MAX_CPUS; nr++)
