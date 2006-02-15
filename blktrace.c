@@ -1173,6 +1173,8 @@ static struct device_information *net_get_dip(char *buts_name)
 		tip->ofile_mmap = 1;
 		tip->device = dip;
 
+		fill_ops(tip);
+
 		fill_ofname(op, dip->buts_name, tip->cpu);
 
 		tip->ofile = fopen(op, "w+");
