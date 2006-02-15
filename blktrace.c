@@ -675,6 +675,21 @@ static int net_send_header(struct thread_information *tip, unsigned int len)
 	return write_data_net(net_out_fd, &hdr, sizeof(hdr));
 }
 
+/*
+ * send header with 0 length to signal end-of-run
+ */
+static void net_client_send_close(void)
+{
+	struct blktrace_net_hdr hdr;
+
+	hdr.magic = BLK_IO_TRACE_MAGIC;
+	hdr.cpu = 0;
+	hdr.max_cpus = ncpus;
+	hdr.len = 0;
+
+	write_data_net(net_out_fd, &hdr, sizeof(hdr));
+}
+
 static int flush_subbuf_net(struct thread_information *tip,
 			    struct tip_subbuf *ts)
 {
@@ -867,6 +882,9 @@ static void wait_for_threads(void)
 					tips_running += !tip->exited;
 		} while (tips_running);
 	}
+
+	if (net_mode == Net_client)
+		net_client_send_close();
 }
 
 static void fill_ofname(char *dst, char *buts_name, int cpu)
@@ -1223,6 +1241,14 @@ static int net_server_loop(void)
 		bnh.len = be32_to_cpu(bnh.len);
 	}
 
+	/*
+	 * len == 0 means that the other end signalled end-of-run
+	 */
+	if (!bnh.len) {
+		fprintf(stderr, "server: end of run\n");
+		return 1;
+	}
+
 	tip = net_get_tip(&bnh);
 	if (!tip)
 		return 1;
@@ -1270,6 +1296,7 @@ static int net_server(void)
 		return 1;
 	}
 
+repeat:
 	printf("blktrace: waiting for incoming connection...\n");
 
 	socklen = sizeof(addr);
@@ -1299,7 +1326,11 @@ static int net_server(void)
 	}
 
 	show_stats();
-	return 0;
+
+	if (is_done())
+		return 0;
+
+	goto repeat;
 }
 
 /*
