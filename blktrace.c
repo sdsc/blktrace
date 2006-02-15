@@ -541,7 +541,6 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	struct tip_subbuf *ts = malloc(sizeof(*ts));
 	struct stat sb;
 
-	ts->buf = malloc(buf_size);
 	ts->max_len = maxlen;
 	ts->buf = NULL;
 
