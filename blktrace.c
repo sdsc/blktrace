@@ -41,6 +41,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <sys/sendfile.h>
 
 #include "blktrace.h"
 #include "barrier.h"
@@ -58,7 +59,7 @@ static char blktrace_version[] = "0.99";
 
 #define RELAYFS_TYPE	0xF0B4A981
 
-#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:"
+#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:s"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -145,6 +146,12 @@ static struct option l_opts[] = {
 		.val = 'p'
 	},
 	{
+		.name = "sendfile",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 's'
+	},
+	{
 		.name = NULL,
 	}
 };
@@ -153,6 +160,7 @@ struct tip_subbuf {
 	void *buf;
 	unsigned int len;
 	unsigned int max_len;
+	off_t offset;
 };
 
 #define FIFO_SIZE	(1024)	/* should be plenty big! */
@@ -174,6 +182,7 @@ struct thread_information {
 
 	FILE *ofile;
 	char *ofile_buffer;
+	off_t ofile_offset;
 	int ofile_stdout;
 	int ofile_mmap;
 
@@ -276,6 +285,7 @@ enum {
 static char hostname[MAXHOSTNAMELEN];
 static int net_port = TRACE_NET_PORT;
 static int net_mode = 0;
+static int net_sendfile;
 
 static int net_in_fd = -1;
 static int net_out_fd = -1;
@@ -525,6 +535,28 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 	return -1;
 }
 
+static int get_subbuf_sendfile(struct thread_information *tip,
+			       unsigned int maxlen)
+{
+	struct tip_subbuf *ts = malloc(sizeof(*ts));
+	struct stat sb;
+
+	ts->buf = malloc(buf_size);
+	ts->max_len = maxlen;
+	ts->buf = NULL;
+
+	if (fstat(tip->fd, &sb) < 0) {
+		perror("trace stat");
+		return 1;
+	}
+
+	ts->len = sb.st_size - tip->ofile_offset;
+	ts->max_len = ts->len;
+	ts->offset = tip->ofile_offset;
+	tip->ofile_offset += ts->len;
+	return subbuf_fifo_queue(tip, ts);
+}
+
 /*
  * Use the copy approach for pipes and network
  */
@@ -630,8 +662,7 @@ static int write_data_net(int fd, void *buf, unsigned int buf_len)
 	return 0;
 }
 
-static int flush_subbuf_net(struct thread_information *tip,
-			    struct tip_subbuf *ts)
+static int net_send_header(struct thread_information *tip, unsigned int len)
 {
 	struct blktrace_net_hdr hdr;
 
@@ -639,15 +670,34 @@ static int flush_subbuf_net(struct thread_information *tip,
 	strcpy(hdr.buts_name, tip->device->buts_name);
 	hdr.cpu = tip->cpu;
 	hdr.max_cpus = ncpus;
-	hdr.len = ts->len;
+	hdr.len = len;
 
-	if (write_data_net(net_out_fd, &hdr, sizeof(hdr)))
+	return write_data_net(net_out_fd, &hdr, sizeof(hdr));
+}
+
+static int flush_subbuf_net(struct thread_information *tip,
+			    struct tip_subbuf *ts)
+{
+	if (net_send_header(tip, ts->len))
 		return 1;
-
 	if (write_data_net(net_out_fd, ts->buf, ts->len))
 		return 1;
 
 	free(ts->buf);
+	free(ts);
+	return 0;
+}
+
+static int flush_subbuf_sendfile(struct thread_information *tip,
+				 struct tip_subbuf *ts)
+{
+	if (net_send_header(tip, ts->len))
+		return 1;
+	if (sendfile(net_out_fd, tip->fd, &ts->offset, ts->len) < 0) {
+		perror("sendfile");
+		return 1;
+	}
+
 	free(ts);
 	return 0;
 }
@@ -837,16 +887,23 @@ static void fill_ops(struct thread_information *tip)
 	/*
 	 * setup ops
 	 */
-	if (tip->ofile_mmap && net_mode != Net_client)
-		tip->get_subbuf = mmap_subbuf;
-	else
-		tip->get_subbuf = get_subbuf;
+	if (net_mode == Net_client) {
+		if (net_sendfile) {
+			tip->get_subbuf = get_subbuf_sendfile;
+			tip->flush_subbuf = flush_subbuf_sendfile;
+		} else {
+			tip->get_subbuf = get_subbuf;
+			tip->flush_subbuf = flush_subbuf_net;
+		}
+	} else {
+		if (tip->ofile_mmap)
+			tip->get_subbuf = mmap_subbuf;
+		else
+			tip->get_subbuf = get_subbuf;
 
-	if (net_mode == Net_client)
-		tip->flush_subbuf = flush_subbuf_net;
-	else
 		tip->flush_subbuf = flush_subbuf_file;
-
+	}
+			
 	if (net_mode == Net_server)
 		tip->read_data = read_data_net;
 	else
@@ -1393,6 +1450,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'p':
 			net_port = atoi(optarg);
+			break;
+		case 's':
+			net_sendfile = 1;
 			break;
 		default:
 			show_usage(argv[0]);
