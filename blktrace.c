@@ -1126,7 +1126,7 @@ static void show_stats(void)
 			if (!no_stdout)
 				printf("  CPU%3d: %20lu events, %8llu KiB data\n",
 			       		tip->cpu, tip->events_processed,
-					tip->data_read >> 10);
+					(tip->data_read + 1023) >> 10);
 			events_processed += tip->events_processed;
 			data_read += tip->data_read;
 		}
