@@ -541,7 +541,6 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	struct tip_subbuf *ts = malloc(sizeof(*ts));
 	struct stat sb;
 
-	ts->buf = malloc(buf_size);
 	ts->max_len = maxlen;
 	ts->buf = NULL;
 
@@ -928,12 +927,55 @@ static void fill_ops(struct thread_information *tip)
 		tip->read_data = read_data_file;
 }
 
+static int tip_open_output(struct device_information *dip,
+			   struct thread_information *tip)
+{
+	int pipeline = output_name && !strcmp(output_name, "-");
+	int mode, vbuf_size;
+	char op[64];
+
+	if (net_mode == Net_client) {
+		tip->ofile = NULL;
+		tip->ofile_stdout = 0;
+		tip->ofile_mmap = 0;
+		vbuf_size = 0;
+	} else if (pipeline) {
+		tip->ofile = fdopen(STDOUT_FILENO, "w");
+		tip->ofile_stdout = 1;
+		tip->ofile_mmap = 0;
+		mode = _IOLBF;
+		vbuf_size = 512;
+	} else {
+		fill_ofname(op, dip->buts_name, tip->cpu);
+		tip->ofile = fopen(op, "w+");
+		tip->ofile_stdout = 0;
+		tip->ofile_mmap = 1;
+		mode = _IOFBF;
+		vbuf_size = OFILE_BUF;
+	}
+
+	if (net_mode != Net_client && tip->ofile == NULL) {
+		perror(op);
+		return 1;
+	}
+
+	if (vbuf_size) {
+		tip->ofile_buffer = malloc(vbuf_size);
+		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, vbuf_size)) {
+			perror("setvbuf");
+			close_thread(tip);
+			return 1;
+		}
+	}
+
+	fill_ops(tip);
+	return 0;
+}
+
 static int start_threads(struct device_information *dip)
 {
 	struct thread_information *tip;
-	int j, pipeline = output_name && !strcmp(output_name, "-");
-	int mode, vbuf_size;
-	char op[64];
+	int j;
 
 	for_each_tip(dip, tip, j) {
 		tip->cpu = j;
@@ -942,34 +984,8 @@ static int start_threads(struct device_information *dip)
 		memset(&tip->fifo, 0, sizeof(tip->fifo));
 		tip->leftover_ts = NULL;
 
-		if (pipeline) {
-			tip->ofile = fdopen(STDOUT_FILENO, "w");
-			tip->ofile_stdout = 1;
-			tip->ofile_mmap = 0;
-			mode = _IOLBF;
-			vbuf_size = 512;
-		} else {
-			fill_ofname(op, dip->buts_name, tip->cpu);
-			tip->ofile = fopen(op, "w+");
-			tip->ofile_stdout = 0;
-			tip->ofile_mmap = 1;
-			mode = _IOFBF;
-			vbuf_size = OFILE_BUF;
-		}
-
-		if (tip->ofile == NULL) {
-			perror(op);
+		if (tip_open_output(dip, tip))
 			return 1;
-		}
-
-		tip->ofile_buffer = malloc(vbuf_size);
-		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, vbuf_size)) {
-			perror("setvbuf");
-			close_thread(tip);
-			return 1;
-		}
-
-		fill_ops(tip);
 
 		if (pthread_create(&tip->thread, NULL, thread_main, tip)) {
 			perror("pthread_create");
@@ -1166,22 +1182,12 @@ static struct device_information *net_get_dip(char *buts_name)
 	 */
 	for (i = 0; i < ncpus; i++) {
 		struct thread_information *tip = &dip->threads[i];
-		char op[64];
 
 		tip->cpu = i;
-		tip->ofile_stdout = 0;
-		tip->ofile_mmap = 1;
 		tip->device = dip;
 
-		fill_ops(tip);
-
-		fill_ofname(op, dip->buts_name, tip->cpu);
-
-		tip->ofile = fopen(op, "w+");
-		if (!tip->ofile) {
-			perror("fopen");
+		if (tip_open_output(dip, tip))
 			return NULL;
-		}
 	}
 
 	return dip;
