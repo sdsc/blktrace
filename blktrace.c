@@ -558,7 +558,7 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 {
 	struct tip_subbuf *ts;
 	struct stat sb;
-	unsigned int ready;
+	unsigned int ready, this_size;
 	int err;
 
 	if (fstat(tip->fd, &sb) < 0) {
@@ -570,13 +570,17 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	if (!ready)
 		return 0;
 
+	this_size = buf_size;
 	while (ready) {
+		if (this_size > ready)
+			this_size = ready;
+
 		ts = malloc(sizeof(*ts));
 
 		ts->max_len = maxlen;
 		ts->buf = NULL;
 
-		ts->len = buf_size;
+		ts->len = this_size;
 		ts->max_len = ts->len;
 		ts->offset = tip->ofile_offset;
 		tip->ofile_offset += ts->len;
@@ -585,7 +589,7 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 		if (err)
 			return err;
 
-		ready -= buf_size;
+		ready -= this_size;
 	}
 
 	return 0;
@@ -1002,6 +1006,7 @@ static int tip_open_output(struct device_information *dip,
 		tip->ofile_stdout = 0;
 		tip->ofile_mmap = 0;
 		vbuf_size = 0;
+		mode = 0; /* gcc 4.x issues a bogus warning */
 	} else if (pipeline) {
 		tip->ofile = fdopen(STDOUT_FILENO, "w");
 		tip->ofile_stdout = 1;
