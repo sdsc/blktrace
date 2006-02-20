@@ -540,6 +540,7 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 
 	ret = read_data(tip, tip->fs_buf + tip->fs_off, maxlen);
 	if (ret >= 0) {
+		tip->data_read += ret;
 		tip->fs_size += ret;
 		tip->fs_off += ret;
 		return 0;
@@ -562,6 +563,7 @@ static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
 	ret = read_data(tip, ts->buf, ts->max_len);
 	if (ret > 0) {
 		ts->len = ret;
+		tip->data_read += ret;
 		return subbuf_fifo_queue(tip, ts);
 	}
 
@@ -1447,6 +1449,7 @@ repeat:
 
 	close(net_in_fd);
 	net_in_fd = -1;
+	stat_shown = 0;
 	goto repeat;
 }
 
