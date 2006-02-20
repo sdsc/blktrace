@@ -180,6 +180,9 @@ struct thread_information {
 	void *fd_buf;
 	char fn[MAXPATHLEN + 64];
 
+	int pfd;
+	size_t *pfd_buf;
+
 	FILE *ofile;
 	char *ofile_buffer;
 	off_t ofile_offset;
@@ -324,6 +327,21 @@ static int get_dropped_count(const char *buts_name)
 	close(fd);
 
 	return atoi(tmp);
+}
+
+static size_t get_subbuf_padding(struct thread_information *tip,
+				 unsigned subbuf)
+{
+	size_t padding_size = buf_nr * sizeof(size_t);
+	size_t ret;
+
+	if (read(tip->pfd, tip->pfd_buf, padding_size) < 0) {
+		perror("tip pad read");
+		ret = -1;
+	} else
+		ret = tip->pfd_buf[subbuf];
+
+	return ret;
 }
 
 static int start_trace(struct device_information *dip)
@@ -538,22 +556,39 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 static int get_subbuf_sendfile(struct thread_information *tip,
 			       unsigned int maxlen)
 {
-	struct tip_subbuf *ts = malloc(sizeof(*ts));
+	struct tip_subbuf *ts;
 	struct stat sb;
-
-	ts->max_len = maxlen;
-	ts->buf = NULL;
+	unsigned int ready;
+	int err;
 
 	if (fstat(tip->fd, &sb) < 0) {
 		perror("trace stat");
 		return 1;
 	}
 
-	ts->len = sb.st_size - tip->ofile_offset;
-	ts->max_len = ts->len;
-	ts->offset = tip->ofile_offset;
-	tip->ofile_offset += ts->len;
-	return subbuf_fifo_queue(tip, ts);
+	ready = sb.st_size - tip->ofile_offset;
+	if (!ready)
+		return 0;
+
+	while (ready) {
+		ts = malloc(sizeof(*ts));
+
+		ts->max_len = maxlen;
+		ts->buf = NULL;
+
+		ts->len = buf_size;
+		ts->max_len = ts->len;
+		ts->offset = tip->ofile_offset;
+		tip->ofile_offset += ts->len;
+
+		err = subbuf_fifo_queue(tip, ts);
+		if (err)
+			return err;
+
+		ready -= buf_size;
+	}
+
+	return 0;
 }
 
 /*
@@ -580,14 +615,19 @@ static void close_thread(struct thread_information *tip)
 {
 	if (tip->fd != -1)
 		close(tip->fd);
+	if (tip->pfd != -1)
+		close(tip->pfd);
 	if (tip->ofile)
 		fclose(tip->ofile);
 	if (tip->ofile_buffer)
 		free(tip->ofile_buffer);
 	if (tip->fd_buf)
 		free(tip->fd_buf);
+	if (tip->pfd_buf)
+		free(tip->pfd_buf);
 
 	tip->fd = -1;
+	tip->pfd = -1;
 	tip->ofile = NULL;
 	tip->ofile_buffer = NULL;
 	tip->fd_buf = NULL;
@@ -630,6 +670,21 @@ static void *thread_main(void *arg)
 		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu,
 			tip->fn);
 		exit_trace(1);
+	}
+
+	if (net_mode == Net_client && net_sendfile) {
+		char tmp[MAXPATHLEN + 64];
+
+		snprintf(tmp, sizeof(tmp), "%s/block/%s/trace%d.padding",
+			 relay_path, tip->device->buts_name, tip->cpu);
+
+		tip->pfd = open(tmp, O_RDONLY);
+		if (tip->pfd < 0) {
+			fprintf(stderr, "Couldn't open padding file %s\n", tmp);
+			exit_trace(1);
+		}
+
+		tip->pfd_buf = malloc(buf_nr * sizeof(size_t));
 	}
 
 	while (!is_done()) {
@@ -705,9 +760,17 @@ static int flush_subbuf_net(struct thread_information *tip,
 static int flush_subbuf_sendfile(struct thread_information *tip,
 				 struct tip_subbuf *ts)
 {
-	if (net_send_header(tip, ts->len))
+	size_t padding;
+	unsigned subbuf;
+	unsigned len;
+	
+	subbuf = (ts->offset / buf_size) % buf_nr;
+	padding = get_subbuf_padding(tip, subbuf);
+	len = ts->len - padding;
+
+	if (net_send_header(tip, len))
 		return 1;
-	if (sendfile(net_out_fd, tip->fd, &ts->offset, ts->len) < 0) {
+	if (sendfile(net_out_fd, tip->fd, &ts->offset, len) < 0) {
 		perror("sendfile");
 		return 1;
 	}
@@ -981,6 +1044,8 @@ static int start_threads(struct device_information *dip)
 		tip->cpu = j;
 		tip->device = dip;
 		tip->events_processed = 0;
+		tip->fd = -1;
+		tip->pfd = -1;
 		memset(&tip->fifo, 0, sizeof(tip->fifo));
 		tip->leftover_ts = NULL;
 
