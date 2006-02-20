@@ -1275,6 +1275,8 @@ static struct device_information *net_get_dip(char *buts_name)
 
 		tip->cpu = i;
 		tip->device = dip;
+		tip->fd = -1;
+		tip->pfd = -1;
 
 		if (tip_open_output(dip, tip))
 			return NULL;
