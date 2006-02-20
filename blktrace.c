@@ -1069,8 +1069,7 @@ static int tip_open_output(struct device_information *dip,
 		tip->ofile = NULL;
 		tip->ofile_stdout = 0;
 		tip->ofile_mmap = 0;
-		vbuf_size = 0;
-		mode = 0; /* gcc 4.x issues a bogus warning */
+		goto done;
 	} else if (pipeline) {
 		tip->ofile = fdopen(STDOUT_FILENO, "w");
 		tip->ofile_stdout = 1;
@@ -1087,20 +1086,19 @@ static int tip_open_output(struct device_information *dip,
 		vbuf_size = OFILE_BUF;
 	}
 
-	if (net_mode != Net_client && tip->ofile == NULL) {
+	if (tip->ofile == NULL) {
 		perror(op);
 		return 1;
 	}
 
-	if (vbuf_size) {
-		tip->ofile_buffer = malloc(vbuf_size);
-		if (setvbuf(tip->ofile, tip->ofile_buffer, mode, vbuf_size)) {
-			perror("setvbuf");
-			close_thread(tip);
-			return 1;
-		}
+	tip->ofile_buffer = malloc(vbuf_size);
+	if (setvbuf(tip->ofile, tip->ofile_buffer, mode, vbuf_size)) {
+		perror("setvbuf");
+		close_thread(tip);
+		return 1;
 	}
 
+done:
 	fill_ops(tip);
 	return 0;
 }
