@@ -295,6 +295,17 @@ static int net_out_fd = -1;
 
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
+	struct device_information *dip;
+	int i;
+
+	/*
+	 * stop trace so we can reap currently produced data
+	 */
+	for_each_dip(dip, i) {
+		if (ioctl(dip->fd, BLKTRACESTOP) < 0)
+			perror("BLKTRACESTOP");
+	}
+
 	done = 1;
 }
 
@@ -373,8 +384,11 @@ static void stop_trace(struct device_information *dip)
 	if (dip_tracing(dip) || kill_running_trace) {
 		dip_set_tracing(dip, 0);
 
-		if (ioctl(dip->fd, BLKTRACESTOP) < 0)
-			perror("BLKTRACESTOP");
+		/*
+		 * should be stopped, just don't complain if it isn't
+		 */
+		ioctl(dip->fd, BLKTRACESTOP);
+
 		if (ioctl(dip->fd, BLKTRACETEARDOWN) < 0)
 			perror("BLKTRACETEARDOWN");
 
@@ -564,7 +578,8 @@ static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
 	if (ret > 0) {
 		ts->len = ret;
 		tip->data_read += ret;
-		return subbuf_fifo_queue(tip, ts);
+		if (subbuf_fifo_queue(tip, ts))
+			return -1;
 	}
 
 	return ret;
@@ -575,8 +590,7 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 {
 	struct tip_subbuf *ts;
 	struct stat sb;
-	unsigned int ready, this_size;
-	int err;
+	unsigned int ready, this_size, total;
 
 	wait_for_data(tip);
 
@@ -588,13 +602,13 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 
 	if (fstat(tip->fd, &sb) < 0) {
 		perror("trace stat");
-		return 1;
+		return -1;
 	}
 
 	ready = sb.st_size - tip->ofile_offset;
 	if (!ready) {
 		/*
-		 * delay a little, since we poll() will return data available
+		 * delay a little, since poll() will return data available
 		 * until sendfile() is run
 		 */
 		usleep(100);
@@ -602,28 +616,27 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	}
 
 	this_size = buf_size;
+	total = ready;
 	while (ready) {
 		if (this_size > ready)
 			this_size = ready;
 
 		ts = malloc(sizeof(*ts));
 
-		ts->max_len = maxlen;
 		ts->buf = NULL;
+		ts->max_len = 0;
 
 		ts->len = this_size;
-		ts->max_len = ts->len;
 		ts->offset = tip->ofile_offset;
 		tip->ofile_offset += ts->len;
 
-		err = subbuf_fifo_queue(tip, ts);
-		if (err)
-			return err;
+		if (subbuf_fifo_queue(tip, ts))
+			return -1;
 
 		ready -= this_size;
 	}
 
-	return 0;
+	return total;
 }
 
 static void close_thread(struct thread_information *tip)
@@ -703,9 +716,15 @@ static void *thread_main(void *arg)
 	}
 
 	while (!is_done()) {
-		if (tip->get_subbuf(tip, buf_size))
+		if (tip->get_subbuf(tip, buf_size) < 0)
 			break;
 	}
+
+	/*
+	 * trace is stopped, pull data until we get a short read
+	 */
+	while (tip->get_subbuf(tip, buf_size) > 0)
+		;
 
 	tip_ftrunc_final(tip);
 	tip->exited = 1;
