@@ -465,12 +465,7 @@ static int read_data_net(struct thread_information *tip, void *buf,
 static int read_data(struct thread_information *tip, void *buf,
 		     unsigned int len)
 {
-	int ret = tip->read_data(tip, buf, len);
-
-	if (ret > 0)
-		tip->data_read += ret;
-
-	return ret;
+	return tip->read_data(tip, buf, len);
 }
 
 static inline struct tip_subbuf *
@@ -595,8 +590,14 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	}
 
 	ready = sb.st_size - tip->ofile_offset;
-	if (!ready)
+	if (!ready) {
+		/*
+		 * delay a little, since we poll() will return data available
+		 * until sendfile() is run
+		 */
+		usleep(100);
 		return 0;
+	}
 
 	this_size = buf_size;
 	while (ready) {
