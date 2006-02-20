@@ -767,7 +767,6 @@ static int flush_subbuf_net(struct thread_information *tip,
 	if (write_data_net(net_out_fd, ts->buf, ts->len))
 		return 1;
 
-	tip->data_read += ts->len;
 	free(ts->buf);
 	free(ts);
 	return 0;
@@ -799,7 +798,7 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 		return 1;
 	}
 
-	tip->data_read += ts->len;
+	tip->data_read += len;
 	free(ts);
 	return 0;
 }
