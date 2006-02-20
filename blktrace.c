@@ -183,6 +183,8 @@ struct thread_information {
 	int pfd;
 	size_t *pfd_buf;
 
+	struct in_addr cl_in_addr;
+
 	FILE *ofile;
 	char *ofile_buffer;
 	off_t ofile_offset;
@@ -992,17 +994,40 @@ static void wait_for_threads(void)
 		net_client_send_close();
 }
 
-static void fill_ofname(char *dst, char *buts_name, int cpu)
+static int fill_ofname(struct thread_information *tip, char *dst,
+		       char *buts_name)
 {
+	struct stat sb;
 	int len = 0;
+	time_t t;
 
 	if (output_dir)
 		len = sprintf(dst, "%s/", output_dir);
 
+	if (net_mode == Net_server) {
+		len += sprintf(dst + len, "%s-", inet_ntoa(tip->cl_in_addr));
+		time(&t);
+		len += strftime(dst + len, 64, "%F-%T/", gmtime(&t));
+	}
+
+	if (stat(dst, &sb) < 0) {
+		if (errno != ENOENT) {
+			perror("stat");
+			return 1;
+		}
+		if (mkdir(dst, 0755) < 0) {
+			perror(dst);
+			fprintf(stderr, "Can't make output dir\n");
+			return 1;
+		}
+	}
+
 	if (output_name)
-		sprintf(dst + len, "%s.blktrace.%d", output_name, cpu);
+		sprintf(dst + len, "%s.blktrace.%d", output_name, tip->cpu);
 	else
-		sprintf(dst + len, "%s.blktrace.%d", buts_name, cpu);
+		sprintf(dst + len, "%s.blktrace.%d", buts_name, tip->cpu);
+
+	return 0;
 }
 
 static void fill_ops(struct thread_information *tip)
@@ -1038,7 +1063,7 @@ static int tip_open_output(struct device_information *dip,
 {
 	int pipeline = output_name && !strcmp(output_name, "-");
 	int mode, vbuf_size;
-	char op[64];
+	char op[128];
 
 	if (net_mode == Net_client) {
 		tip->ofile = NULL;
@@ -1053,7 +1078,8 @@ static int tip_open_output(struct device_information *dip,
 		mode = _IOLBF;
 		vbuf_size = 512;
 	} else {
-		fill_ofname(op, dip->buts_name, tip->cpu);
+		if (fill_ofname(tip, op, dip->buts_name))
+			return 1;
 		tip->ofile = fopen(op, "w+");
 		tip->ofile_stdout = 0;
 		tip->ofile_mmap = 1;
@@ -1266,7 +1292,8 @@ static void show_stats(void)
 		fprintf(stderr, "You have dropped events, consider using a larger buffer size (-b)\n");
 }
 
-static struct device_information *net_get_dip(char *buts_name)
+static struct device_information *net_get_dip(char *buts_name,
+					      struct in_addr *cl_in_addr)
 {
 	struct device_information *dip;
 	int i;
@@ -1296,6 +1323,7 @@ static struct device_information *net_get_dip(char *buts_name)
 		tip->device = dip;
 		tip->fd = -1;
 		tip->pfd = -1;
+		tip->cl_in_addr = *cl_in_addr;
 
 		if (tip_open_output(dip, tip))
 			return NULL;
@@ -1304,12 +1332,13 @@ static struct device_information *net_get_dip(char *buts_name)
 	return dip;
 }
 
-static struct thread_information *net_get_tip(struct blktrace_net_hdr *bnh)
+static struct thread_information *net_get_tip(struct blktrace_net_hdr *bnh,
+					      struct in_addr *cl_in_addr)
 {
 	struct device_information *dip;
 
 	ncpus = bnh->max_cpus;
-	dip = net_get_dip(bnh->buts_name);
+	dip = net_get_dip(bnh->buts_name, cl_in_addr);
 	return &dip->threads[bnh->cpu];
 }
 
@@ -1342,7 +1371,7 @@ static int net_get_header(struct blktrace_net_hdr *bnh)
 	return 0;
 }
 
-static int net_server_loop(void)
+static int net_server_loop(struct in_addr *cl_in_addr)
 {
 	struct thread_information *tip;
 	struct blktrace_net_hdr bnh;
@@ -1368,7 +1397,7 @@ static int net_server_loop(void)
 		return 1;
 	}
 
-	tip = net_get_tip(&bnh);
+	tip = net_get_tip(&bnh, cl_in_addr);
 	if (!tip)
 		return 1;
 
@@ -1440,7 +1469,7 @@ repeat:
 	printf("blktrace: connection from %s\n", inet_ntoa(addr.sin_addr));
 
 	while (!is_done()) {
-		if (net_server_loop())
+		if (net_server_loop(&addr.sin_addr))
 			break;
 	}
 
