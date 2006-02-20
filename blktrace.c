@@ -553,6 +553,26 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 	return -1;
 }
 
+/*
+ * Use the copy approach for pipes and network
+ */
+static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
+{
+	struct tip_subbuf *ts = malloc(sizeof(*ts));
+	int ret;
+
+	ts->buf = malloc(buf_size);
+	ts->max_len = maxlen;
+
+	ret = read_data(tip, ts->buf, ts->max_len);
+	if (ret > 0) {
+		ts->len = ret;
+		return subbuf_fifo_queue(tip, ts);
+	}
+
+	return ret;
+}
+
 static int get_subbuf_sendfile(struct thread_information *tip,
 			       unsigned int maxlen)
 {
@@ -560,6 +580,14 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	struct stat sb;
 	unsigned int ready, this_size;
 	int err;
+
+	wait_for_data(tip);
+
+	/*
+	 * hack to get last data out, we can't use sendfile for that
+	 */
+	if (is_done())
+		return get_subbuf(tip, maxlen);
 
 	if (fstat(tip->fd, &sb) < 0) {
 		perror("trace stat");
@@ -593,26 +621,6 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	}
 
 	return 0;
-}
-
-/*
- * Use the copy approach for pipes and network
- */
-static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
-{
-	struct tip_subbuf *ts = malloc(sizeof(*ts));
-	int ret;
-
-	ts->buf = malloc(buf_size);
-	ts->max_len = maxlen;
-
-	ret = read_data(tip, ts->buf, ts->max_len);
-	if (ret > 0) {
-		ts->len = ret;
-		return subbuf_fifo_queue(tip, ts);
-	}
-
-	return ret;
 }
 
 static void close_thread(struct thread_information *tip)
@@ -756,6 +764,7 @@ static int flush_subbuf_net(struct thread_information *tip,
 	if (write_data_net(net_out_fd, ts->buf, ts->len))
 		return 1;
 
+	tip->data_read += ts->len;
 	free(ts->buf);
 	free(ts);
 	return 0;
@@ -767,6 +776,14 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 	size_t padding;
 	unsigned subbuf;
 	unsigned len;
+
+	/*
+	 * currently we cannot use sendfile() on the last bytes read, as they
+	 * may not be a full subbuffer. get_subbuf_sendfile() falls back to
+	 * the read approach for those, so use send() to ship them out
+	 */
+	if (ts->buf)
+		return flush_subbuf_net(tip, ts);
 	
 	subbuf = (ts->offset / buf_size) % buf_nr;
 	padding = get_subbuf_padding(tip, subbuf);
@@ -779,6 +796,7 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 		return 1;
 	}
 
+	tip->data_read += ts->len;
 	free(ts);
 	return 0;
 }
