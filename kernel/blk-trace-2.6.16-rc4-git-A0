@@ -30,10 +30,27 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..e00458e
+index 0000000..59779b6
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,496 @@
+@@ -0,0 +1,593 @@
++/*
++ * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License version 2 as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ */
 +#include <linux/config.h>
 +#include <linux/kernel.h>
 +#include <linux/blkdev.h>
@@ -201,10 +218,85 @@ index 0000000..e00458e
 +	return dir;
 +}
 +
++static int blk_padding_open(struct inode *inode, struct file *filp)
++{
++	filp->private_data = inode->u.generic_ip;
++	
++	return 0;
++}
++
++static ssize_t blk_padding_read(struct file *filp, char __user *buffer,
++				size_t count, loff_t *ppos)
++{
++	struct rchan_buf *buf = filp->private_data;
++	size_t s = buf->chan->n_subbufs * sizeof(*buf->padding);
++
++	return simple_read_from_buffer(buffer, count, ppos, buf->padding, s);
++}
++
++static struct file_operations blk_padding_fops = {
++	.owner =	THIS_MODULE,
++	.open =		blk_padding_open,
++	.read =		blk_padding_read,
++};
++
++static void remove_channel_controls(struct blk_trace *bt)
++{
++	int i;
++
++	for (i = 0; i < NR_CPUS; i++) {
++		if (bt->ctrl->padding[i]) {
++			relayfs_remove_file(bt->ctrl->padding[i]);
++			continue;
++		}
++		break;
++	}
++	kfree(bt->ctrl);
++	bt->ctrl = NULL;
++}
++
++static int create_channel_controls(struct blk_trace *bt,
++				   struct dentry *parent,
++				   const char *base_filename)
++{
++	unsigned int i;
++	char *tmpname;
++	
++	tmpname = kmalloc(NAME_MAX + 1, GFP_KERNEL);
++	if (!tmpname)
++		return -ENOMEM;
++
++	bt->ctrl = kzalloc(sizeof(struct rchan_ctrl), GFP_KERNEL);
++	if (!bt->ctrl)
++		goto cleanup_control_files;
++
++	for_each_cpu(i) {
++		sprintf(tmpname, "%s%d.padding", base_filename, i);
++		bt->ctrl->padding[i] = relayfs_create_file(tmpname,
++							   parent,
++							   0,
++							   &blk_padding_fops,
++							   bt->rchan->buf[i]);
++		if (!bt->ctrl->padding[i]) {
++			printk("Couldn't create padding file %s.\n", tmpname);
++			goto cleanup_control_files;
++		}
++	}
++	kfree(tmpname);
++	return 0;
++
++cleanup_control_files:
++	remove_channel_controls(bt);
++	kfree(tmpname);
++	
++	return -ENOMEM;
++}
++
 +static void blk_trace_cleanup(struct blk_trace *bt)
 +{
 +	relay_close(bt->rchan);
 +	relayfs_remove_file(bt->dropped_file);
++	remove_channel_controls(bt);
 +	blk_remove_tree(bt->dir);
 +	free_percpu(bt->sequence);
 +	kfree(bt);
@@ -329,6 +421,9 @@ index 0000000..e00458e
 +		goto err;
 +	bt->rchan->private_data = bt;
 +
++	if (create_channel_controls(bt, dir, "trace"))
++		goto err;
++
 +	bt->act_mask = buts.act_mask;
 +	if (!bt->act_mask)
 +		bt->act_mask = (u16) -1;
@@ -350,11 +445,13 @@ index 0000000..e00458e
 +
 +	return 0;
 +err:
-+	if (bt && bt->dropped_file)
-+		relayfs_remove_file(bt->dropped_file);
 +	if (dir)
 +		blk_remove_tree(dir);
 +	if (bt) {
++		if (bt->dropped_file)
++			relayfs_remove_file(bt->dropped_file);
++		if (bt->ctrl)
++			remove_channel_controls(bt);
 +		if (bt->sequence)
 +			free_percpu(bt->sequence);
 +		if (bt->rchan)
@@ -839,6 +936,85 @@ index 057e602..893d600 100644
  
  #include <net/sock.h>          /* siocdevprivate_ioctl */
  #include <net/bluetooth/bluetooth.h>
+diff --git a/fs/relayfs/inode.c b/fs/relayfs/inode.c
+index 3835230..6bfbf1d 100644
+--- a/fs/relayfs/inode.c
++++ b/fs/relayfs/inode.c
+@@ -32,6 +32,12 @@ static struct backing_dev_info		relayfs_
+ 	.capabilities	= BDI_CAP_NO_ACCT_DIRTY | BDI_CAP_NO_WRITEBACK,
+ };
+ 
++static int relayfs_readpage(struct file *file, struct page *page);
++
++static struct address_space_operations relayfs_aops = {
++	.readpage       = relayfs_readpage,
++};
++
+ static struct inode *relayfs_get_inode(struct super_block *sb,
+ 				       int mode,
+  				       struct file_operations *fops,
+@@ -48,6 +54,7 @@ static struct inode *relayfs_get_inode(s
+ 	inode->i_gid = 0;
+ 	inode->i_blksize = PAGE_CACHE_SIZE;
+ 	inode->i_blocks = 0;
++	inode->i_mapping->a_ops = &relayfs_aops;
+ 	inode->i_mapping->backing_dev_info = &relayfs_backing_dev_info;
+ 	inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
+ 	switch (mode & S_IFMT) {
+@@ -505,8 +512,41 @@ struct file_operations relay_file_operat
+ 	.read		= relay_file_read,
+ 	.llseek		= no_llseek,
+ 	.release	= relay_file_release,
++	.sendfile       = generic_file_sendfile,
+ };
+ 
++static int relayfs_readpage(struct file *file, struct page *page)
++{
++	struct rchan_buf *buf = file->private_data;
++	size_t buf_size = buf->chan->subbuf_size * buf->chan->n_subbufs;
++	size_t read_start, buf_nr_pages;
++	void *kaddr, *from;
++	pgoff_t page_idx;
++
++	if (PageUptodate(page))
++		goto out;
++
++	buf_nr_pages = buf_size / PAGE_CACHE_SIZE;
++	page_idx = page->index % buf_nr_pages;
++	read_start = page_idx * PAGE_CACHE_SIZE;
++	from = buf->start + read_start;
++
++	kaddr = kmap_atomic(page, KM_USER0);
++	memcpy(kaddr, from, PAGE_CACHE_SIZE);
++	kunmap_atomic(kaddr, KM_USER0);
++	flush_dcache_page(page);
++	SetPageUptodate(page);
++
++	buf->bytes_consumed += PAGE_CACHE_SIZE;
++	if (buf->bytes_consumed >= buf->chan->subbuf_size) {
++		relay_subbufs_consumed(buf->chan, buf->cpu, 1);
++		buf->bytes_consumed = 0;
++	}
++out:
++	unlock_page(page);
++	return 0;
++}
++
+ static struct super_operations relayfs_ops = {
+ 	.statfs		= simple_statfs,
+ 	.drop_inode	= generic_delete_inode,
+diff --git a/fs/relayfs/relay.c b/fs/relayfs/relay.c
+index abf3cea..ee6a7b0 100644
+--- a/fs/relayfs/relay.c
++++ b/fs/relayfs/relay.c
+@@ -353,6 +353,7 @@ size_t relay_switch_subbuf(struct rchan_
+ 		old_subbuf = buf->subbufs_produced % buf->chan->n_subbufs;
+ 		buf->padding[old_subbuf] = buf->prev_padding;
+ 		buf->subbufs_produced++;
++		buf->dentry->d_inode->i_size += buf->chan->subbuf_size;
+ 		if (waitqueue_active(&buf->read_wait)) {
+ 			PREPARE_WORK(&buf->wake_readers, wakeup_readers, buf);
+ 			schedule_delayed_work(&buf->wake_readers, 1);
 diff --git a/include/linux/blkdev.h b/include/linux/blkdev.h
 index 860e7a4..266ce9d 100644
 --- a/include/linux/blkdev.h
@@ -862,10 +1038,10 @@ index 860e7a4..266ce9d 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..86479af
+index 0000000..bb575b6
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
-@@ -0,0 +1,277 @@
+@@ -0,0 +1,283 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -970,6 +1146,11 @@ index 0000000..86479af
 +	Blktrace_stopped,
 +};
 +
++struct rchan_ctrl
++{
++	struct dentry	*padding[NR_CPUS];
++};
++
 +struct blk_trace {
 +	int trace_state;
 +	struct rchan *rchan;
@@ -982,6 +1163,7 @@ index 0000000..86479af
 +	struct dentry *dir;
 +	struct dentry *dropped_file;
 +	atomic_t dropped;
++	struct rchan_ctrl *ctrl;
 +};
 +
 +/*
@@ -1186,7 +1368,7 @@ index b6f51e3..d9d465b 100644
  	unsigned long sleep_avg;
  	unsigned long long timestamp, last_ran;
 diff --git a/kernel/fork.c b/kernel/fork.c
-index 8e88b37..60f838f 100644
+index fbea12d..f564e9b 100644
 --- a/kernel/fork.c
 +++ b/kernel/fork.c
 @@ -179,6 +179,7 @@ static struct task_struct *dup_task_stru
