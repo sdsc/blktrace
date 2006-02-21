@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..59779b6
+index 0000000..924448e
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,593 @@
+@@ -0,0 +1,592 @@
 +/*
 + * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
 + *
@@ -485,7 +485,6 @@ index 0000000..59779b6
 +	} else {
 +		if (bt->trace_state == Blktrace_running) {
 +			bt->trace_state = Blktrace_stopped;
-+			relay_flush(bt->rchan);
 +			ret = 0;
 +		}
 +	}
@@ -936,73 +935,127 @@ index 057e602..893d600 100644
  
  #include <net/sock.h>          /* siocdevprivate_ioctl */
  #include <net/bluetooth/bluetooth.h>
+diff --git a/fs/relayfs/buffers.c b/fs/relayfs/buffers.c
+index 1018781..62d869c 100644
+--- a/fs/relayfs/buffers.c
++++ b/fs/relayfs/buffers.c
+@@ -92,12 +92,12 @@ int relay_mmap_buf(struct rchan_buf *buf
+  *
+  *	Returns a pointer to the resulting buffer, NULL if unsuccessful
+  */
+-static void *relay_alloc_buf(struct rchan_buf *buf, unsigned long size)
++static void *relay_alloc_buf(struct rchan_buf *buf, unsigned long *size)
+ {
+ 	void *mem;
+ 	unsigned int i, j, n_pages;
+ 
+-	size = PAGE_ALIGN(size);
++	*size = PAGE_ALIGN(*size);
+ 	n_pages = size >> PAGE_SHIFT;
+ 
+ 	buf->page_array = kcalloc(n_pages, sizeof(struct page *), GFP_KERNEL);
+@@ -113,7 +113,7 @@ static void *relay_alloc_buf(struct rcha
+ 	if (!mem)
+ 		goto depopulate;
+ 
+-	memset(mem, 0, size);
++	memset(mem, 0, *size);
+ 	buf->page_count = n_pages;
+ 	return mem;
+ 
+@@ -141,7 +141,7 @@ struct rchan_buf *relay_create_buf(struc
+ 	if (!buf->padding)
+ 		goto free_buf;
+ 
+-	buf->start = relay_alloc_buf(buf, chan->alloc_size);
++	buf->start = relay_alloc_buf(buf, &chan->alloc_size);
+ 	if (!buf->start)
+ 		goto free_buf;
+ 
 diff --git a/fs/relayfs/inode.c b/fs/relayfs/inode.c
-index 3835230..6bfbf1d 100644
+index 3835230..9668216 100644
 --- a/fs/relayfs/inode.c
 +++ b/fs/relayfs/inode.c
-@@ -32,6 +32,12 @@ static struct backing_dev_info		relayfs_
- 	.capabilities	= BDI_CAP_NO_ACCT_DIRTY | BDI_CAP_NO_WRITEBACK,
- };
+@@ -498,6 +498,71 @@ out:
+ 	return ret;
+ }
  
-+static int relayfs_readpage(struct file *file, struct page *page);
++static ssize_t relay_file_sendfile(struct file *filp, loff_t *ppos,
++				   size_t count, read_actor_t actor,
++				   void *target)
++{
++	struct rchan_buf *buf = filp->private_data;
++	read_descriptor_t desc;
++	size_t read_start, avail;
++	unsigned long pidx, poff;
++	unsigned int subbuf_pages;
++	ssize_t ret = 0;
 +
-+static struct address_space_operations relayfs_aops = {
-+	.readpage       = relayfs_readpage,
-+};
++	if (!count)
++		return 0;
 +
- static struct inode *relayfs_get_inode(struct super_block *sb,
- 				       int mode,
-  				       struct file_operations *fops,
-@@ -48,6 +54,7 @@ static struct inode *relayfs_get_inode(s
- 	inode->i_gid = 0;
- 	inode->i_blksize = PAGE_CACHE_SIZE;
- 	inode->i_blocks = 0;
-+	inode->i_mapping->a_ops = &relayfs_aops;
- 	inode->i_mapping->backing_dev_info = &relayfs_backing_dev_info;
- 	inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
- 	switch (mode & S_IFMT) {
-@@ -505,8 +512,41 @@ struct file_operations relay_file_operat
++	mutex_lock(&filp->f_dentry->d_inode->i_mutex);
++
++	if (!relay_file_read_avail(buf, *ppos))
++		goto out;
++
++	read_start = relay_file_read_start_pos(*ppos, buf);
++	avail = relay_file_read_subbuf_avail(read_start, buf);
++	if (!avail)
++		goto out;
++
++	count = min(count, avail);
++
++	desc.written = 0;
++	desc.count = count;
++	desc.arg.data = target;
++	desc.error = 0;
++
++	subbuf_pages = buf->chan->alloc_size >> PAGE_SHIFT;
++	pidx = (read_start / PAGE_SIZE) % subbuf_pages;
++	poff = read_start & ~PAGE_MASK;
++	while (count) {
++		struct page *p = buf->page_array[pidx];
++		unsigned int len;
++
++		len = PAGE_SIZE - poff;
++		if (len > count)
++			len = count;
++
++		len = actor(&desc, p, poff, len);
++
++		if (desc.error) {
++			if (!ret)
++				ret = desc.error;
++			break;
++		}
++
++		count -= len;
++		ret += len;
++		poff = 0;
++		pidx = (pidx + 1) % subbuf_pages;
++	}
++
++	if (ret > 0) {
++		relay_file_read_consume(buf, read_start, ret);
++		*ppos = relay_file_read_end_pos(buf, read_start, ret);
++	}
++out:
++	mutex_unlock(&filp->f_dentry->d_inode->i_mutex);
++	return ret;
++}
++
+ struct file_operations relay_file_operations = {
+ 	.open		= relay_file_open,
+ 	.poll		= relay_file_poll,
+@@ -505,6 +570,7 @@ struct file_operations relay_file_operat
  	.read		= relay_file_read,
  	.llseek		= no_llseek,
  	.release	= relay_file_release,
-+	.sendfile       = generic_file_sendfile,
++	.sendfile       = relay_file_sendfile,
  };
  
-+static int relayfs_readpage(struct file *file, struct page *page)
-+{
-+	struct rchan_buf *buf = file->private_data;
-+	size_t buf_size = buf->chan->subbuf_size * buf->chan->n_subbufs;
-+	size_t read_start, buf_nr_pages;
-+	void *kaddr, *from;
-+	pgoff_t page_idx;
-+
-+	if (PageUptodate(page))
-+		goto out;
-+
-+	buf_nr_pages = buf_size / PAGE_CACHE_SIZE;
-+	page_idx = page->index % buf_nr_pages;
-+	read_start = page_idx * PAGE_CACHE_SIZE;
-+	from = buf->start + read_start;
-+
-+	kaddr = kmap_atomic(page, KM_USER0);
-+	memcpy(kaddr, from, PAGE_CACHE_SIZE);
-+	kunmap_atomic(kaddr, KM_USER0);
-+	flush_dcache_page(page);
-+	SetPageUptodate(page);
-+
-+	buf->bytes_consumed += PAGE_CACHE_SIZE;
-+	if (buf->bytes_consumed >= buf->chan->subbuf_size) {
-+		relay_subbufs_consumed(buf->chan, buf->cpu, 1);
-+		buf->bytes_consumed = 0;
-+	}
-+out:
-+	unlock_page(page);
-+	return 0;
-+}
-+
  static struct super_operations relayfs_ops = {
- 	.statfs		= simple_statfs,
- 	.drop_inode	= generic_delete_inode,
 diff --git a/fs/relayfs/relay.c b/fs/relayfs/relay.c
 index abf3cea..ee6a7b0 100644
 --- a/fs/relayfs/relay.c
