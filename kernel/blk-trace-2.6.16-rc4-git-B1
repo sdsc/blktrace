@@ -936,10 +936,10 @@ index 057e602..893d600 100644
  #include <net/sock.h>          /* siocdevprivate_ioctl */
  #include <net/bluetooth/bluetooth.h>
 diff --git a/fs/relayfs/buffers.c b/fs/relayfs/buffers.c
-index 1018781..62d869c 100644
+index 1018781..81b2ca9 100644
 --- a/fs/relayfs/buffers.c
 +++ b/fs/relayfs/buffers.c
-@@ -92,12 +92,12 @@ int relay_mmap_buf(struct rchan_buf *buf
+@@ -92,13 +92,13 @@ int relay_mmap_buf(struct rchan_buf *buf
   *
   *	Returns a pointer to the resulting buffer, NULL if unsuccessful
   */
@@ -950,10 +950,12 @@ index 1018781..62d869c 100644
  	unsigned int i, j, n_pages;
  
 -	size = PAGE_ALIGN(size);
+-	n_pages = size >> PAGE_SHIFT;
 +	*size = PAGE_ALIGN(*size);
- 	n_pages = size >> PAGE_SHIFT;
++	n_pages = *size >> PAGE_SHIFT;
  
  	buf->page_array = kcalloc(n_pages, sizeof(struct page *), GFP_KERNEL);
+ 	if (!buf->page_array)
 @@ -113,7 +113,7 @@ static void *relay_alloc_buf(struct rcha
  	if (!mem)
  		goto depopulate;
