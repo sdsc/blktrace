@@ -1370,7 +1370,7 @@ static int net_get_header(struct blktrace_net_hdr *bnh)
 		}
 	}
 	fcntl(net_in_fd, F_SETFL, fl & ~O_NONBLOCK);
-	return 0;
+	return bytes_left;
 }
 
 static int net_server_loop(struct in_addr *cl_in_addr)
@@ -1387,8 +1387,14 @@ static int net_server_loop(struct in_addr *cl_in_addr)
 	}
 
 	if (!data_is_native) {
+		bnh.magic = be32_to_cpu(bnh.magic);
 		bnh.cpu = be32_to_cpu(bnh.cpu);
 		bnh.len = be32_to_cpu(bnh.len);
+	}
+
+	if ((bnh.magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
+		fprintf(stderr, "server: bad data magic\n");
+		return 1;
 	}
 
 	/*
