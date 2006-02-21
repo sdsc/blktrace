@@ -1057,7 +1057,7 @@ static void fill_ops(struct thread_information *tip)
 	 * setup ops
 	 */
 	if (net_mode == Net_client) {
-		if (net_sendfile) {
+		if (net_use_sendfile) {
 			tip->get_subbuf = get_subbuf_sendfile;
 			tip->flush_subbuf = flush_subbuf_sendfile;
 		} else {
