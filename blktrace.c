@@ -290,7 +290,7 @@ enum {
 static char hostname[MAXHOSTNAMELEN];
 static int net_port = TRACE_NET_PORT;
 static int net_mode = 0;
-static int net_sendfile;
+static int net_use_sendfile;
 
 static int net_in_fd = -1;
 static int net_out_fd = -1;
@@ -704,7 +704,7 @@ static void *thread_main(void *arg)
 		exit_trace(1);
 	}
 
-	if (net_mode == Net_client && net_sendfile) {
+	if (net_mode == Net_client && net_use_sendfile) {
 		char tmp[MAXPATHLEN + 64];
 
 		snprintf(tmp, sizeof(tmp), "%s/block/%s/trace%d.padding",
@@ -795,12 +795,33 @@ static int flush_subbuf_net(struct thread_information *tip,
 	return 0;
 }
 
+static int net_sendfile(struct thread_information *tip, struct tip_subbuf *ts)
+{
+	unsigned int bytes_left = ts->len;
+	int ret;
+
+	while (bytes_left && is_done()) {
+		ret = sendfile(net_out_fd, tip->fd, &ts->offset, bytes_left);
+		if (ret < 0) {
+			perror("sendfile");
+			break;
+		} else if (!ret) {
+			usleep(100);
+			continue;
+		}
+
+		ts->offset += ret;
+		bytes_left -= ret;
+	}
+
+	return bytes_left;
+}
+
 static int flush_subbuf_sendfile(struct thread_information *tip,
 				 struct tip_subbuf *ts)
 {
 	size_t padding;
 	unsigned subbuf;
-	unsigned len;
 
 	/*
 	 * currently we cannot use sendfile() on the last bytes read, as they
@@ -812,16 +833,14 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 	
 	subbuf = (ts->offset / buf_size) % buf_nr;
 	padding = get_subbuf_padding(tip, subbuf);
-	len = ts->len - padding;
+	ts->len -= padding;
 
-	if (net_send_header(tip, len))
+	if (net_send_header(tip, ts->len))
 		return 1;
-	if (sendfile(net_out_fd, tip->fd, &ts->offset, len) < 0) {
-		perror("sendfile");
+	if (net_sendfile(tip, ts))
 		return 1;
-	}
 
-	tip->data_read += len;
+	tip->data_read += ts->len;
 	free(ts);
 	return 0;
 }
@@ -1665,7 +1684,7 @@ int main(int argc, char *argv[])
 			net_port = atoi(optarg);
 			break;
 		case 's':
-			net_sendfile = 1;
+			net_use_sendfile = 1;
 			break;
 		default:
 			show_usage(argv[0]);
