@@ -800,7 +800,7 @@ static int net_sendfile(struct thread_information *tip, struct tip_subbuf *ts)
 	unsigned int bytes_left = ts->len;
 	int ret;
 
-	while (bytes_left && is_done()) {
+	while (bytes_left && !is_done()) {
 		ret = sendfile(net_out_fd, tip->fd, &ts->offset, bytes_left);
 		if (ret < 0) {
 			perror("sendfile");
