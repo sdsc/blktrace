@@ -304,6 +304,8 @@ static void handle_sigint(__attribute__((__unused__)) int sig)
 	 * stop trace so we can reap currently produced data
 	 */
 	for_each_dip(dip, i) {
+		if (dip->fd == -1)
+			continue;
 		if (ioctl(dip->fd, BLKTRACESTOP) < 0)
 			perror("BLKTRACESTOP");
 	}
@@ -1305,8 +1307,10 @@ static struct device_information *net_get_dip(char *buts_name,
 
 	device_information = realloc(device_information, (ndevs + 1) * sizeof(*dip));
 	dip = &device_information[ndevs];
+	memset(dip, 0, sizeof(*dip));
+	dip->fd = -1;
 	strcpy(dip->buts_name, buts_name);
-	strcpy(dip->path, buts_name);
+	dip->path = strdup(buts_name);
 	ndevs++;
 	dip->threads = malloc(ncpus * sizeof(struct thread_information));
 	memset(dip->threads, 0, ncpus * sizeof(struct thread_information));
@@ -1488,6 +1492,7 @@ repeat:
 			fclose(tip->ofile);
 
 		free(dip->threads);
+		free(dip->path);
 	}
 
 	free(device_information);
