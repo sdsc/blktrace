@@ -115,7 +115,7 @@ static void dump_trace(FILE *ofp, char *prefix, struct blk_io_trace *bit)
 						           MINOR(bit->device));
 }
 
-static int process(FILE *ofp, char *file, unsigned int cpu)
+static int process(FILE **fp, char *devname, char *file, unsigned int cpu)
 {
 #	define SWAP_BITS() do {						\
 		if (bit_save) {						\
@@ -138,7 +138,7 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 	} while (0)
 
 	size_t n;
-	FILE *ifp;
+	FILE *ifp, *ofp;
 	__u32 save_device = 0, save_sequence = 0;
 	__u64 save_time = 0;
 	struct blk_io_trace *bit_save = NULL;
@@ -147,8 +147,27 @@ static int process(FILE *ofp, char *file, unsigned int cpu)
 	unsigned int nbad = 0;
 	unsigned int nbad_trace = 0, nbad_pdu = 0, nbad_cpu = 0;
 	unsigned int nbad_seq = 0, nbad_dev = 0, nbad_time = 0;
+	char ofname[1024];
 
 	ifp = fopen(file, "r");
+	if (!ifp)
+		return 0;
+
+	sprintf(ofname, "%s.verify.out", devname);
+
+	if (!*fp) {
+		*fp = fopen(ofname, "w");
+		if (*fp == NULL) {
+			fprintf(stderr,"Failed to open %s (%s), skipping\n",
+				ofname, strerror(errno));
+			fclose(ifp);
+			return 0;
+		}
+		fprintf(*fp, "\n---------------\n" );
+		fprintf(*fp, "Verifying %s\n", devname);
+	}
+
+	ofp = *fp;
 	while ((n = fread(bit, sizeof(struct blk_io_trace), 1, ifp)) == 1) {
 		if (data_is_native == -1)
 			check_data_endianness(bit->magic);
@@ -264,28 +283,23 @@ int main(int argc, char *argv[])
 	for (i = 1; i < argc; i++) {
 		devname = argv[i];
 		sprintf(ofname, "%s.verify.out", devname);
-		ofp = fopen(ofname, "w");
-		if (ofp == NULL) {
-			fprintf(stderr,"Failed to open %s (%s), skipping %s\n",
-				ofname, strerror(errno), devname);
-			continue;
-		}
+		ofp = NULL;
 
-		fprintf(ofp, "\n---------------\n" );
-		fprintf(ofp, "Verifying %s\n", devname);
 		printf("Verifying %s\n", devname); fflush(stdout);
 		for (cpu = 0; ; cpu++) {
 			sprintf(fname, "%s.blktrace.%d", devname, cpu);
 			if (stat(fname, &st) < 0)
 				break;
 			printf("    CPU %d ", cpu); fflush(stdout);
-			nbad = process(ofp, fname, cpu);
+			nbad = process(&ofp, devname, fname, cpu);
 			if (nbad)
 				printf("-- %d bad", nbad);
 			printf("\n");
 		}
-		fclose(ofp);
-		fprintf(stdout, "Wrote output to %s\n", ofname);
+		if (ofp) {
+			fclose(ofp);
+			fprintf(stdout, "Wrote output to %s\n", ofname);
+		}
 	}
 
 	return 0;
