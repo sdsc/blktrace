@@ -1412,6 +1412,31 @@ static int net_server_loop(struct in_addr *cl_in_addr)
 	return 0;
 }
 
+static int get_connection(int fd, struct sockaddr_in *addr)
+{
+	struct pollfd pfd = { .fd = fd, .events = POLLIN };
+	socklen_t socklen;
+
+	printf("blktrace: waiting for incoming connection...\n");
+
+	if (poll(&pfd, 1, -1) < 0) {
+		perror("poll for connection");
+		return 1;
+	}
+	if ((pfd.revents & POLLIN) == 0)
+		return 1;
+
+	socklen = sizeof(*addr);
+	net_in_fd = accept(fd, (struct sockaddr *) addr, &socklen);
+	if (net_in_fd < 0) {
+		perror("accept");
+		return 1;
+	}
+
+	printf("blktrace: connection from %s\n", inet_ntoa(addr->sin_addr));
+	return 0;
+}
+
 /*
  * Start here when we are in server mode - just fetch data from the network
  * and dump to files
@@ -1421,7 +1446,6 @@ static int net_server(void)
 	struct device_information *dip;
 	struct thread_information *tip;
 	struct sockaddr_in addr;
-	socklen_t socklen;
 	int fd, opt, i, j;
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -1452,26 +1476,8 @@ static int net_server(void)
 	}
 
 repeat:
-	signal(SIGINT, NULL);
-	signal(SIGHUP, NULL);
-	signal(SIGTERM, NULL);
-	signal(SIGALRM, NULL);
-
-	printf("blktrace: waiting for incoming connection...\n");
-
-	socklen = sizeof(addr);
-	net_in_fd = accept(fd, (struct sockaddr *) &addr, &socklen);
-	if (net_in_fd < 0) {
-		perror("accept");
-		return 1;
-	}
-
-	signal(SIGINT, handle_sigint);
-	signal(SIGHUP, handle_sigint);
-	signal(SIGTERM, handle_sigint);
-	signal(SIGALRM, handle_sigint);
-
-	printf("blktrace: connection from %s\n", inet_ntoa(addr.sin_addr));
+	if (get_connection(fd, &addr))
+		return 0;
 
 	while (!is_done()) {
 		if (net_server_loop(&addr.sin_addr))
