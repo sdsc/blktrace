@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..924448e
+index 0000000..6265b7a
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,592 @@
+@@ -0,0 +1,596 @@
 +/*
 + * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
 + *
@@ -231,6 +231,10 @@ index 0000000..924448e
 +	struct rchan_buf *buf = filp->private_data;
 +	size_t s = buf->chan->n_subbufs * sizeof(*buf->padding);
 +
++	/*
++	 * to avoid open/close of the file all the time, just reset ppos
++	 */
++	*ppos = 0;
 +	return simple_read_from_buffer(buffer, count, ppos, buf->padding, s);
 +}
 +
@@ -936,12 +940,16 @@ index 057e602..893d600 100644
  #include <net/sock.h>          /* siocdevprivate_ioctl */
  #include <net/bluetooth/bluetooth.h>
 diff --git a/fs/relayfs/buffers.c b/fs/relayfs/buffers.c
-index 1018781..81b2ca9 100644
+index 1018781..88ed3be 100644
 --- a/fs/relayfs/buffers.c
 +++ b/fs/relayfs/buffers.c
-@@ -92,13 +92,13 @@ int relay_mmap_buf(struct rchan_buf *buf
+@@ -90,15 +90,16 @@ int relay_mmap_buf(struct rchan_buf *buf
+  *	@buf: the buffer struct
+  *	@size: total size of the buffer
   *
-  *	Returns a pointer to the resulting buffer, NULL if unsuccessful
+- *	Returns a pointer to the resulting buffer, NULL if unsuccessful
++ *	Returns a pointer to the resulting buffer, NULL if unsuccessful. The
++ *	passed in size will get page aligned, if it isn't already.
   */
 -static void *relay_alloc_buf(struct rchan_buf *buf, unsigned long size)
 +static void *relay_alloc_buf(struct rchan_buf *buf, unsigned long *size)
@@ -956,7 +964,7 @@ index 1018781..81b2ca9 100644
  
  	buf->page_array = kcalloc(n_pages, sizeof(struct page *), GFP_KERNEL);
  	if (!buf->page_array)
-@@ -113,7 +113,7 @@ static void *relay_alloc_buf(struct rcha
+@@ -113,7 +114,7 @@ static void *relay_alloc_buf(struct rcha
  	if (!mem)
  		goto depopulate;
  
@@ -965,7 +973,7 @@ index 1018781..81b2ca9 100644
  	buf->page_count = n_pages;
  	return mem;
  
-@@ -141,7 +141,7 @@ struct rchan_buf *relay_create_buf(struc
+@@ -141,7 +142,7 @@ struct rchan_buf *relay_create_buf(struc
  	if (!buf->padding)
  		goto free_buf;
  
