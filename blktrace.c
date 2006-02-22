@@ -190,6 +190,7 @@ struct thread_information {
 	off_t ofile_offset;
 	int ofile_stdout;
 	int ofile_mmap;
+	volatile int sendfile_pending;
 
 	int (*get_subbuf)(struct thread_information *, unsigned int);
 	int (*flush_subbuf)(struct thread_information *, struct tip_subbuf *);
@@ -342,21 +343,6 @@ static int get_dropped_count(const char *buts_name)
 	close(fd);
 
 	return atoi(tmp);
-}
-
-static size_t get_subbuf_padding(struct thread_information *tip,
-				 unsigned subbuf)
-{
-	size_t padding_size = buf_nr * sizeof(size_t);
-	size_t ret;
-
-	if (read(tip->pfd, tip->pfd_buf, padding_size) < 0) {
-		perror("tip pad read");
-		ret = -1;
-	} else
-		ret = tip->pfd_buf[subbuf];
-
-	return ret;
 }
 
 static int start_trace(struct device_information *dip)
@@ -593,8 +579,6 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 			       unsigned int maxlen)
 {
 	struct tip_subbuf *ts;
-	struct stat sb;
-	unsigned int ready, this_size, total;
 
 	wait_for_data(tip);
 
@@ -604,43 +588,23 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	if (is_done())
 		return get_subbuf(tip, maxlen);
 
-	if (fstat(tip->fd, &sb) < 0) {
-		perror("trace stat");
-		return -1;
-	}
-
-	ready = sb.st_size - tip->ofile_offset;
-	if (!ready) {
-		/*
-		 * delay a little, since poll() will return data available
-		 * until sendfile() is run
-		 */
+	if (tip->sendfile_pending) {
 		usleep(100);
 		return 0;
 	}
 
-	this_size = buf_size;
-	total = ready;
-	while (ready) {
-		if (this_size > ready)
-			this_size = ready;
+	ts = malloc(sizeof(*ts));
+	ts->buf = NULL;
+	ts->max_len = 0;
 
-		ts = malloc(sizeof(*ts));
+	ts->offset = tip->ofile_offset;
 
-		ts->buf = NULL;
-		ts->max_len = 0;
+	if (subbuf_fifo_queue(tip, ts))
+		return -1;
 
-		ts->len = this_size;
-		ts->offset = tip->ofile_offset;
-		tip->ofile_offset += ts->len;
-
-		if (subbuf_fifo_queue(tip, ts))
-			return -1;
-
-		ready -= this_size;
-	}
-
-	return total;
+	tip->sendfile_pending++;
+	tip->ofile_offset += buf_size;
+	return buf_size;
 }
 
 static void close_thread(struct thread_information *tip)
@@ -797,31 +761,43 @@ static int flush_subbuf_net(struct thread_information *tip,
 
 static int net_sendfile(struct thread_information *tip, struct tip_subbuf *ts)
 {
-	unsigned int bytes_left = ts->len;
-	int ret;
+	int ret = sendfile(net_out_fd, tip->fd, NULL, ts->len);
 
-	while (bytes_left && !is_done()) {
-		ret = sendfile(net_out_fd, tip->fd, &ts->offset, bytes_left);
-		if (ret < 0) {
-			perror("sendfile");
-			break;
-		} else if (!ret) {
-			usleep(100);
-			continue;
-		}
-
-		ts->offset += ret;
-		bytes_left -= ret;
+	if (ret < 0) {
+		perror("sendfile");
+		return 1;
+	} else if (ret < (int) ts->len) {
+		fprintf(stderr, "short sendfile send (%d of %d)\n", ret, ts->len);
+		return 1;
 	}
 
-	return bytes_left;
+	return 0;
+}
+
+static int get_subbuf_padding(struct thread_information *tip, off_t off)
+{
+	int padding_size = buf_nr * sizeof(size_t);
+	int ret;
+
+	ret = read(tip->pfd, tip->pfd_buf, padding_size);
+	if (ret == padding_size) {
+		int subbuf = (off / buf_size) % buf_nr;
+
+		ret = tip->pfd_buf[subbuf];
+	} else if (ret < 0)
+		perror("tip pad read");
+	else {
+		fprintf(stderr, "bad pad size read\n");
+		ret = -1;
+	}
+
+	return ret;
 }
 
 static int flush_subbuf_sendfile(struct thread_information *tip,
 				 struct tip_subbuf *ts)
 {
-	size_t padding;
-	unsigned subbuf;
+	int pad, ret = 1;
 
 	/*
 	 * currently we cannot use sendfile() on the last bytes read, as they
@@ -831,18 +807,22 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 	if (ts->buf)
 		return flush_subbuf_net(tip, ts);
 	
-	subbuf = (ts->offset / buf_size) % buf_nr;
-	padding = get_subbuf_padding(tip, subbuf);
-	ts->len -= padding;
+	pad = get_subbuf_padding(tip, ts->offset);
+	if (pad == -1)
+		goto err;
+
+	ts->len = buf_size - pad;
 
 	if (net_send_header(tip, ts->len))
-		return 1;
+		goto err;
 	if (net_sendfile(tip, ts))
-		return 1;
+		goto err;
 
 	tip->data_read += ts->len;
+err:
+	tip->sendfile_pending--;
 	free(ts);
-	return 0;
+	return ret;
 }
 
 static int write_data(struct thread_information *tip, void *buf,
