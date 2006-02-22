@@ -160,7 +160,6 @@ struct tip_subbuf {
 	void *buf;
 	unsigned int len;
 	unsigned int max_len;
-	off_t offset;
 };
 
 #define FIFO_SIZE	(1024)	/* should be plenty big! */
@@ -597,13 +596,10 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	ts->buf = NULL;
 	ts->max_len = 0;
 
-	ts->offset = tip->ofile_offset;
-
 	if (subbuf_fifo_queue(tip, ts))
 		return -1;
 
 	tip->sendfile_pending++;
-	tip->ofile_offset += buf_size;
 	return buf_size;
 }
 
@@ -807,7 +803,7 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 	if (ts->buf)
 		return flush_subbuf_net(tip, ts);
 	
-	pad = get_subbuf_padding(tip, ts->offset);
+	pad = get_subbuf_padding(tip, tip->ofile_offset);
 	if (pad == -1)
 		goto err;
 
@@ -819,6 +815,8 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 		goto err;
 
 	tip->data_read += ts->len;
+	tip->ofile_offset += buf_size;
+	ret = 0;
 err:
 	tip->sendfile_pending--;
 	free(ts);
