@@ -899,10 +899,20 @@ index 1018781..88ed3be 100644
  		goto free_buf;
  
 diff --git a/fs/relayfs/inode.c b/fs/relayfs/inode.c
-index 3835230..6924eca 100644
+index 3835230..4e498c6 100644
 --- a/fs/relayfs/inode.c
 +++ b/fs/relayfs/inode.c
-@@ -347,37 +347,33 @@ static void relay_file_read_consume(stru
+@@ -293,7 +293,8 @@ static unsigned int relay_file_poll(stru
+ 	if (filp->f_mode & FMODE_READ) {
+ 		poll_wait(filp, &buf->read_wait, wait);
+ 		if (!relay_buf_empty(buf))
+-			mask |= POLLIN | POLLRDNORM;
++			mask |= POLLIN | POLLRDNORM | buf->poll_flags;
++		buf->poll_flags = 0;
+ 	}
+ 
+ 	return mask;
+@@ -347,37 +348,33 @@ static void relay_file_read_consume(stru
   */
  static int relay_file_read_avail(struct rchan_buf *buf, size_t read_pos)
  {
@@ -959,7 +969,7 @@ index 3835230..6924eca 100644
  	return 1;
  }
  
-@@ -498,6 +494,91 @@ out:
+@@ -498,6 +495,91 @@ out:
  	return ret;
  }
  
@@ -1051,7 +1061,7 @@ index 3835230..6924eca 100644
  struct file_operations relay_file_operations = {
  	.open		= relay_file_open,
  	.poll		= relay_file_poll,
-@@ -505,6 +586,7 @@ struct file_operations relay_file_operat
+@@ -505,6 +587,7 @@ struct file_operations relay_file_operat
  	.read		= relay_file_read,
  	.llseek		= no_llseek,
  	.release	= relay_file_release,
@@ -1060,15 +1070,17 @@ index 3835230..6924eca 100644
  
  static struct super_operations relayfs_ops = {
 diff --git a/fs/relayfs/relay.c b/fs/relayfs/relay.c
-index abf3cea..13f0e6c 100644
+index abf3cea..7969dcc 100644
 --- a/fs/relayfs/relay.c
 +++ b/fs/relayfs/relay.c
-@@ -353,6 +353,8 @@ size_t relay_switch_subbuf(struct rchan_
+@@ -353,6 +353,10 @@ size_t relay_switch_subbuf(struct rchan_
  		old_subbuf = buf->subbufs_produced % buf->chan->n_subbufs;
  		buf->padding[old_subbuf] = buf->prev_padding;
  		buf->subbufs_produced++;
 +		buf->dentry->d_inode->i_size += buf->chan->subbuf_size -
 +			buf->padding[old_subbuf];
++		buf->poll_flags = POLLMSG;
++		smp_mb();
  		if (waitqueue_active(&buf->read_wait)) {
  			PREPARE_WORK(&buf->wake_readers, wakeup_readers, buf);
  			schedule_delayed_work(&buf->wake_readers, 1);
@@ -1406,6 +1418,18 @@ index e059da9..c7a63cd 100644
  
  #define BMAP_IOCTL 1		/* obsolete - kept for compatibility */
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
+diff --git a/include/linux/relayfs_fs.h b/include/linux/relayfs_fs.h
+index 7342e66..10aa201 100644
+--- a/include/linux/relayfs_fs.h
++++ b/include/linux/relayfs_fs.h
+@@ -46,6 +46,7 @@ struct rchan_buf
+ 	size_t prev_padding;		/* temporary variable */
+ 	size_t bytes_consumed;		/* bytes consumed in cur read subbuf */
+ 	unsigned int cpu;		/* this buf's cpu */
++	unsigned int poll_flags;
+ } ____cacheline_aligned;
+ 
+ /*
 diff --git a/include/linux/sched.h b/include/linux/sched.h
 index b6f51e3..d9d465b 100644
 --- a/include/linux/sched.h
