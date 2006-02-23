@@ -643,7 +643,7 @@ static void tip_ftrunc_final(struct thread_information *tip)
 	/*
 	 * truncate to right size and cleanup mmap
 	 */
-	if (tip->ofile_mmap) {
+	if (tip->ofile_mmap && tip->ofile) {
 		int ofd = fileno(tip->ofile);
 
 		if (tip->fs_buf)
@@ -1382,7 +1382,8 @@ static void net_client_done(struct net_connection *nc)
 		for (j = 0; j < nc->ncpus; j++) {
 			tip = &dip->threads[j];
 
-			fclose(tip->ofile);
+			if (tip->ofile)
+				fclose(tip->ofile);
 		}
 
 		free(dip->threads);
