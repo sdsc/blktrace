@@ -227,6 +227,7 @@ static int ncpus;
 static struct thread_information *thread_information;
 static int ndevs;
 static struct device_information *device_information;
+static int ndevs_running;
 
 /* command line option globals */
 static char *relay_path;
@@ -718,17 +719,16 @@ static void net_client_send_close(void)
 	struct blktrace_net_hdr hdr;
 	int i;
 
-	hdr.magic = BLK_IO_TRACE_MAGIC;
-	hdr.cpu = 0;
-	hdr.max_cpus = ncpus;
-	hdr.len = 0;
-
 	for_each_dip(dip, i) {
+		hdr.magic = BLK_IO_TRACE_MAGIC;
+		hdr.max_cpus = ncpus;
+		hdr.len = 0;
 		strcpy(hdr.buts_name, dip->buts_name);
-		hdr.cpu += get_dropped_count(dip->buts_name);
+		hdr.cpu = get_dropped_count(dip->buts_name);
+
+		write_data_net(net_out_fd, &hdr, sizeof(hdr));
 	}
 
-	write_data_net(net_out_fd, &hdr, sizeof(hdr));
 }
 
 static int flush_subbuf_net(struct thread_information *tip,
@@ -1269,7 +1269,9 @@ static struct device_information *net_get_dip(char *buts_name,
 	dip->fd = -1;
 	strcpy(dip->buts_name, buts_name);
 	dip->path = strdup(buts_name);
+	dip->trace_started = 1;
 	ndevs++;
+	ndevs_running++;
 	dip->threads = malloc(ncpus * sizeof(struct thread_information));
 	memset(dip->threads, 0, ncpus * sizeof(struct thread_information));
 
@@ -1298,6 +1300,11 @@ static struct thread_information *net_get_tip(struct blktrace_net_hdr *bnh,
 
 	ncpus = bnh->max_cpus;
 	dip = net_get_dip(bnh->buts_name, cl_in_addr);
+	if (!dip->trace_started) {
+		fprintf(stderr, "Events for closed devices %s\n", dip->buts_name);
+		return NULL;
+	}
+
 	return &dip->threads[bnh->cpu];
 }
 
@@ -1365,9 +1372,11 @@ static int net_server_loop(struct in_addr *cl_in_addr)
 
 		dip = net_get_dip(bnh.buts_name, cl_in_addr);
 		dip->drop_count = bnh.cpu;
+		dip->trace_started = 0;
+		ndevs_running--;
 
-		fprintf(stderr, "server: end of run\n");
-		return 1;
+		fprintf(stderr, "server: end of run for %s\n", dip->buts_name);
+		return !ndevs_running;
 	}
 
 	tip = net_get_tip(&bnh, cl_in_addr);
