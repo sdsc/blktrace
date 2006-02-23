@@ -253,16 +253,18 @@ static void exit_trace(int status);
 #define dip_tracing(dip)	(*(volatile int *)(&(dip)->trace_started))
 #define dip_set_tracing(dip, v)	((dip)->trace_started = (v))
 
-#define __for_each_dip(__d, __i, __di, __e)	\
+#define __for_each_dip(__d, __di, __e, __i)	\
 	for (__i = 0, __d = __di; __i < __e; __i++, __d++)
 
 #define for_each_dip(__d, __i)		\
-	__for_each_dip(__d, __i, device_information, ndevs)
+	__for_each_dip(__d, device_information, ndevs, __i)
 #define for_each_nc_dip(__nc, __d, __i)		\
-	__for_each_dip(__d, __i, (__nc)->device_information, (__nc)->ndevs)
+	__for_each_dip(__d, (__nc)->device_information, (__nc)->ndevs, __i)
 
+#define __for_each_tip(__d, __t, __ncpus, __j)	\
+	for (__j = 0, __t = (__d)->threads; __j < __ncpus; __j++, __t++)
 #define for_each_tip(__d, __t, __j)	\
-	for (__j = 0, __t = (__d)->threads; __j < ncpus; __j++, __t++)
+	__for_each_tip(__d, __t, ncpus, __j)
 
 /*
  * networking stuff follows. we include a magic number so we know whether
@@ -1199,7 +1201,7 @@ static int start_devices(void)
 	}
 
 	if (i != ndevs) {
-		__for_each_dip(dip, j, device_information, i)
+		__for_each_dip(dip, device_information, i, j)
 			stop_trace(dip);
 
 		return 1;
@@ -1214,7 +1216,7 @@ static int start_devices(void)
 	}
 
 	if (i != ndevs) {
-		__for_each_dip(dip, j, device_information, i)
+		__for_each_dip(dip, device_information, i, j)
 			stop_threads(dip);
 		for_each_dip(dip, i)
 			stop_trace(dip);
@@ -1242,14 +1244,12 @@ static void show_stats(struct device_information *dips, int ndips, int cpus)
 	stat_shown = 1;
 
 	total_drops = 0;
-	for (i = 0; i < ndips; i++) {
-		dip = &dips[i];
+	__for_each_dip(dip, dips, ndips, i) {
 		if (!no_stdout)
 			printf("Device: %s\n", dip->path);
 		events_processed = 0;
 		data_read = 0;
-		for (j = 0; j < cpus; j++) {
-			tip = &dip->threads[j];
+		__for_each_tip(dip, tip, cpus, j) {
 			if (!no_stdout)
 				printf("  CPU%3d: %20lu events, %8llu KiB data\n",
 			       		tip->cpu, tip->events_processed,
@@ -1281,7 +1281,7 @@ static struct device_information *net_get_dip(struct net_connection *nc,
 			return dip;
 	}
 
-	nc->device_information = realloc(device_information, (nc->ndevs + 1) * sizeof(*dip));
+	nc->device_information = realloc(nc->device_information, (nc->ndevs + 1) * sizeof(*dip));
 	dip = &nc->device_information[nc->ndevs];
 	memset(dip, 0, sizeof(*dip));
 	dip->fd = -1;
@@ -1365,13 +1365,9 @@ static void net_client_done(struct net_connection *nc)
 	struct net_connection *last_nc;
 	int i, j;
 
-	for_each_nc_dip(nc, dip, i) {
-		for (j = 0; j < nc->ncpus; j++) {
-			tip = &dip->threads[j];
-
+	for_each_nc_dip(nc, dip, i)
+		__for_each_tip(dip, tip, nc->ncpus, j)
 			tip_ftrunc_final(tip);
-		}
-	}
 
 	show_stats(nc->device_information, nc->ndevs, nc->ncpus);
 
@@ -1379,9 +1375,7 @@ static void net_client_done(struct net_connection *nc)
 	 * cleanup for next run
 	 */
 	for_each_nc_dip(nc, dip, i) {
-		for (j = 0; j < nc->ncpus; j++) {
-			tip = &dip->threads[j];
-
+		__for_each_tip(dip, tip, nc->ncpus, j) {
 			if (tip->ofile)
 				fclose(tip->ofile);
 		}
@@ -1405,7 +1399,6 @@ static void net_client_done(struct net_connection *nc)
 	 */
 	if (nc->connection_index != net_connects) {
 		last_nc = &net_connections[net_connects];
-		last_nc->connection_index = nc->connection_index;
 		*nc = *last_nc;
 		for_each_nc_dip(nc, dip, i)
 			dip->nc = nc;
@@ -1480,6 +1473,7 @@ static void net_add_connection(int listen_fd, struct sockaddr_in *addr)
 	}
 
 	nc = &net_connections[net_connects];
+	memset(nc, 0, sizeof(*nc));
 
 	nc->in_fd = accept(listen_fd, (struct sockaddr *) addr, &socklen);
 	if (nc->in_fd < 0) {
