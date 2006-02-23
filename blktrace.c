@@ -179,9 +179,6 @@ struct thread_information {
 	void *fd_buf;
 	char fn[MAXPATHLEN + 64];
 
-	int pfd;
-	size_t *pfd_buf;
-
 	struct in_addr cl_in_addr;
 
 	FILE *ofile;
@@ -197,6 +194,7 @@ struct thread_information {
 
 	unsigned long events_processed;
 	unsigned long long data_read;
+	unsigned long long data_queued;
 	struct device_information *device;
 
 	int exited;
@@ -578,6 +576,8 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 			       unsigned int maxlen)
 {
 	struct tip_subbuf *ts;
+	struct stat sb;
+	unsigned int ready;
 
 	wait_for_data(tip);
 
@@ -592,34 +592,39 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 		return 0;
 	}
 
+	if (fstat(tip->fd, &sb) < 0) {
+		perror("trace stat");
+		return -1;
+	}
+	ready = sb.st_size - tip->data_queued;
+	if (!ready)
+		return 0;
+
 	ts = malloc(sizeof(*ts));
 	ts->buf = NULL;
 	ts->max_len = 0;
+	ts->len = ready;
+	tip->data_queued += ready;
 
 	if (subbuf_fifo_queue(tip, ts))
 		return -1;
 
 	tip->sendfile_pending++;
-	return buf_size;
+	return ready;
 }
 
 static void close_thread(struct thread_information *tip)
 {
 	if (tip->fd != -1)
 		close(tip->fd);
-	if (tip->pfd != -1)
-		close(tip->pfd);
 	if (tip->ofile)
 		fclose(tip->ofile);
 	if (tip->ofile_buffer)
 		free(tip->ofile_buffer);
 	if (tip->fd_buf)
 		free(tip->fd_buf);
-	if (tip->pfd_buf)
-		free(tip->pfd_buf);
 
 	tip->fd = -1;
-	tip->pfd = -1;
 	tip->ofile = NULL;
 	tip->ofile_buffer = NULL;
 	tip->fd_buf = NULL;
@@ -662,21 +667,6 @@ static void *thread_main(void *arg)
 		fprintf(stderr,"Thread %d failed open of %s\n", tip->cpu,
 			tip->fn);
 		exit_trace(1);
-	}
-
-	if (net_mode == Net_client && net_use_sendfile) {
-		char tmp[MAXPATHLEN + 64];
-
-		snprintf(tmp, sizeof(tmp), "%s/block/%s/trace%d.padding",
-			 relay_path, tip->device->buts_name, tip->cpu);
-
-		tip->pfd = open(tmp, O_RDONLY);
-		if (tip->pfd < 0) {
-			fprintf(stderr, "Couldn't open padding file %s\n", tmp);
-			exit_trace(1);
-		}
-
-		tip->pfd_buf = malloc(buf_nr * sizeof(size_t));
 	}
 
 	while (!is_done()) {
@@ -770,30 +760,10 @@ static int net_sendfile(struct thread_information *tip, struct tip_subbuf *ts)
 	return 0;
 }
 
-static int get_subbuf_padding(struct thread_information *tip, off_t off)
-{
-	int padding_size = buf_nr * sizeof(size_t);
-	int ret;
-
-	ret = read(tip->pfd, tip->pfd_buf, padding_size);
-	if (ret == padding_size) {
-		int subbuf = (off / buf_size) % buf_nr;
-
-		ret = tip->pfd_buf[subbuf];
-	} else if (ret < 0)
-		perror("tip pad read");
-	else {
-		fprintf(stderr, "bad pad size read\n");
-		ret = -1;
-	}
-
-	return ret;
-}
-
 static int flush_subbuf_sendfile(struct thread_information *tip,
 				 struct tip_subbuf *ts)
 {
-	int pad, ret = 1;
+	int ret = 1;
 
 	/*
 	 * currently we cannot use sendfile() on the last bytes read, as they
@@ -803,12 +773,6 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 	if (ts->buf)
 		return flush_subbuf_net(tip, ts);
 	
-	pad = get_subbuf_padding(tip, tip->ofile_offset);
-	if (pad == -1)
-		goto err;
-
-	ts->len = buf_size - pad;
-
 	if (net_send_header(tip, ts->len))
 		goto err;
 	if (net_sendfile(tip, ts))
@@ -1112,7 +1076,6 @@ static int start_threads(struct device_information *dip)
 		tip->device = dip;
 		tip->events_processed = 0;
 		tip->fd = -1;
-		tip->pfd = -1;
 		memset(&tip->fifo, 0, sizeof(tip->fifo));
 		tip->leftover_ts = NULL;
 
@@ -1321,7 +1284,6 @@ static struct device_information *net_get_dip(char *buts_name,
 		tip->cpu = i;
 		tip->device = dip;
 		tip->fd = -1;
-		tip->pfd = -1;
 		tip->cl_in_addr = *cl_in_addr;
 
 		if (tip_open_output(dip, tip))
