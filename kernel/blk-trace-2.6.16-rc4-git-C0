@@ -30,10 +30,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..6265b7a
+index 0000000..e786a1d
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,596 @@
+@@ -0,0 +1,512 @@
 +/*
 + * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
 + *
@@ -218,89 +218,10 @@ index 0000000..6265b7a
 +	return dir;
 +}
 +
-+static int blk_padding_open(struct inode *inode, struct file *filp)
-+{
-+	filp->private_data = inode->u.generic_ip;
-+	
-+	return 0;
-+}
-+
-+static ssize_t blk_padding_read(struct file *filp, char __user *buffer,
-+				size_t count, loff_t *ppos)
-+{
-+	struct rchan_buf *buf = filp->private_data;
-+	size_t s = buf->chan->n_subbufs * sizeof(*buf->padding);
-+
-+	/*
-+	 * to avoid open/close of the file all the time, just reset ppos
-+	 */
-+	*ppos = 0;
-+	return simple_read_from_buffer(buffer, count, ppos, buf->padding, s);
-+}
-+
-+static struct file_operations blk_padding_fops = {
-+	.owner =	THIS_MODULE,
-+	.open =		blk_padding_open,
-+	.read =		blk_padding_read,
-+};
-+
-+static void remove_channel_controls(struct blk_trace *bt)
-+{
-+	int i;
-+
-+	for (i = 0; i < NR_CPUS; i++) {
-+		if (bt->ctrl->padding[i]) {
-+			relayfs_remove_file(bt->ctrl->padding[i]);
-+			continue;
-+		}
-+		break;
-+	}
-+	kfree(bt->ctrl);
-+	bt->ctrl = NULL;
-+}
-+
-+static int create_channel_controls(struct blk_trace *bt,
-+				   struct dentry *parent,
-+				   const char *base_filename)
-+{
-+	unsigned int i;
-+	char *tmpname;
-+	
-+	tmpname = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-+	if (!tmpname)
-+		return -ENOMEM;
-+
-+	bt->ctrl = kzalloc(sizeof(struct rchan_ctrl), GFP_KERNEL);
-+	if (!bt->ctrl)
-+		goto cleanup_control_files;
-+
-+	for_each_cpu(i) {
-+		sprintf(tmpname, "%s%d.padding", base_filename, i);
-+		bt->ctrl->padding[i] = relayfs_create_file(tmpname,
-+							   parent,
-+							   0,
-+							   &blk_padding_fops,
-+							   bt->rchan->buf[i]);
-+		if (!bt->ctrl->padding[i]) {
-+			printk("Couldn't create padding file %s.\n", tmpname);
-+			goto cleanup_control_files;
-+		}
-+	}
-+	kfree(tmpname);
-+	return 0;
-+
-+cleanup_control_files:
-+	remove_channel_controls(bt);
-+	kfree(tmpname);
-+	
-+	return -ENOMEM;
-+}
-+
 +static void blk_trace_cleanup(struct blk_trace *bt)
 +{
 +	relay_close(bt->rchan);
 +	relayfs_remove_file(bt->dropped_file);
-+	remove_channel_controls(bt);
 +	blk_remove_tree(bt->dir);
 +	free_percpu(bt->sequence);
 +	kfree(bt);
@@ -425,9 +346,6 @@ index 0000000..6265b7a
 +		goto err;
 +	bt->rchan->private_data = bt;
 +
-+	if (create_channel_controls(bt, dir, "trace"))
-+		goto err;
-+
 +	bt->act_mask = buts.act_mask;
 +	if (!bt->act_mask)
 +		bt->act_mask = (u16) -1;
@@ -454,8 +372,6 @@ index 0000000..6265b7a
 +	if (bt) {
 +		if (bt->dropped_file)
 +			relayfs_remove_file(bt->dropped_file);
-+		if (bt->ctrl)
-+			remove_channel_controls(bt);
 +		if (bt->sequence)
 +			free_percpu(bt->sequence);
 +		if (bt->rchan)
@@ -983,16 +899,73 @@ index 1018781..88ed3be 100644
  		goto free_buf;
  
 diff --git a/fs/relayfs/inode.c b/fs/relayfs/inode.c
-index 3835230..9668216 100644
+index 3835230..6924eca 100644
 --- a/fs/relayfs/inode.c
 +++ b/fs/relayfs/inode.c
-@@ -498,6 +498,71 @@ out:
+@@ -347,37 +347,33 @@ static void relay_file_read_consume(stru
+  */
+ static int relay_file_read_avail(struct rchan_buf *buf, size_t read_pos)
+ {
+-	size_t bytes_produced, bytes_consumed, write_offset;
+ 	size_t subbuf_size = buf->chan->subbuf_size;
+ 	size_t n_subbufs = buf->chan->n_subbufs;
+-	size_t produced = buf->subbufs_produced % n_subbufs;
+-	size_t consumed = buf->subbufs_consumed % n_subbufs;
++	size_t produced = buf->subbufs_produced;
++	size_t consumed = buf->subbufs_consumed;
+ 
+-	write_offset = buf->offset > subbuf_size ? subbuf_size : buf->offset;
++	relay_file_read_consume(buf, read_pos, 0);
+ 
+-	if (consumed > produced) {
+-		if ((produced > n_subbufs) &&
+-		    (produced + n_subbufs - consumed <= n_subbufs))
+-			produced += n_subbufs;
+-	} else if (consumed == produced) {
+-		if (buf->offset > subbuf_size) {
+-			produced += n_subbufs;
+-			if (buf->subbufs_produced == buf->subbufs_consumed)
+-				consumed += n_subbufs;
+-		}
++	if (unlikely(buf->offset > subbuf_size)) {
++		if (produced == consumed)
++			return 0;
++		return 1;
+ 	}
+ 
+-	if (buf->offset > subbuf_size)
+-		bytes_produced = (produced - 1) * subbuf_size + write_offset;
+-	else
+-		bytes_produced = produced * subbuf_size + write_offset;
+-	bytes_consumed = consumed * subbuf_size + buf->bytes_consumed;
+-
+-	if (bytes_produced == bytes_consumed)
++	if (unlikely(produced - consumed >= n_subbufs)) {
++		consumed = (produced / n_subbufs) * n_subbufs;
++		buf->subbufs_consumed = consumed;
++	}
++	
++	produced = (produced % n_subbufs) * subbuf_size + buf->offset;
++	consumed = (consumed % n_subbufs) * subbuf_size + buf->bytes_consumed;
++
++	if (consumed > produced)
++		produced += n_subbufs * subbuf_size;
++	
++	if (consumed == produced)
+ 		return 0;
+ 
+-	relay_file_read_consume(buf, read_pos, 0);
+-
+ 	return 1;
+ }
+ 
+@@ -498,6 +494,91 @@ out:
  	return ret;
  }
  
-+static ssize_t relay_file_sendfile(struct file *filp, loff_t *ppos,
-+				   size_t count, read_actor_t actor,
-+				   void *target)
++static ssize_t relay_file_sendsubbuf(struct file *filp, loff_t *ppos,
++				     size_t count, read_actor_t actor,
++				     void *target)
 +{
 +	struct rchan_buf *buf = filp->private_data;
 +	read_descriptor_t desc;
@@ -1001,18 +974,13 @@ index 3835230..9668216 100644
 +	unsigned int subbuf_pages;
 +	ssize_t ret = 0;
 +
-+	if (!count)
-+		return 0;
-+
-+	mutex_lock(&filp->f_dentry->d_inode->i_mutex);
-+
 +	if (!relay_file_read_avail(buf, *ppos))
-+		goto out;
++		return 0;
 +
 +	read_start = relay_file_read_start_pos(*ppos, buf);
 +	avail = relay_file_read_subbuf_avail(read_start, buf);
 +	if (!avail)
-+		goto out;
++		return 0;
 +
 +	count = min(count, avail);
 +
@@ -1050,15 +1018,40 @@ index 3835230..9668216 100644
 +		relay_file_read_consume(buf, read_start, ret);
 +		*ppos = relay_file_read_end_pos(buf, read_start, ret);
 +	}
-+out:
-+	mutex_unlock(&filp->f_dentry->d_inode->i_mutex);
++
 +	return ret;
++}
++
++static ssize_t relay_file_sendfile(struct file *filp, loff_t *ppos,
++				   size_t count, read_actor_t actor,
++				   void *target)
++{
++	ssize_t sent = 0, ret = 0;
++
++	if (!count)
++		return 0;
++
++	mutex_lock(&filp->f_dentry->d_inode->i_mutex);
++
++	do {
++		ret = relay_file_sendsubbuf(filp, ppos, count, actor, target);
++		if (ret < 0) {
++			if (!sent)
++				sent = ret;
++			break;
++		}
++		count -= ret;
++		sent += ret;
++	} while (count && ret);
++
++	mutex_unlock(&filp->f_dentry->d_inode->i_mutex);
++	return sent;
 +}
 +
  struct file_operations relay_file_operations = {
  	.open		= relay_file_open,
  	.poll		= relay_file_poll,
-@@ -505,6 +570,7 @@ struct file_operations relay_file_operat
+@@ -505,6 +586,7 @@ struct file_operations relay_file_operat
  	.read		= relay_file_read,
  	.llseek		= no_llseek,
  	.release	= relay_file_release,
@@ -1067,14 +1060,15 @@ index 3835230..9668216 100644
  
  static struct super_operations relayfs_ops = {
 diff --git a/fs/relayfs/relay.c b/fs/relayfs/relay.c
-index abf3cea..ee6a7b0 100644
+index abf3cea..13f0e6c 100644
 --- a/fs/relayfs/relay.c
 +++ b/fs/relayfs/relay.c
-@@ -353,6 +353,7 @@ size_t relay_switch_subbuf(struct rchan_
+@@ -353,6 +353,8 @@ size_t relay_switch_subbuf(struct rchan_
  		old_subbuf = buf->subbufs_produced % buf->chan->n_subbufs;
  		buf->padding[old_subbuf] = buf->prev_padding;
  		buf->subbufs_produced++;
-+		buf->dentry->d_inode->i_size += buf->chan->subbuf_size;
++		buf->dentry->d_inode->i_size += buf->chan->subbuf_size -
++			buf->padding[old_subbuf];
  		if (waitqueue_active(&buf->read_wait)) {
  			PREPARE_WORK(&buf->wake_readers, wakeup_readers, buf);
  			schedule_delayed_work(&buf->wake_readers, 1);
@@ -1101,10 +1095,10 @@ index 860e7a4..266ce9d 100644
  	 */
 diff --git a/include/linux/blktrace_api.h b/include/linux/blktrace_api.h
 new file mode 100644
-index 0000000..bb575b6
+index 0000000..86479af
 --- /dev/null
 +++ b/include/linux/blktrace_api.h
-@@ -0,0 +1,283 @@
+@@ -0,0 +1,277 @@
 +#ifndef BLKTRACE_H
 +#define BLKTRACE_H
 +
@@ -1209,11 +1203,6 @@ index 0000000..bb575b6
 +	Blktrace_stopped,
 +};
 +
-+struct rchan_ctrl
-+{
-+	struct dentry	*padding[NR_CPUS];
-+};
-+
 +struct blk_trace {
 +	int trace_state;
 +	struct rchan *rchan;
@@ -1226,7 +1215,6 @@ index 0000000..bb575b6
 +	struct dentry *dir;
 +	struct dentry *dropped_file;
 +	atomic_t dropped;
-+	struct rchan_ctrl *ctrl;
 +};
 +
 +/*
