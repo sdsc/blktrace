@@ -179,8 +179,6 @@ struct thread_information {
 	void *fd_buf;
 	char fn[MAXPATHLEN + 64];
 
-	struct in_addr cl_in_addr;
-
 	FILE *ofile;
 	char *ofile_buffer;
 	off_t ofile_offset;
@@ -220,6 +218,7 @@ struct device_information {
 	char buts_name[32];
 	volatile int trace_started;
 	unsigned long drop_count;
+	struct in_addr cl_in_addr;
 	struct thread_information *threads;
 };
 
@@ -291,6 +290,7 @@ static int net_mode = 0;
 static int net_use_sendfile;
 
 static int net_in_fd = -1;
+static time_t net_connect_time;
 static int net_out_fd = -1;
 
 static void handle_sigint(__attribute__((__unused__)) int sig)
@@ -955,20 +955,19 @@ static void wait_for_threads(void)
 		net_client_send_close();
 }
 
-static int fill_ofname(struct thread_information *tip, char *dst,
+static int fill_ofname(struct device_information *dip,
+		       struct thread_information *tip, char *dst,
 		       char *buts_name)
 {
 	struct stat sb;
 	int len = 0;
-	time_t t;
 
 	if (output_dir)
 		len = sprintf(dst, "%s/", output_dir);
 
 	if (net_mode == Net_server) {
-		len += sprintf(dst + len, "%s-", inet_ntoa(tip->cl_in_addr));
-		time(&t);
-		len += strftime(dst + len, 64, "%F-%T/", gmtime(&t));
+		len += sprintf(dst + len, "%s-", inet_ntoa(dip->cl_in_addr));
+		len += strftime(dst + len, 64, "%F-%T/", gmtime(&net_connect_time));
 	}
 
 	if (stat(dst, &sb) < 0) {
@@ -1038,7 +1037,7 @@ static int tip_open_output(struct device_information *dip,
 		mode = _IOLBF;
 		vbuf_size = 512;
 	} else {
-		if (fill_ofname(tip, op, dip->buts_name))
+		if (fill_ofname(dip, tip, op, dip->buts_name))
 			return 1;
 		tip->ofile = fopen(op, "w+");
 		tip->ofile_stdout = 0;
@@ -1267,6 +1266,7 @@ static struct device_information *net_get_dip(char *buts_name,
 	dip = &device_information[ndevs];
 	memset(dip, 0, sizeof(*dip));
 	dip->fd = -1;
+	dip->cl_in_addr = *cl_in_addr;
 	strcpy(dip->buts_name, buts_name);
 	dip->path = strdup(buts_name);
 	dip->trace_started = 1;
@@ -1284,7 +1284,6 @@ static struct device_information *net_get_dip(char *buts_name,
 		tip->cpu = i;
 		tip->device = dip;
 		tip->fd = -1;
-		tip->cl_in_addr = *cl_in_addr;
 
 		if (tip_open_output(dip, tip))
 			return NULL;
@@ -1410,6 +1409,7 @@ static int get_connection(int fd, struct sockaddr_in *addr)
 		return 1;
 	}
 
+	time(&net_connect_time);
 	printf("blktrace: connection from %s\n", inet_ntoa(addr->sin_addr));
 	return 0;
 }
