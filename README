@@ -70,6 +70,7 @@ $ blktrace -d <dev> [ -r relay_path ] [ -o output ] [ -k ] [ -w time ]
 
 $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 		      [ -w start:stop ] [ -f output format ] [ -F format spec ]
+		      [ -d <binary> ]
 
 	-i Input file containing trace data, or '-' for stdin.
 	-D Directory to prepend to input file names.
@@ -82,6 +83,7 @@ $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
 	-q Quiet. Don't display any stats at the end of the trace.
 	-w Only parse data between the given time interval in seconds. If
 	   'start' isn't given, blkparse defaults the start time to 0.
+	-d Dump sorted data in binary format
 	-f Output format. Customize the output format. The format field
 	   identifiers are:
 

@@ -103,7 +103,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:"
+#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:d:"
 static struct option l_opts[] = {
  	{
 		.name = "act-mask",
@@ -196,6 +196,12 @@ static struct option l_opts[] = {
 		.val = 'D'
 	},
 	{
+		.name = "dump-binary",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'd'
+	},
+	{
 		.name = NULL,
 	}
 };
@@ -259,6 +265,9 @@ static unsigned int act_mask = -1U;
 static int stats_printed;
 int data_is_native = -1;
 
+static int dump_fd;
+static char *dump_binary;
+
 static unsigned int t_alloc_cache;
 static unsigned int bit_alloc_cache;
 
@@ -275,6 +284,18 @@ static volatile int done;
 #define CPUS_PER_LONG	(8 * sizeof(unsigned long))
 #define CPU_IDX(cpu)	((cpu) / CPUS_PER_LONG)
 #define CPU_BIT(cpu)	((cpu) & (CPUS_PER_LONG - 1))
+
+static void output_binary(void *buf, int len)
+{
+	if (dump_binary) {
+		int n = write(dump_fd, buf, len);
+		if (n != len) {
+			perror(dump_binary);
+			close(dump_fd);
+			dump_binary = NULL;
+		}
+	}
+}
 
 static void resize_cpu_info(struct per_dev_info *pdi, int cpu)
 {
@@ -1402,6 +1423,8 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 		pdi->first_reported_time = t->time;
 
 	pdi->events++;
+
+	output_binary(t, sizeof(*t) + t->pdu_len);
 }
 
 /*
@@ -1942,6 +1965,7 @@ static int read_events(int fd, int always_block, int *fdblock)
 		 */
 		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 			add_ppm_hash(bit->pid, (char *) bit + sizeof(*bit));
+			output_binary(bit, sizeof(*bit) + bit->pdu_len);
 			continue;
 		}
 
@@ -2175,6 +2199,7 @@ static char usage_str[] = \
 	"\t-i Input file containing trace data, or '-' for stdin\n" \
 	"\t-D Directory to prepend to input file names\n" \
 	"\t-o Output file. If not given, output is stdout\n" \
+	"\t-d Output file. If specified, binary data is written to file\n" \
 	"\t-b stdin read batching\n" \
 	"\t-s Show per-program io statistics\n" \
 	"\t-h Hash processes by name, not pid\n" \
@@ -2268,6 +2293,9 @@ int main(int argc, char *argv[])
 		case 'V':
 			printf("%s version %s\n", argv[0], blkparse_version);
 			return 0;
+		case 'd':
+			dump_binary = optarg;
+			break;
 		default:
 			usage(argv[0]);
 			return 1;
@@ -2318,6 +2346,15 @@ int main(int argc, char *argv[])
 	if (setvbuf(ofp, ofp_buffer, mode, 4096)) {
 		perror("setvbuf");
 		return 1;
+	}
+
+	if (dump_binary) {
+		dump_fd = creat(dump_binary, 0666);
+		if (dump_fd < 0) {
+			perror(dump_binary);
+			dump_binary = NULL;
+			return 1;
+		}
 	}
 
 	if (pipeline)
