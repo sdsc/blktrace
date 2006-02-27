@@ -57,7 +57,7 @@ static char blktrace_version[] = "0.99.1";
 
 #define OFILE_BUF	(128 * 1024)
 
-#define RELAYFS_TYPE	0xF0B4A981
+#define DEBUGFS_TYPE	0x64626720
 
 #define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:s"
 static struct option l_opts[] = {
@@ -228,7 +228,7 @@ static int ndevs;
 static struct device_information *device_information;
 
 /* command line option globals */
-static char *relay_path;
+static char *debugfs_path;
 static char *output_name;
 static char *output_dir;
 static int act_mask = ~0U;
@@ -333,7 +333,7 @@ static int get_dropped_count(const char *buts_name)
 	char tmp[MAXPATHLEN + 64];
 
 	snprintf(tmp, sizeof(tmp), "%s/block/%s/dropped",
-		 relay_path, buts_name);
+		 debugfs_path, buts_name);
 
 	fd = open(tmp, O_RDONLY);
 	if (fd < 0) {
@@ -670,7 +670,7 @@ static void *thread_main(void *arg)
 	}
 
 	snprintf(tip->fn, sizeof(tip->fn), "%s/block/%s/trace%d",
-			relay_path, tip->device->buts_name, tip->cpu);
+			debugfs_path, tip->device->buts_name, tip->cpu);
 	tip->fd = open(tip->fn, O_RDONLY);
 	if (tip->fd < 0) {
 		perror(tip->fn);
@@ -1618,10 +1618,10 @@ static int net_setup_client(void)
 }
 
 static char usage_str[] = \
-	"-d <dev> [ -r relay path ] [ -o <output> ] [-k ] [ -w time ]\n" \
+	"-d <dev> [ -r debugfs path ] [ -o <output> ] [-k ] [ -w time ]\n" \
 	"[ -a action ] [ -A action mask ] [ -v ]\n\n" \
 	"\t-d Use specified device. May also be given last after options\n" \
-	"\t-r Path to mounted relayfs, defaults to /relay\n" \
+	"\t-r Path to mounted debugfs, defaults to /debug\n" \
 	"\t-o File(s) to send output to\n" \
 	"\t-D Directory to prepend to output file names\n" \
 	"\t-k Kill a running trace\n" \
@@ -1643,7 +1643,7 @@ static void show_usage(char *program)
 
 int main(int argc, char *argv[])
 {
-	static char default_relay_path[] = "/relay";
+	static char default_debugfs_path[] = "/debug";
 	struct statfs st;
 	int i, c;
 	int stop_watch = 0;
@@ -1678,7 +1678,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'r':
-			relay_path = optarg;
+			debugfs_path = optarg;
 			break;
 
 		case 'o':
@@ -1755,20 +1755,20 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	if (!relay_path)
-		relay_path = default_relay_path;
-
 	if (act_mask_tmp != 0)
 		act_mask = act_mask_tmp;
 
-	if (statfs(relay_path, &st) < 0) {
+	if (!debugfs_path)
+		debugfs_path = default_debugfs_path;
+
+	if (statfs(debugfs_path, &st) < 0) {
 		perror("statfs");
 		fprintf(stderr,"%s does not appear to be a valid path\n",
-			relay_path);
+			debugfs_path);
 		return 1;
-	} else if (st.f_type != (long) RELAYFS_TYPE) {
-		fprintf(stderr,"%s does not appear to be a relay filesystem\n",
-			relay_path);
+	} else if (st.f_type != (long) DEBUGFS_TYPE) {
+		fprintf(stderr,"%s does not appear to be a debug filesystem\n",
+			debugfs_path);
 		return 1;
 	}
 
