@@ -146,7 +146,7 @@ static struct option l_opts[] = {
 		.val = 'p'
 	},
 	{
-		.name = "sendfile",
+		.name = "no-sendfile",
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 's'
@@ -292,7 +292,7 @@ enum {
 static char hostname[MAXHOSTNAMELEN];
 static int net_port = TRACE_NET_PORT;
 static int net_mode = 0;
-static int net_use_sendfile;
+static int net_use_sendfile = 1;
 
 struct net_connection {
 	int in_fd;
@@ -1730,7 +1730,7 @@ int main(int argc, char *argv[])
 			net_port = atoi(optarg);
 			break;
 		case 's':
-			net_use_sendfile = 1;
+			net_use_sendfile = 0;
 			break;
 		default:
 			show_usage(argv[0]);

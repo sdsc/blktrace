@@ -65,7 +65,7 @@ $ blktrace -d <dev> [ -r relay_path ] [ -o output ] [ -k ] [ -w time ]
 	-l Run in network listen mode (blktrace server)
 	-h Run in network client mode, connecting to the given host
 	-p Network port to use (default 8462)
-	-s Make the network client use sendfile() to transfer data
+	-s Disable network client use of sendfile() to transfer data
 	-V Print program version info.
 
 $ blkparse -i <input> [ -o <output> ] [ -b rb_batch ] [ -s ] [ -t ] [ -q ]
