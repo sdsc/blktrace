@@ -981,6 +981,8 @@ static int fill_ofname(struct device_information *dip,
 
 	if (output_dir)
 		len = sprintf(dst, "%s/", output_dir);
+	else
+		len = sprintf(dst, "./");
 
 	if (net_mode == Net_server) {
 		struct net_connection *nc = dip->nc;
