@@ -779,12 +779,11 @@ err:
 }
 
 static int get_subbuf_sendfile(struct thread_information *tip,
-			       unsigned int maxlen)
+			       __attribute__((__unused__)) unsigned int maxlen)
 {
 	struct tip_subbuf *ts;
 	struct stat sb;
 	unsigned int ready;
-	(void) maxlen;
 
 	wait_for_data(tip, -1);
 
@@ -804,7 +803,8 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	ts->len = ready;
 	tip->data_queued += ready;
 
-	flush_subbuf_sendfile(tip, ts);
+	if (flush_subbuf_sendfile(tip, ts) < 0)
+		return -1;
 
 	return ready;
 }
