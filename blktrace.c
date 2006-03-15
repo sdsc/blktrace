@@ -1550,13 +1550,14 @@ static void net_add_connection(int listen_fd, struct sockaddr_in *addr)
 		memset(ch, 0, sizeof(*ch));
 		ch->cl_in_addr = addr->sin_addr;
 		net_add_client_host(ch);
+
+		printf("server: connection from %s\n", inet_ntoa(addr->sin_addr));
 	}
 
 	ch->net_connections = realloc(ch->net_connections, (ch->nconn + 1) * sizeof(*nc));
 	nc = &ch->net_connections[ch->nconn++];
 	memset(nc, 0, sizeof(*nc));
 
-	printf("server: connection from %s\n", inet_ntoa(addr->sin_addr));
 	time(&nc->connect_time);
 	nc->ch = ch;
 	nc->in_fd = in_fd;
