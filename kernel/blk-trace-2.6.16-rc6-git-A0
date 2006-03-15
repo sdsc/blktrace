@@ -31,10 +31,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..7c9ac33
+index 0000000..5986e0c
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,533 @@
+@@ -0,0 +1,538 @@
 +/*
 + * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
 + *
@@ -184,6 +184,7 @@ index 0000000..7c9ac33
 +
 +static struct dentry *blk_tree_root;
 +static struct mutex blk_tree_mutex;
++static unsigned int root_users;
 +
 +static inline void blk_remove_root(void)
 +{
@@ -198,6 +199,8 @@ index 0000000..7c9ac33
 +	mutex_lock(&blk_tree_mutex);
 +	debugfs_remove(dir);
 +	blk_remove_root();
++	if (--root_users == 0)
++		blk_remove_root();
 +	mutex_unlock(&blk_tree_mutex);
 +}
 +
@@ -214,7 +217,9 @@ index 0000000..7c9ac33
 +	}
 +
 +	dir = debugfs_create_dir(blk_name, blk_tree_root);
-+	if (!dir)
++	if (dir)
++		root_users++;
++	else
 +		blk_remove_root();
 +
 +err:
@@ -383,7 +388,7 @@ index 0000000..7c9ac33
 +	ret = -EBUSY;
 +	old_bt = xchg(&q->blk_trace, bt);
 +	if (old_bt) {
-+		xchg(&q->blk_trace, old_bt);
++		(void) xchg(&q->blk_trace, old_bt);
 +		goto err;
 +	}
 +
@@ -622,7 +627,7 @@ index e110949..7acb56c 100644
  	return -ENOIOCTLCMD;
  }
 diff --git a/block/ll_rw_blk.c b/block/ll_rw_blk.c
-index 03d9c82..41387f5 100644
+index 0ef2971..7233ab8 100644
 --- a/block/ll_rw_blk.c
 +++ b/block/ll_rw_blk.c
 @@ -28,6 +28,7 @@
@@ -633,7 +638,7 @@ index 03d9c82..41387f5 100644
  
  /*
   * for max sense size
-@@ -1551,8 +1552,10 @@ void blk_plug_device(request_queue_t *q)
+@@ -1556,8 +1557,10 @@ void blk_plug_device(request_queue_t *q)
  	if (test_bit(QUEUE_FLAG_STOPPED, &q->queue_flags))
  		return;
  
@@ -645,7 +650,7 @@ index 03d9c82..41387f5 100644
  }
  
  EXPORT_SYMBOL(blk_plug_device);
-@@ -1616,14 +1619,21 @@ static void blk_backing_dev_unplug(struc
+@@ -1621,14 +1624,21 @@ static void blk_backing_dev_unplug(struc
  	/*
  	 * devices don't necessarily have an ->unplug_fn defined
  	 */
@@ -668,7 +673,7 @@ index 03d9c82..41387f5 100644
  	q->unplug_fn(q);
  }
  
-@@ -1631,6 +1641,9 @@ static void blk_unplug_timeout(unsigned 
+@@ -1636,6 +1646,9 @@ static void blk_unplug_timeout(unsigned 
  {
  	request_queue_t *q = (request_queue_t *)data;
  
@@ -678,7 +683,7 @@ index 03d9c82..41387f5 100644
  	kblockd_schedule_work(&q->unplug_work);
  }
  
-@@ -1753,6 +1766,9 @@ void blk_cleanup_queue(request_queue_t *
+@@ -1758,6 +1771,9 @@ void blk_cleanup_queue(request_queue_t *
  	if (q->queue_tags)
  		__blk_queue_free_tags(q);
  
@@ -688,7 +693,7 @@ index 03d9c82..41387f5 100644
  	kmem_cache_free(requestq_cachep, q);
  }
  
-@@ -2104,6 +2120,8 @@ rq_starved:
+@@ -2109,6 +2125,8 @@ rq_starved:
  	
  	rq_init(q, rq);
  	rq->rl = rl;
@@ -697,7 +702,7 @@ index 03d9c82..41387f5 100644
  out:
  	return rq;
  }
-@@ -2132,6 +2150,8 @@ static struct request *get_request_wait(
+@@ -2137,6 +2155,8 @@ static struct request *get_request_wait(
  		if (!rq) {
  			struct io_context *ioc;
  
@@ -706,7 +711,7 @@ index 03d9c82..41387f5 100644
  			__generic_unplug_device(q);
  			spin_unlock_irq(q->queue_lock);
  			io_schedule();
-@@ -2185,6 +2205,8 @@ EXPORT_SYMBOL(blk_get_request);
+@@ -2190,6 +2210,8 @@ EXPORT_SYMBOL(blk_get_request);
   */
  void blk_requeue_request(request_queue_t *q, struct request *rq)
  {
@@ -715,7 +720,7 @@ index 03d9c82..41387f5 100644
  	if (blk_rq_tagged(rq))
  		blk_queue_end_tag(q, rq);
  
-@@ -2819,6 +2841,8 @@ static int __make_request(request_queue_
+@@ -2824,6 +2846,8 @@ static int __make_request(request_queue_
  			if (!q->back_merge_fn(q, req, bio))
  				break;
  
@@ -724,7 +729,7 @@ index 03d9c82..41387f5 100644
  			req->biotail->bi_next = bio;
  			req->biotail = bio;
  			req->nr_sectors = req->hard_nr_sectors += nr_sectors;
-@@ -2834,6 +2858,8 @@ static int __make_request(request_queue_
+@@ -2839,6 +2863,8 @@ static int __make_request(request_queue_
  			if (!q->front_merge_fn(q, req, bio))
  				break;
  
@@ -733,7 +738,7 @@ index 03d9c82..41387f5 100644
  			bio->bi_next = req->bio;
  			req->bio = bio;
  
-@@ -2951,6 +2977,7 @@ void generic_make_request(struct bio *bi
+@@ -2956,6 +2982,7 @@ void generic_make_request(struct bio *bi
  	request_queue_t *q;
  	sector_t maxsector;
  	int ret, nr_sectors = bio_sectors(bio);
@@ -741,7 +746,7 @@ index 03d9c82..41387f5 100644
  
  	might_sleep();
  	/* Test device or partition size, when known. */
-@@ -2977,6 +3004,8 @@ void generic_make_request(struct bio *bi
+@@ -2982,6 +3009,8 @@ void generic_make_request(struct bio *bi
  	 * NOTE: we don't repeat the blk_size check for each new device.
  	 * Stacking drivers are expected to know what they are doing.
  	 */
@@ -750,7 +755,7 @@ index 03d9c82..41387f5 100644
  	do {
  		char b[BDEVNAME_SIZE];
  
-@@ -3009,6 +3038,15 @@ end_io:
+@@ -3014,6 +3043,15 @@ end_io:
  		 */
  		blk_partition_remap(bio);
  
@@ -766,7 +771,7 @@ index 03d9c82..41387f5 100644
  		ret = q->make_request_fn(q, bio);
  	} while (ret);
  }
-@@ -3128,6 +3166,8 @@ static int __end_that_request_first(stru
+@@ -3133,6 +3171,8 @@ static int __end_that_request_first(stru
  	int total_bytes, bio_nbytes, error, next_idx = 0;
  	struct bio *bio;
  
@@ -901,7 +906,7 @@ index 1f3bb50..0dd0d81 100644
  	BUG_ON(bi->bi_idx != 0);
  	atomic_set(&bp->cnt, 3);
 diff --git a/fs/compat_ioctl.c b/fs/compat_ioctl.c
-index 537ac70..48318d9 100644
+index c666769..7c031f0 100644
 --- a/fs/compat_ioctl.c
 +++ b/fs/compat_ioctl.c
 @@ -72,6 +72,7 @@
@@ -2696,7 +2701,7 @@ index 0000000..b34d3e7
 +
 +#endif
 diff --git a/include/linux/compat_ioctl.h b/include/linux/compat_ioctl.h
-index 8fad50f..a3ed64b 100644
+index ae7dfb7..efb518f 100644
 --- a/include/linux/compat_ioctl.h
 +++ b/include/linux/compat_ioctl.h
 @@ -97,6 +97,10 @@ COMPATIBLE_IOCTL(BLKRRPART)
@@ -2711,10 +2716,10 @@ index 8fad50f..a3ed64b 100644
  ULONG_IOCTL(BLKFRASET)
  /* RAID */
 diff --git a/include/linux/fs.h b/include/linux/fs.h
-index e059da9..c7a63cd 100644
+index 128d008..37da58b 100644
 --- a/include/linux/fs.h
 +++ b/include/linux/fs.h
-@@ -196,6 +196,10 @@ extern int dir_notify_enable;
+@@ -197,6 +197,10 @@ extern int dir_notify_enable;
  #define BLKBSZGET  _IOR(0x12,112,size_t)
  #define BLKBSZSET  _IOW(0x12,113,size_t)
  #define BLKGETSIZE64 _IOR(0x12,114,size_t)	/* return device size in bytes (u64 *arg) */
@@ -3014,10 +3019,10 @@ index 0000000..0b456ec
 +#endif /* _LINUX_RELAY_H */
 +
 diff --git a/include/linux/sched.h b/include/linux/sched.h
-index b6f51e3..d9d465b 100644
+index 62e6314..e60a91d 100644
 --- a/include/linux/sched.h
 +++ b/include/linux/sched.h
-@@ -705,6 +705,7 @@ struct task_struct {
+@@ -706,6 +706,7 @@ struct task_struct {
  	prio_array_t *array;
  
  	unsigned short ioprio;
@@ -3122,10 +3127,10 @@ index 4ae0fbd..aebd7a7 100644
  ifneq ($(CONFIG_SCHED_NO_NO_OMIT_FRAME_POINTER),y)
  # According to Alan Modra <alan@linuxcare.com.au>, the -fno-omit-frame-pointer is
 diff --git a/kernel/fork.c b/kernel/fork.c
-index fbea12d..f564e9b 100644
+index ccdfbb1..d35e3ee 100644
 --- a/kernel/fork.c
 +++ b/kernel/fork.c
-@@ -179,6 +179,7 @@ static struct task_struct *dup_task_stru
+@@ -181,6 +181,7 @@ static struct task_struct *dup_task_stru
  	/* One for us, one for whoever does the "release_task()" (usually parent) */
  	atomic_set(&tsk->usage,2);
  	atomic_set(&tsk->fs_excl, 0);
