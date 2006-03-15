@@ -31,10 +31,10 @@ index 7e4f93e..c05de0e 100644
 +obj-$(CONFIG_BLK_DEV_IO_TRACE)	+= blktrace.o
 diff --git a/block/blktrace.c b/block/blktrace.c
 new file mode 100644
-index 0000000..5986e0c
+index 0000000..c824644
 --- /dev/null
 +++ b/block/blktrace.c
-@@ -0,0 +1,538 @@
+@@ -0,0 +1,539 @@
 +/*
 + * Copyright (C) 2006 Jens Axboe <axboe@suse.de>
 + *
@@ -432,6 +432,7 @@ index 0000000..5986e0c
 +	} else {
 +		if (bt->trace_state == Blktrace_running) {
 +			bt->trace_state = Blktrace_stopped;
++			relay_flush(bt->rchan);
 +			ret = 0;
 +		}
 +	}
