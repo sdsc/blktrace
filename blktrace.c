@@ -785,12 +785,13 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	struct stat sb;
 	unsigned int ready;
 
-	wait_for_data(tip, -1);
+	wait_for_data(tip, 250);
 
 	if (fstat(tip->fd, &sb) < 0) {
 		perror("trace stat");
 		return -1;
 	}
+
 	ready = sb.st_size - tip->data_queued;
 	if (!ready) {
 		usleep(1000);
@@ -1337,7 +1338,6 @@ static struct thread_information *net_get_tip(struct net_connection *nc,
 	struct device_information *dip;
 	struct thread_information *tip;
 
-	nc->ncpus = bnh->max_cpus;
 	dip = net_get_dip(nc, bnh->buts_name, bnh->cl_id);
 	if (!dip->trace_started) {
 		fprintf(stderr, "Events for closed devices %s\n", dip->buts_name);
@@ -1453,9 +1453,6 @@ static struct cl_host *net_find_client_host(struct in_addr cl_in_addr)
 	return NULL;
 }
 
-/*
- * finalize a net client: truncate files, show stats, cleanup, etc
- */
 static void net_client_host_done(struct cl_host *ch)
 {
 	free(ch->device_information);
@@ -1484,6 +1481,7 @@ static int net_client_data(struct net_connection *nc)
 	if (!data_is_native) {
 		bnh.magic = be32_to_cpu(bnh.magic);
 		bnh.cpu = be32_to_cpu(bnh.cpu);
+		bnh.max_cpus = be32_to_cpu(bnh.max_cpus);
 		bnh.len = be32_to_cpu(bnh.len);
 		bnh.cl_id = be32_to_cpu(bnh.cl_id);
 	}
@@ -1492,6 +1490,9 @@ static int net_client_data(struct net_connection *nc)
 		fprintf(stderr, "server: bad data magic\n");
 		return 1;
 	}
+
+	if (nc->ncpus == -1)
+		nc->ncpus = bnh.max_cpus;
 
 	/*
 	 * len == 0 means that the other end signalled end-of-run
@@ -1507,10 +1508,12 @@ static int net_client_data(struct net_connection *nc)
 		dip->trace_started = 0;
 
 		printf("server: end of run for %s\n", dip->buts_name);
+
 		device_done(nc, dip);
 
 		if (++nc->ch->ndevs_done == nc->ch->ndevs)
 			net_client_host_done(nc->ch);
+
 		return 0;
 	}
 
@@ -1557,6 +1560,7 @@ static void net_add_connection(int listen_fd, struct sockaddr_in *addr)
 	time(&nc->connect_time);
 	nc->ch = ch;
 	nc->in_fd = in_fd;
+	nc->ncpus = -1;
 	net_connects++;
 }
 
