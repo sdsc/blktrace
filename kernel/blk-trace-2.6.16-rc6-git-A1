@@ -2732,10 +2732,10 @@ index 128d008..37da58b 100644
  #define FIBMAP	   _IO(0x00,1)	/* bmap access */
 diff --git a/include/linux/relay.h b/include/linux/relay.h
 new file mode 100644
-index 0000000..0b456ec
+index 0000000..4bcc153
 --- /dev/null
 +++ b/include/linux/relay.h
-@@ -0,0 +1,282 @@
+@@ -0,0 +1,281 @@
 +/*
 + * linux/include/linux/relay.h
 + *
@@ -2787,7 +2787,6 @@ index 0000000..0b456ec
 +	size_t prev_padding;		/* temporary variable */
 +	size_t bytes_consumed;		/* bytes consumed in cur read subbuf */
 +	unsigned int cpu;		/* this buf's cpu */
-+	unsigned int poll_flags;
 +} ____cacheline_aligned;
 +
 +/*
@@ -3140,10 +3139,10 @@ index ccdfbb1..d35e3ee 100644
  
 diff --git a/kernel/relay.c b/kernel/relay.c
 new file mode 100644
-index 0000000..db68452
+index 0000000..c37e29b
 --- /dev/null
 +++ b/kernel/relay.c
-@@ -0,0 +1,1013 @@
+@@ -0,0 +1,1011 @@
 +/*
 + * Public API and common code for kernel->userspace relay file support.
 + *
@@ -3691,7 +3690,6 @@ index 0000000..db68452
 +		buf->subbufs_produced++;
 +		buf->dentry->d_inode->i_size += buf->chan->subbuf_size -
 +			buf->padding[old_subbuf];
-+		buf->poll_flags = POLLMSG;
 +		smp_mb();
 +		if (waitqueue_active(&buf->read_wait)) {
 +			PREPARE_WORK(&buf->wake_readers, wakeup_readers, buf);
@@ -3853,8 +3851,7 @@ index 0000000..db68452
 +	if (filp->f_mode & FMODE_READ) {
 +		poll_wait(filp, &buf->read_wait, wait);
 +		if (!relay_buf_empty(buf))
-+			mask |= POLLIN | POLLRDNORM | buf->poll_flags;
-+		buf->poll_flags = 0;
++			mask |= POLLIN | POLLRDNORM;
 +	}
 +
 +	return mask;
