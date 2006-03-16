@@ -785,7 +785,7 @@ static int get_subbuf_sendfile(struct thread_information *tip,
 	struct stat sb;
 	unsigned int ready;
 
-	wait_for_data(tip, 250);
+	wait_for_data(tip, -1);
 
 	if (fstat(tip->fd, &sb) < 0) {
 		perror("trace stat");
