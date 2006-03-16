@@ -599,7 +599,12 @@ static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
 		ts->len = ret;
 		tip->data_read += ret;
 		if (subbuf_fifo_queue(tip, ts))
-			return -1;
+			ret = -1;
+	}
+
+	if (ret <= 0) {
+		free(ts->buf);
+		free(ts);
 	}
 
 	return ret;
