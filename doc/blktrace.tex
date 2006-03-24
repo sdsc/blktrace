@@ -35,7 +35,8 @@ three major components that are provided:
 \begin{description}
   \item[Kernel patch] A patch to the Linux kernel which includes the
   kernel event logging interfaces, and patches to areas within the block
-  layer to emit event traces.
+  layer to emit event traces. If you run a 2.6.17-rc1 or newer kernel,
+  you don't need to patch blktrace support as it is already included.
 
   \item[blktrace] A utility which transfers event traces from the kernel
   into either long-term on-disk storage, or provides direct formatted
@@ -75,6 +76,7 @@ A patch for a \emph{specific Linux kernel} is provided in bt/kernel (where
 \emph{bt} is the name of the directory from the above git sequence). The
 detailed actual patching instructions for a Linux kernel is outside the
 scope of this document, but the following may be used as a sample template.
+Note that you may skip this step, if you kernel is at least 2.6.17-rc1.
 
 As an example, bt/kernel contains blk-trace-2.6.14-rc1-git-G2, download
 linux-2.6.13.tar.bz2 and patch-2.6.14-rc1.bz2

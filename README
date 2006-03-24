@@ -11,8 +11,10 @@ patches.
 Requirements
 ------------
 
-You need to be running a 2.6.14-rc3 kernel or newer, with the blk-trace patch
-included in this repository. If you forgot where you got it, the url is:
+blktrace was integrated into the mainline kernel between 2.6.16 and 2.6.17-rc1.
+The target trace needs to run on a kernel at least that new. The blktrace
+repository contains a kernel patch against 2.6.16 and will continue to do
+so until 2.6.17 is released. If you forgot where you got it, the url is:
 
 rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
 
@@ -179,5 +181,5 @@ the mail body.
 
 
 
-20051007, Jens Axboe <axboe@suse.de>
+2006-03-24, Jens Axboe <axboe@suse.de>
 
