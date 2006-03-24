@@ -338,9 +338,9 @@ static void process_default(char *act, struct per_cpu_info *pci,
 
 		get_pdu_remap(t, &r);
 		fprintf(ofp, "%llu + %u <- (%d,%d) %llu\n",
-			(unsigned long long) r.sector, t_sec(t),
+			(unsigned long long) t->sector, t_sec(t),
 			MAJOR(r.device), MINOR(r.device),
-			(unsigned long long) t->sector);
+			(unsigned long long) r.sector);
 		break;
 	}
 		
