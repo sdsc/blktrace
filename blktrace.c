@@ -221,6 +221,9 @@ struct device_information {
 	volatile int trace_started;
 	unsigned long drop_count;
 	struct thread_information *threads;
+	unsigned long buf_size;
+	unsigned long buf_nr;
+	unsigned int page_size;
 
 	struct cl_host *ch;
 	u32 cl_id;
@@ -284,6 +287,9 @@ struct blktrace_net_hdr {
 	u32 max_cpus;
 	u32 len;		/* length of following trace data */
 	u32 cl_id;		/* id for set of client per-cpu connections */
+	u32 buf_size;		/* client buf_size for this trace  */
+	u32 buf_nr;		/* client buf_nr for this trace  */
+	u32 page_size;		/* client page_size for this trace  */
 };
 
 #define TRACE_NET_PORT		(8462)
@@ -382,8 +388,8 @@ static int start_trace(struct device_information *dip)
 	struct blk_user_trace_setup buts;
 
 	memset(&buts, 0, sizeof(buts));
-	buts.buf_size = buf_size;
-	buts.buf_nr = buf_nr;
+	buts.buf_size = dip->buf_size;
+	buts.buf_nr = dip->buf_nr;
 	buts.act_mask = act_mask;
 
 	if (ioctl(dip->fd, BLKTRACESETUP, &buts) < 0) {
@@ -543,19 +549,21 @@ static int mmap_subbuf(struct thread_information *tip, unsigned int maxlen)
 {
 	int ofd = fileno(tip->ofile);
 	int ret;
+	unsigned long nr;
 
 	/*
 	 * extend file, if we have to. use chunks of 16 subbuffers.
 	 */
-	if (tip->fs_off + buf_size > tip->fs_buf_len) {
+	if (tip->fs_off + maxlen > tip->fs_buf_len) {
 		if (tip->fs_buf) {
 			munlock(tip->fs_buf, tip->fs_buf_len);
 			munmap(tip->fs_buf, tip->fs_buf_len);
 			tip->fs_buf = NULL;
 		}
 
-		tip->fs_off = tip->fs_size & (page_size - 1);
-		tip->fs_buf_len = (16 * buf_size) - tip->fs_off;
+		tip->fs_off = tip->fs_size & (tip->device->page_size - 1);
+		nr = max(16, tip->device->buf_nr);
+		tip->fs_buf_len = (nr * tip->device->buf_size) - tip->fs_off;
 		tip->fs_max_size += tip->fs_buf_len;
 
 		if (ftruncate(ofd, tip->fs_max_size) < 0) {
@@ -591,7 +599,7 @@ static int get_subbuf(struct thread_information *tip, unsigned int maxlen)
 	struct tip_subbuf *ts = malloc(sizeof(*ts));
 	int ret;
 
-	ts->buf = malloc(buf_size);
+	ts->buf = malloc(tip->device->buf_size);
 	ts->max_len = maxlen;
 
 	ret = tip->read_data(tip, ts->buf, ts->max_len);
@@ -667,14 +675,14 @@ static void *thread_main(void *arg)
 	}
 
 	while (!is_done()) {
-		if (tip->get_subbuf(tip, buf_size) < 0)
+		if (tip->get_subbuf(tip, tip->device->buf_size) < 0)
 			break;
 	}
 
 	/*
 	 * trace is stopped, pull data until we get a short read
 	 */
-	while (tip->get_subbuf(tip, buf_size) > 0)
+	while (tip->get_subbuf(tip, tip->device->buf_size) > 0)
 		;
 
 	tip_ftrunc_final(tip);
@@ -711,7 +719,10 @@ static int net_send_header(struct thread_information *tip, unsigned int len)
 	hdr.max_cpus = ncpus;
 	hdr.len = len;
 	hdr.cl_id = getpid();
-
+	hdr.buf_size = tip->device->buf_size;
+	hdr.buf_nr = tip->device->buf_nr;
+	hdr.page_size = tip->device->page_size;
+	
 	return write_data_net(net_out_fd[tip->cpu], &hdr, sizeof(hdr));
 }
 
@@ -731,6 +742,9 @@ static void net_client_send_close(void)
 		strcpy(hdr.buts_name, dip->buts_name);
 		hdr.cpu = get_dropped_count(dip->buts_name);
 		hdr.cl_id = getpid();
+		hdr.buf_size = dip->buf_size;
+		hdr.buf_nr = dip->buf_nr;
+		hdr.page_size = dip->page_size;
 
 		write_data_net(net_out_fd[0], &hdr, sizeof(hdr));
 	}
@@ -776,7 +790,6 @@ static int flush_subbuf_sendfile(struct thread_information *tip,
 		goto err;
 
 	tip->data_read += ts->len;
-	tip->ofile_offset += buf_size;
 	ret = 1;
 err:
 	free(ts);
@@ -1189,6 +1202,9 @@ static int open_devices(void)
 			perror(dip->path);
 			return 1;
 		}
+		dip->buf_size = buf_size;
+		dip->buf_nr = buf_nr;
+		dip->page_size = page_size;
 	}
 
 	return 0;
@@ -1284,7 +1300,7 @@ static void show_stats(struct device_information *dips, int ndips, int cpus)
 }
 
 static struct device_information *net_get_dip(struct net_connection *nc,
-					      char *buts_name, u32 cl_id)
+					      struct blktrace_net_hdr *bnh)
 {
 	struct device_information *dip, *cl_dip = NULL;
 	struct cl_host *ch = nc->ch;
@@ -1293,10 +1309,10 @@ static struct device_information *net_get_dip(struct net_connection *nc,
 	for (i = 0; i < ch->ndevs; i++) {
 		dip = &ch->device_information[i];
 
-		if (!strcmp(dip->buts_name, buts_name))
+		if (!strcmp(dip->buts_name, bnh->buts_name))
 			return dip;
 
-		if (dip->cl_id == cl_id)
+		if (dip->cl_id == bnh->cl_id)
 			cl_dip = dip;
 	}
 
@@ -1305,13 +1321,17 @@ static struct device_information *net_get_dip(struct net_connection *nc,
 	memset(dip, 0, sizeof(*dip));
 	dip->fd = -1;
 	dip->ch = ch;
-	dip->cl_id = cl_id;
+	dip->cl_id = bnh->cl_id;
+	dip->buf_size = bnh->buf_size;
+	dip->buf_nr = bnh->buf_nr;
+	dip->page_size = bnh->page_size;
+
 	if (cl_dip)
 		dip->cl_connect_time = cl_dip->cl_connect_time;
 	else
 		dip->cl_connect_time = nc->connect_time;
-	strcpy(dip->buts_name, buts_name);
-	dip->path = strdup(buts_name);
+	strcpy(dip->buts_name, bnh->buts_name);
+	dip->path = strdup(bnh->buts_name);
 	dip->trace_started = 1;
 	ch->ndevs++;
 	dip->threads = malloc(nc->ncpus * sizeof(struct thread_information));
@@ -1343,7 +1363,7 @@ static struct thread_information *net_get_tip(struct net_connection *nc,
 	struct device_information *dip;
 	struct thread_information *tip;
 
-	dip = net_get_dip(nc, bnh->buts_name, bnh->cl_id);
+	dip = net_get_dip(nc, bnh);
 	if (!dip->trace_started) {
 		fprintf(stderr, "Events for closed devices %s\n", dip->buts_name);
 		return NULL;
@@ -1489,6 +1509,9 @@ static int net_client_data(struct net_connection *nc)
 		bnh.max_cpus = be32_to_cpu(bnh.max_cpus);
 		bnh.len = be32_to_cpu(bnh.len);
 		bnh.cl_id = be32_to_cpu(bnh.cl_id);
+		bnh.buf_size = be32_to_cpu(bnh.buf_size);
+		bnh.buf_nr = be32_to_cpu(bnh.buf_nr);
+		bnh.page_size = be32_to_cpu(bnh.page_size);
 	}
 
 	if ((bnh.magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
@@ -1508,7 +1531,7 @@ static int net_client_data(struct net_connection *nc)
 		 */
 		struct device_information *dip;
 
-		dip = net_get_dip(nc, bnh.buts_name, bnh.cl_id);
+		dip = net_get_dip(nc, &bnh);
 		dip->drop_count = bnh.cpu;
 		dip->trace_started = 0;
 

@@ -18,6 +18,7 @@
 #define DOUBLE_TO_NANO_ULL(d)	((unsigned long long)((d) * 1000000000))
 
 #define min(a, b)	((a) < (b) ? (a) : (b))
+#define max(a, b)	((a) > (b) ? (a) : (b))
 
 #define t_sec(t)	((t)->bytes >> 9)
 #define t_kb(t)		((t)->bytes >> 10)
