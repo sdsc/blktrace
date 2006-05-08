@@ -169,6 +169,11 @@ static int process(FILE **fp, char *devname, char *file, unsigned int cpu)
 
 	ofp = *fp;
 	while ((n = fread(bit, sizeof(struct blk_io_trace), 1, ifp)) == 1) {
+		if (ferror(ifp)) {
+			clearerr(ifp);
+			perror("fread");
+			break;
+		}
 		if (data_is_native == -1)
 			check_data_endianness(bit->magic);
 

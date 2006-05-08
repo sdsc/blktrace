@@ -836,15 +836,11 @@ static int write_data(struct thread_information *tip, void *buf,
 	if (!buf_len)
 		return 0;
 
-	while (1) {
-		ret = fwrite(buf, buf_len, 1, tip->ofile);
-		if (ret == 1)
-			break;
-
-		if (ret < 0) {
-			perror("write");
-			return 1;
-		}
+	ret = fwrite(buf, buf_len, 1, tip->ofile);
+	if (ferror(tip->ofile) || ret != 1) {
+		perror("fwrite");
+		clearerr(tip->ofile);
+		return 1;
 	}
 
 	if (tip->ofile_stdout)
