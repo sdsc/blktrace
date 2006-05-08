@@ -1919,6 +1919,7 @@ int main(int argc, char *argv[])
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
 	signal(SIGALRM, handle_sigint);
+	signal(SIGPIPE, SIG_IGN);
 
 	if (net_mode == Net_client && net_setup_client())
 		return 1;
