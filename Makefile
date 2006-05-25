@@ -6,6 +6,7 @@ LIBS	= -lpthread
 SCRIPTS	= btrace
 
 all: depend $(PROGS) $(SCRIPTS)
+	$(MAKE) -C btt
 
 %.o: %.c
 	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
@@ -52,10 +53,12 @@ rpm: dist
 
 clean: docsclean
 	-rm -f *.o $(PROGS) .depend btrace-1.0.tar.bz2
+	$(MAKE) -C btt clean
 
 install: $(PROGS) $(SCRIPTS)
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
+	$(INSTALL) btt/btt $(DESTDIR)$(bindir)
 
 ifneq ($(wildcard .depend),)
 include .depend
