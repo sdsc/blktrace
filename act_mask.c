@@ -23,6 +23,7 @@ static struct mask_map mask_maps[] = {
 	DECLARE_MASK_MAP(COMPLETE),
 	DECLARE_MASK_MAP(FS),
 	DECLARE_MASK_MAP(PC),
+	DECLARE_MASK_MAP(AHEAD),
 };
 
 int find_mask_map(char *string)

@@ -63,6 +63,7 @@ int add_format_spec(char *option)
 static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 {
 	int w = t->action & BLK_TC_ACT(BLK_TC_WRITE);
+	int a = t->action & BLK_TC_ACT(BLK_TC_AHEAD);
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
 	int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
 	int i = 0;
@@ -71,6 +72,8 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 		rwbs[i++] = 'W';
 	else
 		rwbs[i++] = 'R';
+	if (a)
+		rwbs[i++] = 'A';
 	if (b)
 		rwbs[i++] = 'B';
 	if (s)
