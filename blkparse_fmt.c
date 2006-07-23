@@ -66,6 +66,7 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 	int a = t->action & BLK_TC_ACT(BLK_TC_AHEAD);
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
 	int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
+	int m = t->action & BLK_TC_ACT(BLK_TC_META);
 	int i = 0;
 
 	if (w)
@@ -78,6 +79,8 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 		rwbs[i++] = 'B';
 	if (s)
 		rwbs[i++] = 'S';
+	if (m)
+		rwbs[i++] = 'M';
 
 	rwbs[i] = '\0';
 }
@@ -164,7 +167,7 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		break;
 	}
 	case 'd': {
-		char rwbs[4];
+		char rwbs[6];
 
 		fill_rwbs(rwbs, t);
 		fprintf(ofp, strcat(format, "s"), rwbs);
@@ -258,7 +261,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			    struct blk_io_trace *t, unsigned long long elapsed,
 			    int pdu_len, unsigned char *pdu_buf)
 {
-	char rwbs[4];
+	char rwbs[6];
 	char *name;
 
 	fill_rwbs(rwbs, t);
