@@ -104,23 +104,23 @@ and then down to \emph{Support for tracing block io actions} and hit Y.
 
 Install the new kernel (and modules\ldots) and reboot. 
 
-\subsection{\label{sec:mount}Mounting the RelayFS file system}
+\subsection{\label{sec:mount}Mounting the debugfs file system}
 
-blktrace utilizes files under the Relay file system, and thus must have
-the mount point set up -- mounted on the directory /relay. To do this
+blktrace utilizes files under the debug file system, and thus must have
+the mount point set up -- mounted on the directory /debug. To do this
 one may do either of the following:
 
 \begin{enumerate}
   \item Manually mount after each boot:
 \begin{verbatim}
-% mount -t relayfs relayfs /relay
+% mount -t debugfs debugfs /debug
 \end{verbatim}
 
   \item Add an entry into /etc/fstab, and have it done automatically at
   each boot\footnote{Note: after adding the entry to /etc/fstab, you
   could then mount the directory this time only by doing: \% mount /relay}:
 \begin{verbatim}
-relay /relay relayfs default 0 0
+debug /debug debugfs default 0 0
 \end{verbatim}
 \end{enumerate}
 
@@ -333,15 +333,15 @@ Total (65,160):
 \newpage\section{\label{sec:blktrace-ug}blktrace User Guide}
 
 The \emph{blktrace} utility extracts event traces from the kernel (via
-the relay file system). Some background details concerning the run-time
-behaviour of blktrace will help to understand some of the more arcane
-command line options:
+the relaying through the debug file system). Some background details
+concerning the run-time behaviour of blktrace will help to understand some
+of the more arcane command line options:
 
 \begin{itemize}
   \item blktrace receives data from the kernel in buffers passed up
-  through the Relay file system (RelayFS). Each device being traced has
-  a file created in the mounted directory for the RelayFS, which defaults
-  to \emph{/relay} -- this can be overridden with the \emph{-r} command
+  through the debug file system (relay). Each device being traced has
+  a file created in the mounted directory for the debugfs, which defaults
+  to \emph{/debug} -- this can be overridden with the \emph{-r} command
   line argument.
   
   \item blktrace defaults to collecting \emph{all} events that can be
@@ -353,7 +353,7 @@ command line options:
   representation of the filter mask.)
 
   \item As noted above, the events are passed up via a series of buffers
-  stored into RelayFS files. The size and number of buffers can be
+  stored into debugfs files. The size and number of buffers can be
   specified via the \emph{-b} and \emph{-n} arguments respectively.
 
   \item blktrace stores the extracted data into files stored in the
@@ -390,7 +390,7 @@ Short              & Long                       & Description \\ \hline\hline
 -k                 & --kill                     & Kill on-going trace \\ \hline
 -n \emph{num-sub}  & --num-sub=\emph{num-sub}   & Specifies number of buffers to use \\ \hline
 -o \emph{file}     & --output=\emph{file}       & Prepend \emph{file} to output file name(s) \\ \hline
--r \emph{rel-path} & --relay=\emph{rel-path}    & Specifies RelayFS mount point \\ \hline
+-r \emph{rel-path} & --relay=\emph{rel-path}    & Specifies debugfs mount point \\ \hline
 -V                 & --version                  & Outputs version \\ \hline
 -w \emph{seconds}  & --stopwatch=\emph{seconds} & Sets run time to the number of seconds specified \\ \hline
 \end{tabular}
