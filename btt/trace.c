@@ -407,6 +407,8 @@ void add_trace(struct io *iop)
 		add_process(iop->t.pid, iop->pdu);
 		release_iop(iop);
 	}
+	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))
+		release_iop(iop);
 	else
 		__add_trace(iop);
 }
