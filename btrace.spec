@@ -29,7 +29,7 @@ performance or application problems relating to block layer io.
 
 Authors:
 --------
-    Jens Axboe <axboe@suse.de>
+    Jens Axboe <axboe@kernel.dk>
 
 %prep
 %setup -q

@@ -1,7 +1,7 @@
 Block IO Tracing
 ----------------
 
-Written by Jens Axboe <axboe@suse.de> (initial version and kernel support),
+Written by Jens Axboe <axboe@kernel.dk> (initial version and kernel support),
 Alan D. Brunelle (threading and splitup into two seperate programs),
 Nathan Scott <nathans@sgi.com> (bug fixes, process names, multiple devices)
 Also thanks to Tom Zanussi <zanussi@us.ibm.com> for good input and
@@ -181,5 +181,5 @@ the mail body.
 
 
 
-2006-03-24, Jens Axboe <axboe@suse.de>
+2006-09-05, Jens Axboe <axboe@kernel.dk>
 
