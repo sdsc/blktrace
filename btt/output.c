@@ -226,7 +226,7 @@ char *d2c_v_q2C(struct d_info *dip, char *s)
 {
 	double q2c;
 
-	if (dip->avgs.i2d.n == 0) return " ";
+	if (dip->avgs.d2c.n == 0) return " ";
 
 	q2c = dip->avgs.q2i.avg + dip->avgs.i2d.avg + dip->avgs.d2c.avg;
 	sprintf(s, "%5.1lf%%", AVG(dip->avgs.d2c.avg, q2c));
