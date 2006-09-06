@@ -149,8 +149,7 @@ void __output_dip_merge_ratio(FILE *ofp, struct d_info *dip)
 
 	if (q2c_n > 0.0 && d2c_n > 0.0) {
 		ratio = q2c_n / d2c_n;
-		blks_avg = (double)dip->avgs.blks.total /
-							(double)dip->avgs.d2c.n;
+		blks_avg = (double)dip->avgs.blks.total / d2c_n;
 		fprintf(ofp, "%10s | %8llu %8llu %7.1lf | %8llu %8llu %8llu %8llu\n",
 			make_dev_hdr(scratch, 12, dip),
 			(unsigned long long)dip->avgs.q2c.n,
