@@ -26,9 +26,19 @@ void io_free_resources(struct io *iop)
 {
 	switch (iop->type) {
 	case IOP_X: io_unlink(&iop->u.x.x_q); break;
-	case IOP_A: io_unlink(&iop->u.a.a_q); break;
 	case IOP_M: io_unlink(&iop->u.m.m_q); break;
 	case IOP_C: io_unlink(&iop->u.c.c_d); break;
+
+	case IOP_A:
+		switch (iop->u.a.ap_type) {
+		case A_NONE: break;
+		case A_Q: io_unlink(&iop->u.a.ap.a_q); break;
+		case A_A: io_unlink(&iop->u.a.ap.a_a); break;
+		default:
+			ASSERT(0);
+			/*NOTREACHED*/
+		}
+		break;
 
 	case IOP_Q:
 		switch (iop->u.q.qp_type) {

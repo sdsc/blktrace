@@ -170,8 +170,18 @@ struct io {
 				Q_X = 30,
 			} qp_type;
 		}					  q;
+		struct {
+			union {
+				struct io *a_q;
+				struct io *a_a;
+			} ap;
+			enum {
+				A_NONE = 10,
+				A_A = 20,
+				A_Q = 30,
+			} ap_type;
+		}                                         a;
 		struct { struct io *x_q;		} x;
-		struct { struct io *a_q;		} a;
 		struct { struct io *m_q;		} m;
 		struct { struct list_head i_qs_head;	} i;
 		struct { struct list_head d_im_head;	} d;

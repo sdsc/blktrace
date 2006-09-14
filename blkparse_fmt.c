@@ -135,6 +135,7 @@ static void get_pdu_remap(struct blk_io_trace *t, struct blk_io_trace_remap *r)
 	__u64 sector = __r->sector;
 
 	r->device = be32_to_cpu(__r->device);
+	r->device_from = be32_to_cpu(__r->device_from);
 	r->sector = be64_to_cpu(sector);
 }
 
@@ -261,6 +262,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			    struct blk_io_trace *t, unsigned long long elapsed,
 			    int pdu_len, unsigned char *pdu_buf)
 {
+	struct blk_io_trace_remap r = { .device = 0, };
 	char rwbs[6];
 	char *name;
 
@@ -269,6 +271,11 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	/*
 	 * The header is always the same
 	 */
+	if (act[0] == 'A') {	/* Remap */
+		get_pdu_remap(t, &r);
+		t->device = r.device_from;
+	}
+
 	fprintf(ofp, "%3d,%-3d %2d %8d %5d.%09lu %5u %2s %3s ",
 		MAJOR(t->device), MINOR(t->device), pci->cpu, t->sequence,
 		(int) SECONDS(t->time), (unsigned long) NANO_SECONDS(t->time),
@@ -339,16 +346,12 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		fprintf(ofp, "[%s] %u\n", name, get_pdu_int(t));
 		break;
 
-	case 'A': {	/* remap */
-		struct blk_io_trace_remap r;
-
-		get_pdu_remap(t, &r);
+	case 'A': 	/* remap */
 		fprintf(ofp, "%llu + %u <- (%d,%d) %llu\n",
 			(unsigned long long) t->sector, t_sec(t),
 			MAJOR(r.device), MINOR(r.device),
 			(unsigned long long) r.sector);
 		break;
-	}
 		
 	case 'X': 	/* Split */
 		fprintf(ofp, "%llu / %u [%s]\n", (unsigned long long) t->sector,

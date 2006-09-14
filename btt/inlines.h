@@ -111,6 +111,10 @@ static inline struct list_head *dip_get_head(struct d_info *dip,
 
 static inline struct list_head *dip_get_head_dev(__u32 dev, enum iop_type type)
 {
+	struct d_info *dip = __dip_find(dev);
+
+	if (!dip) 
+		return NULL;
 	return dip_get_head(__dip_find(dev), type);
 }
 

@@ -92,7 +92,7 @@ struct blk_io_trace {
  */
 struct blk_io_trace_remap {
 	__u32 device;
-	__u32 __pad;
+	__u32 device_from;
 	__u64 sector;
 };
 

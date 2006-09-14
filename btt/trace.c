@@ -31,7 +31,7 @@ struct io *dip_find_exact(struct list_head *head, struct io *iop_in)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (is_bit(iop_in, iop))
 			return iop;
@@ -44,7 +44,7 @@ struct io *dip_find_in(struct list_head *head, struct io *iop_in)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (in_bit(iop, iop_in))
 			return iop;
@@ -57,7 +57,7 @@ struct io *dip_find_start(struct list_head *head, __u64 sector)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (BIT_START(iop) == sector)
 			return iop;
@@ -70,7 +70,7 @@ struct io *dip_find_end(struct list_head *head, __u64 sector)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (BIT_END(iop) == sector)
 			return iop;
@@ -83,7 +83,7 @@ struct io *dip_find_in_sec(struct list_head *head, __u64 sector)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (BIT_START(iop) <= sector && sector <= BIT_END(iop))
 			return iop;
@@ -96,7 +96,7 @@ struct io *dip_find_qa(struct list_head *head, struct blk_io_trace *t)
 	struct io *iop;
 	struct list_head *p;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		iop = list_entry(p, struct io, dev_head);
 		if (iop->t.cpu == t->cpu && iop->t.sequence == (t->sequence-1))
 			return iop;
@@ -110,7 +110,7 @@ void dip_add_ms(struct list_head *head, struct io *d_iop)
 	struct list_head *p;
 	struct io_list *iolp;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		m_iop = list_entry(p, struct io, dev_head);
 		if (in_bit(m_iop, d_iop)) {
 			iolp = malloc(sizeof(*iolp));
@@ -126,7 +126,7 @@ void dip_add_qs(struct list_head *head, struct io *i_iop)
 	struct list_head *p;
 	struct io_list *iolp;
 
-	__list_for_each(p, head) {
+	if (head != NULL) __list_for_each(p, head) {
 		q_iop = list_entry(p, struct io, dev_head);
 		if (in_bit(q_iop, i_iop)) {
 			iolp = malloc(sizeof(*iolp));
@@ -154,16 +154,6 @@ void handle_queue(struct io *iop)
 	}
 	else
 		iop->u.q.qp_type = Q_NONE;
-
-#if defined(LVM_REMAP_WORKAROUND)
-	if (is_lvm) {
-		tmp = dip_find_qa(dip_get_head(iop->dip, IOP_A), &iop->t);
-		if (tmp) {
-			iop->u.q.qp_type = Q_A;
-			io_link(&iop->u.q.qp.q_a, tmp);
-		}
-	}
-#endif
 }
 
 void handle_merge(struct io *iop)
@@ -238,84 +228,29 @@ void handle_split(struct io *iop)
 		io_link(&iop->u.x.x_q, q_iop);
 }
 
-#if 0
-void __x_add_c(struct io *y_iop, struct io *x_iop,
-	       struct blk_io_trace_split_end *rp, int which)
-{
-	__u32 dev;
-	__u64 sector;
-	struct d_info *dip;
-	struct io **y_cp, *q_iop, *c_iop;
-
-	if (which == 1) {
-		y_cp = &y_iop->u.y.y_c1;
-		dev = be32_to_cpu(rp->dev1);
-		sector = be64_to_cpu(rp->sector1);
-	}
-	else {
-		y_cp = &y_iop->u.y.y_c2;
-		dev = be32_to_cpu(rp->dev2);
-		sector = be64_to_cpu(rp->sector2);
-	}
-
-	dip = __dip_find(dev);
-	ASSERT(dip != NULL);
-
-	q_iop = dip_find_end(dip_get_head(dip, IOP_Q), sector);
-	if (q_iop) {
-		q_iop->u.q.qp_type = Q_X;
-		io_link(&q_iop->u.q.qp.q_x, x_iop);
-	}
-
-	c_iop = dip_find_in_sec(dip_get_head(dip, IOP_C), sector);
-	if (c_iop)
-		io_link(y_cp, c_iop);
-}
-
-void handle_split_end(struct io *iop)
-{
-	struct io *x_iop;
-	struct blk_io_trace_split_end *rp = iop->pdu;
-
-	pending_xs--;
-	io_setup(iop, IOP_Y);
-
-	x_iop = dip_find_exact(dip_get_head(iop->dip, IOP_X), iop);
-	if (x_iop) {
-		__x_add_c(iop, x_iop, rp, 1);
-		__x_add_c(iop, x_iop, rp, 2);
-
-		rem_c(iop->u.y.y_c1);
-		rem_c(iop->u.y.y_c2);
-
-		add_cy(iop);
-	}
-	else
-		release_iop(iop);
-}
-#endif
-
 void handle_remap(struct io *iop)
 {
-	struct io *q_iop;
+	struct io *q_iop, *a_iop;
 	struct blk_io_trace_remap *rp = iop->pdu;
 	__u32 dev = be32_to_cpu(rp->device);
 	__u64 sector = be64_to_cpu(rp->sector);
 
+	io_setup(iop, IOP_A);
 	q_iop = dip_find_in_sec(dip_get_head_dev(dev, IOP_Q), sector);
 	if (q_iop) {
-		io_setup(iop, IOP_A);
-
-#if defined(LVM_REMAP_WORKAROUND)
-		if (is_lvm) {
-			sector = iop->t.sector;
-			iop->t.sector = be64_to_cpu(rp->sector);
-		}
-#endif
-		io_link(&iop->u.a.a_q, q_iop);
+		iop->u.a.ap_type = A_Q;
+		io_link(&iop->u.a.ap.a_q, q_iop);
+		return;
 	}
-	else
-		release_iop(iop);
+
+	a_iop = dip_find_in_sec(dip_get_head_dev(dev, IOP_A), sector);
+	if (a_iop) {
+		iop->u.a.ap_type = A_A;
+		io_link(&iop->u.a.ap.a_a, a_iop);
+		return;
+	}
+
+	iop->u.a.ap_type = A_NONE;
 }
 
 void extract_i(struct io *i_iop)
@@ -390,9 +325,6 @@ void __add_trace(struct io *iop)
 	case __BLK_TA_COMPLETE:		handle_complete(iop);	break;
 	case __BLK_TA_INSERT:		handle_insert(iop);	break;
 	case __BLK_TA_SPLIT:		handle_split(iop);	break;
-#if 0
-	case __BLK_TA_SPLIT_END:	handle_split_end(iop);	break;
-#endif
 	case __BLK_TA_REMAP:		handle_remap(iop);	break;
 	case __BLK_TA_REQUEUE:		handle_requeue(iop);	break;
 	}

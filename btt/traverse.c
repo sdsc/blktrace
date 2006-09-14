@@ -98,7 +98,13 @@ struct io *iop_x_func(__u64 *timeline, struct io *iop)
 struct io *iop_a_func(__u64 *timeline, struct io *iop)
 {
 	timeline[IOP_A] = iop->t.time;
-	return iop->u.a.a_q;
+	if (iop->u.a.ap_type == A_Q)
+		return iop->u.a.ap.a_q;
+	else if (iop->u.a.ap_type == A_A)
+		return iop->u.a.ap.a_a;
+
+	/* A_NONE */
+	return NULL;
 }
 
 struct io *iop_m_func(__u64 *timeline, struct io *iop)
