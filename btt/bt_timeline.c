@@ -30,6 +30,7 @@ char *devices = NULL;
 char *exes = NULL;
 char *input_name = NULL;
 char *output_name = NULL;
+char *seek_name = NULL;
 double range_delta = 0.1;
 FILE *ranges_ofp, *avgs_ofp;
 int is_lvm = -1;

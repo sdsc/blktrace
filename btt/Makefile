@@ -8,7 +8,7 @@ PROGS	= btt
 #PLIBS	= -lpthread
 LIBS	= $(PLIBS) $(ELIBS)
 OBJS	= bt_timeline.o args.o output.o proc.o trace.o misc.o devs.o \
-	  traverse.o iofree.o devmap.o cylist.o
+	  traverse.o iofree.o devmap.o cylist.o seek.o
 
 all: depend $(PROGS)
 

@@ -214,7 +214,7 @@ char *i2d_v_q2C(struct d_info *dip, char *s)
 {
 	double q2c;
 
-	if (dip->avgs.i2d.n == 0) return " ";
+	if (dip->avgs.d2c.n == 0) return " ";
 
 	q2c = dip->avgs.q2i.avg + dip->avgs.i2d.avg + dip->avgs.d2c.avg;
 	sprintf(s, "%5.1lf%%", AVG(dip->avgs.i2d.avg, q2c));
@@ -275,6 +275,62 @@ void output_dip_prep_ohead(FILE *ofp)
 		while (p && ((i = sscanf(p, "%u,%u", &mjr, &mnr)) == 2)) {
 			dip = __dip_find((__u32)((mjr << MINORBITS) | mnr));
 			__output_dip_prep_ohead(ofp, dip);
+
+			p = strchr(p, ';');
+			if (p) p++;
+		}
+	}
+
+	fprintf(ofp, "\n");
+}
+
+void __output_dip_seek_info(FILE *ofp, struct d_info *dip)
+{
+	double mean;
+	int i, nmodes, most_seeks;
+	long long nseeks;
+	char dev_info[12];
+	long long median, *modes;
+
+	nseeks = seeki_nseeks(dip->seek_handle);
+	mean = seeki_mean(dip->seek_handle);
+	median = seeki_median(dip->seek_handle);
+	nmodes = seeki_mode(dip->seek_handle, &modes, &most_seeks);
+
+	fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
+		make_dev_hdr(dev_info, 12, dip), nseeks, mean, median, 
+		nmodes > 0 ? modes[0] : 0, most_seeks);
+	for (i = 1; i < nmodes; i++)
+		fprintf(ofp, " %lld", modes[i]);
+	fprintf(ofp, "\n");
+}
+
+void output_dip_seek_info(FILE *ofp)
+{
+	struct d_info *dip;
+
+	fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", "DEV", "NSEEKS", 
+			"MEAN", "MEDIAN", "MODE");
+	fprintf(ofp, "---------- "
+			"| --------------- --------------- --------------- "
+			"| ---------------\n");
+
+	if (devices == NULL) {
+		struct list_head *p;
+
+		__list_for_each(p, &all_devs) {
+			dip = list_entry(p, struct d_info, head);
+			__output_dip_seek_info(ofp, dip);
+		}
+	}
+	else {
+		int i;
+		unsigned int mjr, mnr;
+		char *p = devices;
+
+		while (p && ((i = sscanf(p, "%u,%u", &mjr, &mnr)) == 2)) {
+			dip = __dip_find((__u32)((mjr << MINORBITS) | mnr));
+			__output_dip_seek_info(ofp, dip);
 
 			p = strchr(p, ';');
 			if (p) p++;
@@ -444,6 +500,9 @@ int output_avgs(FILE *ofp)
 
 	output_section_hdr(ofp, "Device Overhead");
 	output_dip_prep_ohead(ofp);
+
+	output_section_hdr(ofp, "Device Seek Information");
+	output_dip_seek_info(ofp);
 
 	return 0;
 }

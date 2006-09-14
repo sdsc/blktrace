@@ -31,6 +31,7 @@
 
 #define BIT_START(iop)	((iop)->t.sector)
 #define BIT_END(iop)	((iop)->t.sector + ((iop)->t.bytes >> 9))
+#define IOP_READ(iop)	((iop)->t.action & BLK_TC_ACT(BLK_TC_READ))
 
 #if defined(DEBUG)
 #define ASSERT(truth)   do {						\
@@ -143,6 +144,7 @@ struct d_info {
 	__u32 device;
 	__u64 n_ds;
 	struct devmap *map;
+	void *seek_handle;
 };
 
 struct io {
@@ -179,6 +181,7 @@ struct io {
 };
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
+extern char *seek_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp;
 extern int is_lvm, verbose, ifd;
@@ -211,5 +214,11 @@ struct d_info *__dip_find(__u32 device);
 struct d_info *dip_add(__u32 device, struct io *iop);
 void traverse(struct io *iop);
 void io_free_resources(struct io *iop);
+void *seeki_init(__u32 device);
+void seeki_add(void *handle, struct io *iop);
+double seeki_mean(void *handle);
+long long seeki_nseeks(void *handle);
+long long seeki_median(void *handle);
+int seeki_mode(void *handle, long long **modes_p, int *nseeks_p);
 
 #include "inlines.h"

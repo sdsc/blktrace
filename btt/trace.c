@@ -223,6 +223,7 @@ void handle_issue(struct io *iop)
 	}
 
 	dip_add_ms(dip_get_head(iop->dip, IOP_M), iop);
+	seeki_add(iop->dip->seek_handle, iop);
 }
 
 void handle_split(struct io *iop)

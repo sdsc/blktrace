@@ -28,7 +28,7 @@
 
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hlmM:i:o:Vv"
+#define S_OPTS	"d:D:e:hlmM:i:o:s:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -85,6 +85,12 @@ static struct option l_opts[] = {
 		.val = 'o'
 	},
 	{
+		.name = "seeks",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 's'
+	},
+	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -108,6 +114,7 @@ static char usage_str[] = \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
 	"(-l | -m)          | (--lvm | -md)\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
+	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n\n";
 
@@ -150,6 +157,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'o':
 			output_name = optarg;
+			break;
+		case 's':
+			seek_name = optarg;
 			break;
 		case 'v':
 			verbose = 1;

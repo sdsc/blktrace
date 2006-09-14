@@ -68,6 +68,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 			INIT_LIST_HEAD(&dip->iop_heads[i]);
 		init_region(&dip->regions);
 		dip->map = dev_map_find(device);
+		dip->seek_handle = seeki_init(device);
 
 		if (dev_heads == NULL) init_dev_heads();
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
