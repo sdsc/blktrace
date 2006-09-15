@@ -293,16 +293,18 @@ void __output_dip_seek_info(FILE *ofp, struct d_info *dip)
 	long long median, *modes;
 
 	nseeks = seeki_nseeks(dip->seek_handle);
-	mean = seeki_mean(dip->seek_handle);
-	median = seeki_median(dip->seek_handle);
-	nmodes = seeki_mode(dip->seek_handle, &modes, &most_seeks);
+	if (nseeks > 0) {
+		mean = seeki_mean(dip->seek_handle);
+		median = seeki_median(dip->seek_handle);
+		nmodes = seeki_mode(dip->seek_handle, &modes, &most_seeks);
 
-	fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
-		make_dev_hdr(dev_info, 12, dip), nseeks, mean, median, 
-		nmodes > 0 ? modes[0] : 0, most_seeks);
-	for (i = 1; i < nmodes; i++)
-		fprintf(ofp, " %lld", modes[i]);
-	fprintf(ofp, "\n");
+		fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
+			make_dev_hdr(dev_info, 12, dip), nseeks, mean, median, 
+			nmodes > 0 ? modes[0] : 0, most_seeks);
+		for (i = 1; i < nmodes; i++)
+			fprintf(ofp, " %lld", modes[i]);
+		fprintf(ofp, "\n");
+	}
 }
 
 void output_dip_seek_info(FILE *ofp)
