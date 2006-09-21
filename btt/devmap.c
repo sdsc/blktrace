@@ -55,7 +55,7 @@ int dev_map_read(char *fname)
 		return 1;
 	}
 
-	while (fscanf(fp, "%255[a-zA-Z0-9 :.,/]\n", line) == 1) {
+	while (fscanf(fp, "%255[a-zA-Z0-9 :.,/_-]\n", line) == 1) {
 		if (strstr(line, "Device") != NULL) continue;
 		if (sscanf(line, "%s %s %u %u %u %u %s %s %u %u %s",
 				&dm.device[0], &dm.model[0], &dm.host, &dm.bus,

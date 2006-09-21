@@ -90,14 +90,11 @@ void __output_avg2(FILE *ofp, char *hdr, struct avgs_info *ap)
 
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip)
 {
-	if (dip->map == NULL) {
+	if (dip->map == NULL)
 		snprintf(pad, len, "(%3d,%3d)", 
 			 MAJOR(dip->device), MINOR(dip->device));
-	}
-	else {
-		snprintf(pad, len, "[%3d,%3d]",
-			dip->map->host, dip->map->target);
-	}
+	else
+		snprintf(pad, len, "%s", dip->map->device);
 
 	return pad;
 }
