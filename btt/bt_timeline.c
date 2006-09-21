@@ -31,6 +31,8 @@ char *exes = NULL;
 char *input_name = NULL;
 char *output_name = NULL;
 char *seek_name = NULL;
+char *d2c_name = NULL;
+char *q2c_name = NULL;
 double range_delta = 0.1;
 FILE *ranges_ofp, *avgs_ofp;
 int verbose = 0;
@@ -96,6 +98,9 @@ int process(void)
 		fprintf(iostat_ofp, "\n");
 		iostat_dump_stats(iostat_last_stamp, 1);
 	}
+
+	seek_clean();
+	latency_clean();
 
 	if (verbose)
 		printf("\n%10lu traces, %10lu mallocs %1lu frees\n",

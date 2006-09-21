@@ -28,7 +28,7 @@
 
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hi:I:M:o:s:S:Vv"
+#define S_OPTS	"d:D:e:hi:I:l:M:o:q:s:S:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -67,6 +67,12 @@ static struct option l_opts[] = {
 		.val = 'I'
 	},
 	{
+		.name = "d2c-latencies",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'l'
+	},
+	{
 		.name = "dev-maps",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -77,6 +83,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'o'
+	},
+	{
+		.name = "q2c-latencies",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'q'
 	},
 	{
 		.name = "seeks",
@@ -114,8 +126,10 @@ static char usage_str[] = \
 	"[ -h               | --help ]\n" \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
 	"[ -I <output name> | --iostat=<output name> ]\n" \
+	"[ -l <output name> | --d2c-latencies=<output name> ]\n" \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
+	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -V               | --version ]\n" \
@@ -149,6 +163,9 @@ void handle_args(int argc, char *argv[])
 		case 'i':
 			input_name = optarg;
 			break;
+		case 'l':
+			d2c_name = optarg;
+			break;
 		case 'I':
 			iostat_name = optarg;
 			break;
@@ -157,6 +174,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'o':
 			output_name = optarg;
+			break;
+		case 'q':
+			q2c_name = optarg;
 			break;
 		case 's':
 			seek_name = optarg;

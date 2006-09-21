@@ -20,6 +20,8 @@
  */
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define INLINE_DECLARE
@@ -81,4 +83,30 @@ unsigned int do_read(int ifd, void *buf, int len)
 		return 1;
 
 	return 0;
+}
+
+void add_file(struct file_info **fipp, FILE *fp, char *oname)
+{
+	struct file_info *fip = malloc(sizeof(struct file_info));
+
+	fip->ofp = fp;
+	fip->oname = oname;
+	fip->next = *fipp;
+	*fipp = fip;
+}
+
+void clean_files(struct file_info **fipp)
+{
+	struct stat buf;
+	struct file_info *fip;
+
+	while ((fip = *fipp) != NULL) {
+		*fipp = fip->next;
+
+		fclose(fip->ofp);
+		if (!stat(fip->oname, &buf) && (buf.st_size == 0))
+			unlink(fip->oname);
+		free(fip->oname);
+		free(fip);
+	}
 }

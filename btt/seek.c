@@ -20,6 +20,8 @@
  */
 #include "globals.h"
 
+static struct file_info *all_files = NULL;
+
 struct seek_bkt {
 	long long sectors;
 	int nseeks;
@@ -45,12 +47,19 @@ FILE *seek_open(__u32 device, char rw)
 	mjr = device >> MINORBITS;
 	mnr = device & ((1 << MINORBITS) - 1);
 
-	oname = malloc(strlen(seek_name + 32));
+	oname = malloc(strlen(seek_name)+32);
 	sprintf(oname, "%s_%03d,%03d_%c.dat", seek_name, mjr, mnr, rw);
 	if ((fp = fopen(oname, "w")) == NULL)
 		perror(oname);
+	else
+		add_file(&all_files, fp, oname);
 
 	return fp;
+}
+
+void seek_clean(void)
+{
+	clean_files(&all_files);
 }
 
 long long seek_dist(struct seeki *sip, struct io *iop)

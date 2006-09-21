@@ -74,7 +74,10 @@ void traverse(struct io *iop)
 
 void iop_q_update(__u64 *timeline, struct io *iop, __u64 q_time)
 {
-	update_q2c(iop, timeline[IOP_C] - q_time);
+	__u64 q2c = timeline[IOP_C] - q_time;
+
+	update_q2c(iop, q2c);
+	latency_q2c(iop->dip, iop->t.time, q2c);
 
 	if (timeline[IOP_A] > 0.0)	// IOP_X too
 		update_q2a(iop, timeline[IOP_A] - q_time);
@@ -82,7 +85,6 @@ void iop_q_update(__u64 *timeline, struct io *iop, __u64 q_time)
 		update_q2i(iop, timeline[IOP_I] - q_time);
 
 	update_i2d(iop, timeline[IOP_D] - timeline[IOP_I]);
-	update_d2c(iop, timeline[IOP_C] - timeline[IOP_D]);
 }
 
 void iop_q_func(__u64 *timeline, struct io *iop)
@@ -127,11 +129,15 @@ void iop_d_func(__u64 *timeline, struct io *iop)
 {
 	struct list_head *p;
 	struct io_list *iolp;
+	__u64 d2c = timeline[IOP_C] - iop->t.time;
 
 	__list_for_each(p, &iop->u.d.d_im_head) {
 		iolp = list_entry(p, struct io_list, head);
 		__traverse(timeline, iolp->iop);
 	}
+
+	update_d2c(iop, d2c);
+	latency_d2c(iop->dip, iop->t.time, d2c);
 }
 
 void iop_c_func(__u64 *timeline, struct io *iop)

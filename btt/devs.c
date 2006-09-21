@@ -69,6 +69,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		init_region(&dip->regions);
 		dip->map = dev_map_find(device);
 		dip->seek_handle = seeki_init(device);
+		latency_init(dip);
 		memset(&dip->stats, 0, sizeof(dip->stats));
 		memset(&dip->all_stats, 0, sizeof(dip->all_stats));
 

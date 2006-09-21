@@ -34,6 +34,9 @@
 #define IOP_READ(iop)	((iop)->t.action & BLK_TC_ACT(BLK_TC_READ))
 #define IOP_RW(iop)	(IOP_READ(iop) ? 1 : 0)
 
+#define TO_SEC(nanosec)	((double)(nanosec) / 1.0e9)
+#define TO_MSEC(nanosec) (1000.0 * TO_SEC(nanosec))
+
 #if defined(DEBUG)
 #define ASSERT(truth)   do {						\
 				if (!(truth)) {				\
@@ -71,6 +74,12 @@ enum iop_type {
 	IOP_Y = 7,
 };
 #define N_IOP_TYPES	(IOP_Y + 1)
+
+struct file_info {
+	struct file_info *next;
+	FILE *ofp;
+	char *oname;
+};
 
 struct my_mem {
 	struct my_mem *next;
@@ -157,6 +166,7 @@ struct d_info {
 	__u64 n_ds;
 	struct devmap *map;
 	void *seek_handle;
+	FILE *d2c_ofp, *q2c_ofp;
 	struct stats stats, all_stats;
 };
 
@@ -204,7 +214,7 @@ struct io {
 };
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
-extern char *seek_name, *iostat_name;
+extern char *seek_name, *iostat_name, *d2c_name, *q2c_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp;
 extern int verbose, ifd;
@@ -240,11 +250,14 @@ struct d_info *dip_add(__u32 device, struct io *iop);
 void traverse(struct io *iop);
 void io_free_resources(struct io *iop);
 void *seeki_init(__u32 device);
+void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
 double seeki_mean(void *handle);
 long long seeki_nseeks(void *handle);
 long long seeki_median(void *handle);
 int seeki_mode(void *handle, long long **modes_p, int *nseeks_p);
+void add_file(struct file_info **fipp, FILE *fp, char *oname);
+void clean_files(struct file_info **fipp);
 
 void iostat_init(void);
 void iostat_insert(struct io *iop);
@@ -253,5 +266,10 @@ void iostat_issue(struct io *iop);
 void iostat_complete(struct io *iop);
 void iostat_check_time(__u64 stamp);
 void iostat_dump_stats(__u64 stamp, int all);
+
+void latency_init(struct d_info *dip);
+void latency_clean(void);
+void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency);
+void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
 
 #include "inlines.h"
