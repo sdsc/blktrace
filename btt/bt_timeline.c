@@ -33,7 +33,6 @@ char *output_name = NULL;
 char *seek_name = NULL;
 double range_delta = 0.1;
 FILE *ranges_ofp, *avgs_ofp;
-int is_lvm = -1;
 int verbose = 0;
 int ifd;
 unsigned long n_traces, n_io_allocs, n_io_frees;

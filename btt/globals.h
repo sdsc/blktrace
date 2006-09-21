@@ -207,7 +207,7 @@ extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp;
-extern int is_lvm, verbose, ifd;
+extern int verbose, ifd;
 extern unsigned int n_devs;
 extern unsigned long n_traces, n_io_allocs, n_io_frees;
 extern struct list_head all_devs, all_ios, all_procs;

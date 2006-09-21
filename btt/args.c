@@ -28,7 +28,7 @@
 
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hi:I:lmM:o:s:S:Vv"
+#define S_OPTS	"d:D:e:hi:I:M:o:s:S:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -65,18 +65,6 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'I'
-	},
-	{
-		.name = "lvm",
-		.has_arg = no_argument,
-		.flag = NULL,
-		.val = 'l'
-	},
-	{
-		.name = "md",
-		.has_arg = no_argument,
-		.flag = NULL,
-		.val = 'm'
 	},
 	{
 		.name = "dev-maps",
@@ -121,11 +109,11 @@ static struct option l_opts[] = {
 
 static char usage_str[] = \
 	"\n[ -d <seconds>     | --range-delta=<seconds> ]\n" \
+	"[ -D <dev;...>     | --devices=<dev;...> ]\n" \
 	"[ -e <exe,...>     | --exes=<exe,...>  ]\n" \
 	"[ -h               | --help ]\n" \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
 	"[ -I <output name> | --iostat=<output name> ]\n" \
-	"(-l | -m)          | (--lvm | -md)\n" \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
@@ -164,12 +152,6 @@ void handle_args(int argc, char *argv[])
 		case 'I':
 			iostat_name = optarg;
 			break;
-		case 'l':
-			is_lvm = 1;
-			break;
-		case 'm':
-			is_lvm = 0;
-			break;
 		case 'M':
 			dev_map_fname = optarg;
 			break;
@@ -197,7 +179,7 @@ void handle_args(int argc, char *argv[])
 		}
 	}
 
-	if (input_name == NULL || is_lvm < 0) {
+	if (input_name == NULL) {
 		usage(argv[0]);
 		exit(1);
 	}
