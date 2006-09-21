@@ -165,6 +165,8 @@ void handle_merge(struct io *iop)
 	q_iop = dip_find_exact(dip_get_head(iop->dip, IOP_Q), iop);
 	if (q_iop)
 		io_link(&iop->u.m.m_q, q_iop);
+
+	iostat_merge(iop);
 }
 
 void handle_insert(struct io *iop)
@@ -174,6 +176,8 @@ void handle_insert(struct io *iop)
 	io_setup(iop, IOP_I);
 	INIT_LIST_HEAD(&iop->u.i.i_qs_head);
 	dip_add_qs(dip_get_head(iop->dip, IOP_Q), iop);
+
+	iostat_insert(iop);
 }
 
 void handle_complete(struct io *iop)
@@ -190,7 +194,7 @@ void handle_complete(struct io *iop)
 	d_iop = dip_find_exact(dip_get_head(iop->dip, IOP_D), iop);
 	if (d_iop) {
 		io_link(&iop->u.c.c_d, d_iop);
-
+		iostat_complete(iop);
 		add_cy(iop);
 	}
 	else
@@ -214,6 +218,8 @@ void handle_issue(struct io *iop)
 
 	dip_add_ms(dip_get_head(iop->dip, IOP_M), iop);
 	seeki_add(iop->dip->seek_handle, iop);
+
+	iostat_issue(iop);
 }
 
 void handle_split(struct io *iop)
@@ -310,6 +316,7 @@ void __add_trace(struct io *iop)
 {
 	n_traces++;
 
+	iostat_check_time(iop->t.time);
 	if (verbose && (n_traces % 10000) == 0) {
 		printf("%10lu t, %10lu m %1lu f\r",
 		       n_traces, n_io_allocs, n_io_frees);

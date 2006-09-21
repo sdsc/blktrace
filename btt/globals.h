@@ -32,6 +32,7 @@
 #define BIT_START(iop)	((iop)->t.sector)
 #define BIT_END(iop)	((iop)->t.sector + ((iop)->t.bytes >> 9))
 #define IOP_READ(iop)	((iop)->t.action & BLK_TC_ACT(BLK_TC_READ))
+#define IOP_RW(iop)	(IOP_READ(iop) ? 1 : 0)
 
 #if defined(DEBUG)
 #define ASSERT(truth)   do {						\
@@ -135,6 +136,17 @@ struct devmap {
 	char devno[32];
 };
 
+struct stats {
+	__u64 rqm[2];
+	__u64 ios[2];
+	__u64 sec[2];
+	__u64 wait;
+	__u64 svctm;
+
+	int cur_qusz, cur_dev;
+	double last_qu_change, last_dev_change, tot_qusz, idle_time;
+};
+
 struct d_info {
 	struct list_head head, hash_head;
 	struct list_head iop_heads[N_IOP_TYPES];
@@ -145,6 +157,7 @@ struct d_info {
 	__u64 n_ds;
 	struct devmap *map;
 	void *seek_handle;
+	struct stats stats, all_stats;
 };
 
 struct io {
@@ -191,9 +204,9 @@ struct io {
 };
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
-extern char *seek_name;
+extern char *seek_name, *iostat_name;
 extern double range_delta;
-extern FILE *ranges_ofp, *avgs_ofp;
+extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp;
 extern int is_lvm, verbose, ifd;
 extern unsigned int n_devs;
 extern unsigned long n_traces, n_io_allocs, n_io_frees;
@@ -204,9 +217,11 @@ extern struct region_info all_regions;
 extern struct my_mem *free_ios, *free_bits;
 extern char iop_map[];
 extern unsigned int pending_xs;
+extern __u64 iostat_interval, iostat_last_stamp;
 
 void add_trace(struct io *iop);
 int in_devices(struct blk_io_trace *t);
+char *make_dev_hdr(char *pad, size_t len, struct d_info *dip);
 int output_avgs(FILE *ofp);
 int output_ranges(FILE *ofp);
 unsigned int do_read(int ifd, void *buf, int len);
@@ -230,5 +245,13 @@ double seeki_mean(void *handle);
 long long seeki_nseeks(void *handle);
 long long seeki_median(void *handle);
 int seeki_mode(void *handle, long long **modes_p, int *nseeks_p);
+
+void iostat_init(void);
+void iostat_insert(struct io *iop);
+void iostat_merge(struct io *iop);
+void iostat_issue(struct io *iop);
+void iostat_complete(struct io *iop);
+void iostat_check_time(__u64 stamp);
+void iostat_dump_stats(__u64 stamp, int all);
 
 #include "inlines.h"

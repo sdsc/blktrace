@@ -65,6 +65,7 @@ int main(int argc, char *argv[])
 	handle_args(argc, argv);
 
 	cy_init();
+	iostat_init();
 	if (process() || output_avgs(avgs_ofp) || output_ranges(ranges_ofp))
 		return 1;
 
@@ -91,6 +92,11 @@ int process(void)
 		iop = IO_ZALLOC();
 	}
 	IO_FREE(iop);
+
+	if (iostat_ofp) {
+		fprintf(iostat_ofp, "\n");
+		iostat_dump_stats(iostat_last_stamp, 1);
+	}
 
 	if (verbose)
 		printf("\n%10lu traces, %10lu mallocs %1lu frees\n",

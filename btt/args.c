@@ -28,7 +28,7 @@
 
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hlmM:i:o:s:Vv"
+#define S_OPTS	"d:D:e:hi:I:lmM:o:s:S:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -55,6 +55,18 @@ static struct option l_opts[] = {
 		.val = 'h'
 	},
 	{
+		.name = "input-file",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'i'
+	},
+	{
+		.name = "iostat",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'I'
+	},
+	{
 		.name = "lvm",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -73,12 +85,6 @@ static struct option l_opts[] = {
 		.val = 'M'
 	},
 	{
-		.name = "input-file",
-		.has_arg = required_argument,
-		.flag = NULL,
-		.val = 'i'
-	},
-	{
 		.name = "output-file",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -89,6 +95,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 's'
+	},
+	{
+		.name = "iostat-interval",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'S'
 	},
 	{
 		.name = "version",
@@ -112,9 +124,12 @@ static char usage_str[] = \
 	"[ -e <exe,...>     | --exes=<exe,...>  ]\n" \
 	"[ -h               | --help ]\n" \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
+	"[ -I <output name> | --iostat=<output name> ]\n" \
 	"(-l | -m)          | (--lvm | -md)\n" \
+	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
+	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n\n";
 
@@ -146,6 +161,9 @@ void handle_args(int argc, char *argv[])
 		case 'i':
 			input_name = optarg;
 			break;
+		case 'I':
+			iostat_name = optarg;
+			break;
 		case 'l':
 			is_lvm = 1;
 			break;
@@ -161,6 +179,12 @@ void handle_args(int argc, char *argv[])
 		case 's':
 			seek_name = optarg;
 			break;
+		case 'S': {
+			unsigned int interval;
+			sscanf(optarg, "%u", &interval);
+			iostat_interval = (__u64)interval * (1000 * 1000 * 1000);
+			break;
+		}
 		case 'v':
 			verbose = 1;
 			break;
@@ -211,5 +235,13 @@ void handle_args(int argc, char *argv[])
 			printf("Sending stats data to %s\n", output_name);
 
 		free(fname);
+	}
+
+	if (iostat_name != NULL) {
+		iostat_ofp = fopen(iostat_name, "w");
+		if (iostat_ofp == NULL) {
+			perror(iostat_name);
+			exit(1);
+		}
 	}
 }
