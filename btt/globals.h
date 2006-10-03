@@ -21,11 +21,11 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "blktrace.h"
+#include "rbtree.h"
 #include "list.h"
-
-#define pdu_start(t)	(((void *) (t) + sizeof(struct blk_io_trace)))
 
 #define BIT_TIME(t)	((double)SECONDS(t) + ((double)NANO_SECONDS(t) / 1.0e9))
 
@@ -38,6 +38,7 @@
 #define TO_MSEC(nanosec) (1000.0 * TO_SEC(nanosec))
 
 #if defined(DEBUG)
+#define DBG_PING()	dbg_ping()
 #define ASSERT(truth)   do {						\
 				if (!(truth)) {				\
 					DBG_PING();			\
@@ -45,23 +46,17 @@
 				}					\
 			} while (0)
 
-#define DBG_PING()		dbg_ping()
 
 #define LIST_DEL(hp)	list_del(hp)
-
 #else
 #define ASSERT(truth)
 #define DBG_PING()
-
 #define LIST_DEL(hp)	do {						\
 				if (((hp)->next != NULL) &&		\
 				    ((hp)->next != LIST_POISON1))	\
 					list_del(hp);			\
 			} while (0)
 #endif
-
-#define IO_ZALLOC()	my_zmalloc(&free_ios, sizeof(struct io))
-#define IO_FREE(iop)	my_free(&free_ios, iop)
 
 enum iop_type {
 	IOP_Q = 0,
@@ -71,18 +66,19 @@ enum iop_type {
 	IOP_I = 4,
 	IOP_D = 5,
 	IOP_C = 6,
-	IOP_Y = 7,
+	IOP_R = 7,
 };
-#define N_IOP_TYPES	(IOP_Y + 1)
+#define N_IOP_TYPES	(IOP_R + 1)
 
 struct file_info {
 	struct file_info *next;
 	FILE *ofp;
-	char *oname;
+	char oname[1];
 };
 
-struct my_mem {
-	struct my_mem *next;
+struct mode {
+	int most_seeks, nmds;
+	long long *modes;
 };
 
 struct io;
@@ -120,98 +116,52 @@ struct region_info {
 	struct range_info *qr_cur, *cr_cur;
 };
 
-struct p_info;
-struct p_pid {
-	struct list_head head;
-	struct p_info *pip;
-	__u32 pid;
-};
-
 struct p_info {
-	struct list_head head;
 	struct region_info regions;
 	struct avgs_info avgs;
-	char *name;
 	__u64 last_q;
+	__u32 pid;
+	char name[1];
 };
 
 struct devmap {
 	struct devmap *next;
-	char device[32];
+	unsigned int host, bus, target, lun, irq, cpu;
 	char model[64];
-	unsigned int host, bus, target, lun;
-	char node[32], pci[32];
-	unsigned int irq, cpu;
-	char devno[32];
+	char device[32], node[32], pci[32], devno[32];
 };
 
 struct stats {
-	__u64 rqm[2];
-	__u64 ios[2];
-	__u64 sec[2];
-	__u64 wait;
-	__u64 svctm;
-
-	int cur_qusz, cur_dev;
+	__u64 rqm[2], ios[2], sec[2], wait, svctm;
 	double last_qu_change, last_dev_change, tot_qusz, idle_time;
+	int cur_qusz, cur_dev;
 };
 
 struct d_info {
-	struct list_head head, hash_head;
-	struct list_head iop_heads[N_IOP_TYPES];
+	struct list_head all_head, hash_head;
+	void *heads;
 	struct region_info regions;
-	struct avgs_info avgs;
-	__u64 last_q;
-	__u32 device;
-	__u64 n_ds;
 	struct devmap *map;
 	void *seek_handle;
 	FILE *d2c_ofp, *q2c_ofp;
+	struct avgs_info avgs;
 	struct stats stats, all_stats;
+	__u64 last_q, n_ds;
+	__u32 device;
 };
 
 struct io {
-	struct list_head all_head, dev_head;
+	struct rb_node rb_node;
+	struct list_head f_head;
 	struct d_info *dip;
 	struct p_info *pip;
-	void *pdu;
-
 	struct blk_io_trace t;
-
-	int users, traversed;
+	void *pdu;
 	enum iop_type type;
-
-	union {
-		struct {
-			union {
-				struct io *q_a;
-				struct io *q_x;
-			} qp;
-			enum {
-				Q_NONE = 10,
-				Q_A = 20,
-				Q_X = 30,
-			} qp_type;
-		}					  q;
-		struct {
-			union {
-				struct io *a_q;
-				struct io *a_a;
-			} ap;
-			enum {
-				A_NONE = 10,
-				A_A = 20,
-				A_Q = 30,
-			} ap_type;
-		}                                         a;
-		struct { struct io *x_q;		} x;
-		struct { struct io *m_q;		} m;
-		struct { struct list_head i_qs_head;	} i;
-		struct { struct list_head d_im_head;	} d;
-		struct { struct io *c_d;		} c;
-		struct { struct io *y_c1, *y_c2;	} y;
-	} u;
+	int linked;
 };
+
+/* bt_timeline.c */
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name;
@@ -219,57 +169,84 @@ extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp;
 extern int verbose, ifd;
 extern unsigned int n_devs;
-extern unsigned long n_traces, n_io_allocs, n_io_frees;
-extern struct list_head all_devs, all_ios, all_procs;
+extern unsigned long n_traces;
+extern struct list_head all_devs, all_procs;
 extern struct avgs_info all_avgs;
 extern __u64 last_q;
 extern struct region_info all_regions;
-extern struct my_mem *free_ios, *free_bits;
-extern char iop_map[];
-extern unsigned int pending_xs;
+extern struct list_head free_ios;
 extern __u64 iostat_interval, iostat_last_stamp;
+extern time_t genesis, last_vtrace;
 
-void add_trace(struct io *iop);
+/* args.c */
+void handle_args(int argc, char *argv[]);
+
+/* dev_map.c */
+int dev_map_read(char *fname);
+struct devmap *dev_map_find(__u32 device);
+
+/* devs.c */
+void init_dev_heads(void);
+struct d_info *dip_add(__u32 device, struct io *iop, int link);
+void dip_rem(struct io *iop);
+struct d_info *__dip_find(__u32 device);
+void dip_foreach(struct io *iop, enum iop_type type, 
+		 void (*fnc)(struct io *iop, struct io *this), int rm_after);
+struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
+void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
+
+/* dip_rb.c */
+void rb_insert(struct rb_root *root, struct io *iop);
+struct io *rb_find_sec(struct rb_root *root, __u64 sec);
+void rb_foreach(struct rb_node *n, struct io *iop, 
+		      void (*fnc)(struct io *iop, struct io *this),
+		      struct list_head *head);
+
+/* iostat.c */
+void iostat_init(void);
+void iostat_insert(struct io *iop);
+void iostat_merge(struct io *iop);
+void iostat_issue(struct io *iop);
+void iostat_unissue(struct io *iop);
+void iostat_complete(struct io *d_iop, struct io *c_iop);
+void iostat_check_time(__u64 stamp);
+void iostat_dump_stats(__u64 stamp, int all);
+
+/* latency.c */
+void latency_init(struct d_info *dip);
+void latency_clean(void);
+void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency);
+void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
+
+/* misc.c */
+struct blk_io_trace *convert_to_cpu(struct blk_io_trace *t);
 int in_devices(struct blk_io_trace *t);
-char *make_dev_hdr(char *pad, size_t len, struct d_info *dip);
+unsigned int do_read(int ifd, void *buf, int len);
+void add_file(struct file_info **fipp, FILE *fp, char *oname);
+void clean_files(struct file_info **fipp);
+void dbg_ping(void);
+
+/* output.c */
 int output_avgs(FILE *ofp);
 int output_ranges(FILE *ofp);
-unsigned int do_read(int ifd, void *buf, int len);
+char *make_dev_hdr(char *pad, size_t len, struct d_info *dip);
+
+/* proc.c */
 void add_process(__u32 pid, char *name);
 struct p_info *find_process(__u32 pid, char *name);
 void pip_update_q(struct io *iop);
-void handle_args(int argc, char *argv[]);
-struct devmap *dev_map_find(__u32 device);
-int dev_map_read(char *fname);
-void add_cy(struct io *iop);
-void rem_c(struct io *iop);
-void cy_init(void);
-void cy_shutdown(void);
-struct d_info *__dip_find(__u32 device);
-struct d_info *dip_add(__u32 device, struct io *iop);
-void traverse(struct io *iop);
-void io_free_resources(struct io *iop);
+void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg);
+
+/* seek.c */
 void *seeki_init(__u32 device);
 void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
 double seeki_mean(void *handle);
 long long seeki_nseeks(void *handle);
 long long seeki_median(void *handle);
-int seeki_mode(void *handle, long long **modes_p, int *nseeks_p);
-void add_file(struct file_info **fipp, FILE *fp, char *oname);
-void clean_files(struct file_info **fipp);
+int seeki_mode(void *handle, struct mode *mp);
 
-void iostat_init(void);
-void iostat_insert(struct io *iop);
-void iostat_merge(struct io *iop);
-void iostat_issue(struct io *iop);
-void iostat_complete(struct io *iop);
-void iostat_check_time(__u64 stamp);
-void iostat_dump_stats(__u64 stamp, int all);
-
-void latency_init(struct d_info *dip);
-void latency_clean(void);
-void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency);
-void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
+/* trace.c */
+void add_trace(struct io *iop);
 
 #include "inlines.h"

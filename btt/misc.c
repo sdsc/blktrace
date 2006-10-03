@@ -87,12 +87,15 @@ unsigned int do_read(int ifd, void *buf, int len)
 
 void add_file(struct file_info **fipp, FILE *fp, char *oname)
 {
-	struct file_info *fip = malloc(sizeof(struct file_info));
+	struct file_info *fip;
+	
+	fip = malloc(sizeof(struct file_info) + strlen(oname) + 1);
 
-	fip->ofp = fp;
-	fip->oname = oname;
 	fip->next = *fipp;
 	*fipp = fip;
+
+	fip->ofp = fp;
+	strcpy(fip->oname, oname);
 }
 
 void clean_files(struct file_info **fipp)
@@ -106,7 +109,8 @@ void clean_files(struct file_info **fipp)
 		fclose(fip->ofp);
 		if (!stat(fip->oname, &buf) && (buf.st_size == 0))
 			unlink(fip->oname);
-		free(fip->oname);
 		free(fip);
 	}
 }
+
+void dbg_ping(void) {}

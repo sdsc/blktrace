@@ -53,24 +53,16 @@ __u64 iostat_interval = 1;
 char *iostat_name = NULL;
 FILE *iostat_ofp = NULL;
 
-void calc_waits(struct io *d_iop, __u64 c_time)
-{
-	__u64 waits = 0;
-	struct list_head *p;
-	struct io_list *iolp;
-
-	__list_for_each(p, &d_iop->u.d.d_im_head) {
-		iolp = list_entry(p, struct io_list, head);
-		waits += (c_time - iolp->iop->t.time);
-	}
-	ADD_STAT(d_iop->dip, wait, waits);
-}
-
 void dump_hdr(void)
 {
 	fprintf(iostat_ofp, "Device:       rrqm/s   wrqm/s     r/s     w/s    "
 			    "rsec/s    wsec/s     rkB/s     wkB/s "
 			    "avgrq-sz avgqu-sz   await   svctm  %%util   Stamp\n");
+}
+
+void im2d2c_func(struct io *c_iop, struct io *im_iop)
+{
+	ADD_STAT(c_iop->dip, wait, c_iop->t.time - im_iop->t.time);
 }
 
 void iostat_init(void)
@@ -174,7 +166,7 @@ void iostat_dump_stats(__u64 stamp, int all)
 		struct list_head *p;
 
 		__list_for_each(p, &all_devs) {
-			dip = list_entry(p, struct d_info, head);
+			dip = list_entry(p, struct d_info, all_head);
 			__dump_stats(stamp, all, dip);
 		}
 	}
@@ -193,7 +185,6 @@ void iostat_dump_stats(__u64 stamp, int all)
 	}
 	if (!all && iostat_ofp)
 		fprintf(iostat_ofp, "\n");
-		
 }
 
 void iostat_check_time(__u64 stamp)
@@ -234,21 +225,29 @@ void iostat_issue(struct io *iop)
 	INC_STAT(dip, cur_dev);
 }
 
-void iostat_complete(struct io *iop)
+void iostat_unissue(struct io *iop)
 {
-	struct io *d_iop;
+	int rw = IOP_RW(iop);
 	struct d_info *dip = iop->dip;
 
-	if ((d_iop = iop->u.c.c_d) != NULL) {
-		double now = TO_SEC(iop->t.time);
-		calc_waits(d_iop, iop->t.time);
+	DEC_STAT(dip, ios[rw]);
+	SUB_STAT(dip, sec[rw], iop->t.bytes >> 9);
+	DEC_STAT(dip, cur_dev);
+}
 
-		update_tot_qusz(dip, now);
-		DEC_STAT(dip, cur_qusz);
+void iostat_complete(struct io *d_iop, struct io *c_iop)
+{
+	double now = TO_SEC(c_iop->t.time);
+	struct d_info *dip = d_iop->dip;
 
-		update_idle_time(dip, now, 0);
-		DEC_STAT(dip, cur_dev);
+	dip_foreach(d_iop, IOP_I, im2d2c_func, 0);
+	dip_foreach(d_iop, IOP_M, im2d2c_func, 0);
 
-		ADD_STAT(dip, svctm, iop->t.time - d_iop->t.time);
-	}
+	update_tot_qusz(dip, now);
+	DEC_STAT(dip, cur_qusz);
+
+	update_idle_time(dip, now, 0);
+	DEC_STAT(dip, cur_dev);
+
+	ADD_STAT(dip, svctm, c_iop->t.time - d_iop->t.time);
 }

@@ -21,33 +21,23 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-
 #include "globals.h"
 
 char bt_timeline_version[] = "0.99";
 
-char *devices = NULL;
-char *exes = NULL;
-char *input_name = NULL;
-char *output_name = NULL;
-char *seek_name = NULL;
-char *d2c_name = NULL;
-char *q2c_name = NULL;
+char *devices, *exes, *input_name, *output_name, *seek_name;
+char *d2c_name, *q2c_name;
 double range_delta = 0.1;
 FILE *ranges_ofp, *avgs_ofp;
-int verbose = 0;
-int ifd;
-unsigned long n_traces, n_io_allocs, n_io_frees;
+int ifd, verbose = 0;
+unsigned long n_traces;
 struct avgs_info all_avgs;
 __u64 last_q = (__u64)-1;
-unsigned int pending_xs;
-
 unsigned int n_devs;
+time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
-LIST_HEAD(all_ios);
 LIST_HEAD(all_procs);
-struct my_mem *free_ios = NULL;
-struct my_mem *free_bits = NULL;
+LIST_HEAD(free_ios);
 
 struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
@@ -56,16 +46,13 @@ struct region_info all_regions = {
 	.cr_cur = NULL
 };
 
-char iop_map[] = { 'Q', 'X', 'A', 'M', 'I', 'D', 'C', 'Y' };
-
-struct blk_io_trace *convert_to_cpu(struct blk_io_trace *t);
 int process(void);
 
 int main(int argc, char *argv[])
 {
 	handle_args(argc, argv);
 
-	cy_init();
+	init_dev_heads();
 	iostat_init();
 	if (process() || output_avgs(avgs_ofp) || output_ranges(ranges_ofp))
 		return 1;
@@ -77,22 +64,22 @@ int process(void)
 {
 	int ret = 0;
 	struct blk_io_trace *t;
-	struct io *iop = IO_ZALLOC();
+	struct io *iop = io_alloc();
 
-	while (!do_read(ifd, &iop->t, sizeof(iop->t))) {
+	genesis = last_vtrace = time(NULL);
+	while (!do_read(ifd, &iop->t, sizeof(struct blk_io_trace))) {
 		t = convert_to_cpu(&iop->t);
 		if (t->pdu_len > 0) {
 			iop->pdu = malloc(t->pdu_len);
 			if (do_read(ifd, iop->pdu, t->pdu_len)) {
-				free(iop->pdu);
 				ret = 1;
 				break;
 			}
 		}
 		add_trace(iop);
-		iop = IO_ZALLOC();
+		iop = io_alloc();
 	}
-	IO_FREE(iop);
+	io_release(iop);
 
 	if (iostat_ofp) {
 		fprintf(iostat_ofp, "\n");
@@ -102,10 +89,10 @@ int process(void)
 	seek_clean();
 	latency_clean();
 
-	if (verbose)
-		printf("\n%10lu traces, %10lu mallocs %1lu frees\n",
-				       n_traces, n_io_allocs, n_io_frees);
+	if (verbose) {
+		double tps = (double)n_traces / (double)(time(NULL) - genesis);
+		printf("%10lu traces @ %.1lf Ktps\n", n_traces, tps/1000.0);
+	}
 
-	cy_shutdown();
 	return ret;
 }

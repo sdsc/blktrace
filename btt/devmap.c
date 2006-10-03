@@ -19,12 +19,13 @@
  *
  */
 #include <stdio.h>
-
 #include "globals.h"
+
 struct devmap *all_devmaps = NULL;
+
 void dev_map_add(struct devmap *dmp)
 {
-	struct devmap *this = zmalloc(sizeof(*this));
+	struct devmap *this = malloc(sizeof(struct devmap));
 
 	*this = *dmp;
 	this->next = all_devmaps;

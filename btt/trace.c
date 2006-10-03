@@ -20,320 +20,155 @@
  */
 #include "globals.h"
 
-static inline void release_iop(struct io *iop)
+void im2d_func(struct io *d_iop, struct io *im_iop)
 {
-	if (iop->pdu) free(iop->pdu);
-	IO_FREE(iop);
+	update_i2d(im_iop, d_iop->t.time - im_iop->t.time);
 }
 
-struct io *dip_find_exact(struct list_head *head, struct io *iop_in)
+void q2c_func(struct io *c_iop, struct io *q_iop)
 {
-	struct io *iop;
-	struct list_head *p;
+	__u64 q2c = c_iop->t.time - q_iop->t.time;
 
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (is_bit(iop_in, iop))
-			return iop;
-	}
-	return NULL;
+	update_q2c(q_iop, q2c);
+	latency_q2c(q_iop->dip, q_iop->t.time, q2c);
 }
 
-struct io *dip_find_in(struct list_head *head, struct io *iop_in)
-{
-	struct io *iop;
-	struct list_head *p;
-
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (in_bit(iop, iop_in))
-			return iop;
-	}
-	return NULL;
-}
-
-struct io *dip_find_start(struct list_head *head, __u64 sector)
-{
-	struct io *iop;
-	struct list_head *p;
-
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (BIT_START(iop) == sector)
-			return iop;
-	}
-	return NULL;
-}
-
-struct io *dip_find_end(struct list_head *head, __u64 sector)
-{
-	struct io *iop;
-	struct list_head *p;
-
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (BIT_END(iop) == sector)
-			return iop;
-	}
-	return NULL;
-}
-
-struct io *dip_find_in_sec(struct list_head *head, __u64 sector)
-{
-	struct io *iop;
-	struct list_head *p;
-
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (BIT_START(iop) <= sector && sector <= BIT_END(iop))
-			return iop;
-	}
-	return NULL;
-}
-
-struct io *dip_find_qa(struct list_head *head, struct blk_io_trace *t)
-{
-	struct io *iop;
-	struct list_head *p;
-
-	if (head != NULL) __list_for_each(p, head) {
-		iop = list_entry(p, struct io, dev_head);
-		if (iop->t.cpu == t->cpu && iop->t.sequence == (t->sequence-1))
-			return iop;
-	}
-	return NULL;
-}
-
-void dip_add_ms(struct list_head *head, struct io *d_iop)
-{
-	struct io *m_iop;
-	struct list_head *p;
-	struct io_list *iolp;
-
-	if (head != NULL) __list_for_each(p, head) {
-		m_iop = list_entry(p, struct io, dev_head);
-		if (in_bit(m_iop, d_iop)) {
-			iolp = malloc(sizeof(*iolp));
-			io_link(&iolp->iop, m_iop);
-			list_add_tail(&iolp->head, &d_iop->u.d.d_im_head);
-		}
-	}
-}
-
-void dip_add_qs(struct list_head *head, struct io *i_iop)
-{
-	struct io *q_iop;
-	struct list_head *p;
-	struct io_list *iolp;
-
-	if (head != NULL) __list_for_each(p, head) {
-		q_iop = list_entry(p, struct io, dev_head);
-		if (in_bit(q_iop, i_iop)) {
-			iolp = malloc(sizeof(*iolp));
-			io_link(&iolp->iop, q_iop);
-			list_add_tail(&iolp->head, &i_iop->u.i.i_qs_head);
-		}
-	}
-}
-
-void handle_queue(struct io *iop)
-{
-	struct io *tmp;
-
-	io_setup(iop, IOP_Q);
-
-	update_lq(&last_q, &all_avgs.q2q, iop->t.time);
-	update_qregion(&all_regions, iop->t.time);
-	dip_update_q(iop->dip, iop);
-	pip_update_q(iop);
-
-	tmp = dip_find_exact(dip_get_head(iop->dip, IOP_A), iop);
-	if (tmp) {
-		iop->u.q.qp_type = Q_A;
-		io_link(&iop->u.q.qp.q_a, tmp);
-	}
-	else
-		iop->u.q.qp_type = Q_NONE;
-}
-
-void handle_merge(struct io *iop)
+static inline void handle_im(struct io *im_iop)
 {
 	struct io *q_iop;
 
-	io_setup(iop, IOP_M);
-
-	q_iop = dip_find_exact(dip_get_head(iop->dip, IOP_Q), iop);
+	q_iop = dip_find_sec(im_iop->dip, IOP_Q, BIT_START(im_iop));
 	if (q_iop)
-		io_link(&iop->u.m.m_q, q_iop);
-
-	iostat_merge(iop);
+		update_q2i(q_iop, im_iop->t.time - q_iop->t.time);
 }
 
-void handle_insert(struct io *iop)
+void handle_queue(struct io *q_iop)
 {
-	struct io_list *iolp = malloc(sizeof(*iolp));
-
-	io_setup(iop, IOP_I);
-	INIT_LIST_HEAD(&iop->u.i.i_qs_head);
-	dip_add_qs(dip_get_head(iop->dip, IOP_Q), iop);
-
-	iostat_insert(iop);
+	io_setup(q_iop, IOP_Q, 1);
+	update_lq(&last_q, &all_avgs.q2q, q_iop->t.time);
+	update_qregion(&all_regions, q_iop->t.time);
+	dip_update_q(q_iop->dip, q_iop);
+	pip_update_q(q_iop);
 }
 
-void handle_complete(struct io *iop)
+void handle_remap(struct io *a_iop)
+{
+	struct io *q_iop;
+	struct blk_io_trace_remap *rp = a_iop->pdu;
+	struct d_info *dip = __dip_find(be32_to_cpu(rp->device));
+
+	io_setup(a_iop, IOP_A, 0);
+	q_iop = dip_find_sec(dip, IOP_Q, be64_to_cpu(rp->sector));
+	if (q_iop)
+		update_q2a(q_iop, a_iop->t.time - q_iop->t.time);
+	io_release(a_iop);
+}
+
+void handle_insert(struct io *i_iop)
+{
+	io_setup(i_iop, IOP_I, 1);
+	iostat_insert(i_iop);
+	handle_im(i_iop);
+}
+
+void handle_merge(struct io *m_iop)
+{
+	io_setup(m_iop, IOP_M, 1);
+	iostat_merge(m_iop);
+	handle_im(m_iop);
+}
+
+void handle_issue(struct io *d_iop)
+{
+	io_setup(d_iop, IOP_D, 1);
+	d_iop->dip->n_ds++;
+
+	dip_foreach(d_iop, IOP_I, im2d_func, 0);
+	dip_foreach(d_iop, IOP_M, im2d_func, 0);
+
+	if (seek_name)
+		seeki_add(d_iop->dip->seek_handle, d_iop);
+	iostat_issue(d_iop);
+}
+
+void handle_complete(struct io *c_iop)
 {
 	struct io *d_iop;
 
-	io_setup(iop, IOP_C);
-	update_blks(iop);
-	update_cregion(&all_regions, iop->t.time);
-	update_cregion(&iop->dip->regions, iop->t.time);
-	if (iop->pip)
-		update_cregion(&iop->pip->regions, iop->t.time);
+	io_setup(c_iop, IOP_C, 0);
+	update_blks(c_iop);
+	update_cregion(&all_regions, c_iop->t.time);
+	update_cregion(&c_iop->dip->regions, c_iop->t.time);
+	if (c_iop->pip)
+		update_cregion(&c_iop->pip->regions, c_iop->t.time);
 
-	d_iop = dip_find_exact(dip_get_head(iop->dip, IOP_D), iop);
+	d_iop = dip_find_sec(c_iop->dip, IOP_D, BIT_START(c_iop));
 	if (d_iop) {
-		io_link(&iop->u.c.c_d, d_iop);
-		iostat_complete(iop);
-		add_cy(iop);
+		__u64 d2c = c_iop->t.time - d_iop->t.time;
+		update_d2c(d_iop, d2c);
+		latency_d2c(d_iop->dip, c_iop->t.time, d2c);
+		iostat_complete(d_iop, c_iop);
+		dip_foreach(d_iop, IOP_I, NULL, 1);
+		dip_foreach(d_iop, IOP_M, NULL, 1);
+		io_release(d_iop);
 	}
-	else
-		io_free(iop);
+
+	dip_foreach(c_iop, IOP_Q, q2c_func, 1);
+	io_release(c_iop);
 }
 
-void handle_issue(struct io *iop)
+void rq_im2d_func(struct io *d_iop, struct io *im_iop)
 {
-	struct io *i_iop;
-	struct io_list *iolp = malloc(sizeof(*iolp));
-
-	io_setup(iop, IOP_D);
-	iop->dip->n_ds++;
-
-	INIT_LIST_HEAD(&iop->u.d.d_im_head);
-	i_iop = dip_find_in(dip_get_head(iop->dip, IOP_I), iop);
-	if (i_iop) {
-		io_link(&iolp->iop, i_iop);
-		list_add_tail(&iolp->head, &iop->u.d.d_im_head);
-	}
-
-	dip_add_ms(dip_get_head(iop->dip, IOP_M), iop);
-	seeki_add(iop->dip->seek_handle, iop);
-
-	iostat_issue(iop);
-}
-
-void handle_split(struct io *iop)
-{
-	struct io *q_iop;
-
-	pending_xs++;
-	io_setup(iop, IOP_X);
-
-	q_iop = dip_find_exact(dip_get_head(iop->dip, IOP_Q), iop);
-	if (q_iop)
-		io_link(&iop->u.x.x_q, q_iop);
-}
-
-void handle_remap(struct io *iop)
-{
-	struct io *q_iop, *a_iop;
-	struct blk_io_trace_remap *rp = iop->pdu;
-	__u32 dev = be32_to_cpu(rp->device);
-	__u64 sector = be64_to_cpu(rp->sector);
-
-	io_setup(iop, IOP_A);
-	q_iop = dip_find_in_sec(dip_get_head_dev(dev, IOP_Q), sector);
-	if (q_iop) {
-		iop->u.a.ap_type = A_Q;
-		io_link(&iop->u.a.ap.a_q, q_iop);
-		return;
-	}
-
-	a_iop = dip_find_in_sec(dip_get_head_dev(dev, IOP_A), sector);
-	if (a_iop) {
-		iop->u.a.ap_type = A_A;
-		io_link(&iop->u.a.ap.a_a, a_iop);
-		return;
-	}
-
-	iop->u.a.ap_type = A_NONE;
-}
-
-void extract_i(struct io *i_iop)
-{
-	struct io_list *iolp;
-	struct list_head *p, *q;
-
-	ASSERT(i_iop != NULL && i_iop->type == IOP_I);
-	list_for_each_safe(p, q, &i_iop->u.i.i_qs_head) {
-		iolp = list_entry(p, struct io_list, head);
-		LIST_DEL(&iolp->head);
-
-		ASSERT(iolp->iop->type == IOP_Q);
-		(void)__io_put(iolp->iop);
-
-		free(iolp);
-	}
+	unupdate_i2d(im_iop, d_iop->t.time - im_iop->t.time);
 }
 
 /*
  * Careful surgery
  * (1) Need to remove D & its I & M's
- * (2) Need to leave I's Q and M's Q's -- *no* io_put (__io_put instead)
+ * (2) Need to leave I's Q and M's Q's
+ * (3) XXX: Need to downward adjust stats, but we don't carry PREVIOUS
+ *     XXX: min/maxes?! We'll just adjust what we can, and hope that 
+ *     XXX: the min/maxes are "pretty close". (REQUEUEs are rare, right?)
  */
-void handle_requeue(struct io *iop)
+void handle_requeue(struct io *r_iop)
 {
 	struct io *d_iop;
-	struct io_list *iolp;
-	struct list_head *p, *q;
 
-	d_iop = dip_find_start(dip_get_head_dev(iop->t.device, IOP_D),
-			       iop->t.sector);
+	io_setup(r_iop, IOP_R, 0);
+	d_iop = dip_find_sec(r_iop->dip, IOP_D, BIT_START(r_iop));
 	if (d_iop) {
-		list_for_each_safe(p, q, &d_iop->u.d.d_im_head) {
-			iolp = list_entry(p, struct io_list, head);
-			LIST_DEL(&iolp->head);
-
-			if (iolp->iop->type == IOP_M)
-				(void)__io_put(iolp->iop->u.m.m_q);
-			else
-				extract_i(iolp->iop);
-
-			iolp->iop->users = 0;
-			io_free(iolp->iop);
-			free(iolp);
-		}
-
-		d_iop->users = 0;
-		io_free(d_iop);
+		dip_foreach(d_iop, IOP_I, rq_im2d_func, 1);
+		dip_foreach(d_iop, IOP_M, rq_im2d_func, 1);
+		iostat_unissue(d_iop);
+		io_release(d_iop);
 	}
-
-	release_iop(iop);
-
+	io_release(r_iop);
 }
 
 void __add_trace(struct io *iop)
 {
-	n_traces++;
+	time_t now = time(NULL);
 
+	n_traces++;
 	iostat_check_time(iop->t.time);
-	if (verbose && (n_traces % 10000) == 0) {
-		printf("%10lu t, %10lu m %1lu f\r",
-		       n_traces, n_io_allocs, n_io_frees);
-		fflush(stdout);
+
+	if (verbose && ((now - last_vtrace) > 0)) {
+		printf("%10lu t\r", n_traces);
 		if ((n_traces % 1000000) == 0) printf("\n");
+		fflush(stdout);
+		last_vtrace = now;
 	}
 
 	switch (iop->t.action & 0xffff) {
-	case __BLK_TA_QUEUE:		handle_queue(iop);	break;
-	case __BLK_TA_BACKMERGE:	handle_merge(iop);	break;
-	case __BLK_TA_FRONTMERGE:	handle_merge(iop);	break;
-	case __BLK_TA_ISSUE:		handle_issue(iop);	break;
-	case __BLK_TA_COMPLETE:		handle_complete(iop);	break;
-	case __BLK_TA_INSERT:		handle_insert(iop);	break;
-	case __BLK_TA_SPLIT:		handle_split(iop);	break;
-	case __BLK_TA_REMAP:		handle_remap(iop);	break;
-	case __BLK_TA_REQUEUE:		handle_requeue(iop);	break;
+	case __BLK_TA_QUEUE:		handle_queue(iop); break;
+	case __BLK_TA_BACKMERGE:	handle_merge(iop); break;
+	case __BLK_TA_FRONTMERGE:	handle_merge(iop); break;
+	case __BLK_TA_ISSUE:		handle_issue(iop); break;
+	case __BLK_TA_COMPLETE:		handle_complete(iop); break;
+	case __BLK_TA_INSERT:		handle_insert(iop); break;
+	case __BLK_TA_REMAP:		handle_remap(iop); break;
+	case __BLK_TA_REQUEUE:		handle_requeue(iop); break;
+	default:			io_release(iop); break;
 	}
 }
 
@@ -344,11 +179,12 @@ void add_trace(struct io *iop)
 
 		if (slash)
 			*slash = '\0';
+
 		add_process(iop->t.pid, iop->pdu);
-		release_iop(iop);
+		io_release(iop);
 	}
 	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))
-		release_iop(iop);
+		io_release(iop);
 	else
 		__add_trace(iop);
 }

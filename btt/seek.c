@@ -20,23 +20,23 @@
  */
 #include "globals.h"
 
-static struct file_info *all_files = NULL;
+static struct file_info *seek_files = NULL;
 
 struct seek_bkt {
+	struct rb_node rb_node;
 	long long sectors;
 	int nseeks;
 };
 
 struct seeki {
 	FILE *rfp, *wfp;
-	struct seek_bkt *seek_bkts;
-	int nseek_bkts;
-	long long total_seeks;
+	struct rb_root root;
+	long long tot_seeks;
 	double total_sectors;
 	long long last_start, last_end;
 };
 
-FILE *seek_open(__u32 device, char rw)
+static FILE *seek_open(__u32 device, char rw)
 {
 	FILE *fp;
 	char *oname;
@@ -52,14 +52,41 @@ FILE *seek_open(__u32 device, char rw)
 	if ((fp = fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
-		add_file(&all_files, fp, oname);
+		add_file(&seek_files, fp, oname);
 
 	return fp;
 }
 
+static void __insert(struct rb_root *root, long long sectors)
+{
+	struct seek_bkt *sbp;
+	struct rb_node *parent = NULL;
+	struct rb_node **p = &root->rb_node;
+
+	while (*p) {
+		parent = *p;
+		sbp = rb_entry(parent, struct seek_bkt, rb_node);
+		if (sectors < sbp->sectors)
+			p = &(*p)->rb_left;
+		else if (sectors > sbp->sectors)
+			p = &(*p)->rb_right;
+		else {
+			sbp->nseeks++;
+			return;
+		}
+	}
+
+	sbp = malloc(sizeof(struct seek_bkt));
+	sbp->nseeks = 1;
+	sbp->sectors = sectors;
+
+	rb_link_node(&sbp->rb_node, parent, p);
+	rb_insert_color(&sbp->rb_node, root);
+}
+
 void seek_clean(void)
 {
-	clean_files(&all_files);
+	clean_files(&seek_files);
 }
 
 long long seek_dist(struct seeki *sip, struct io *iop)
@@ -87,19 +114,16 @@ void *seeki_init(__u32 device)
 
 	sip->rfp = seek_open(device, 'r');
 	sip->wfp = seek_open(device, 'w');
-	sip->seek_bkts = NULL;
-	sip->nseek_bkts = 0;
-	sip->total_seeks = 0;
+	sip->tot_seeks = 0;
 	sip->total_sectors = 0.0;
 	sip->last_start = sip->last_end = 0;
+	memset(&sip->root, 0, sizeof(sip->root));
 
 	return sip;
 }
 
 void seeki_add(void *handle, struct io *iop)
 {
-	int left, mid, right;
-	struct seek_bkt *bkt;
 	struct seeki *sip = handle;
 	long long dist = seek_dist(sip, iop);
 	FILE *fp = IOP_READ(iop) ? sip->rfp : sip->wfp;
@@ -108,86 +132,87 @@ void seeki_add(void *handle, struct io *iop)
 		fprintf(fp, "%15.9lf %13lld\n", BIT_TIME(iop->t.time), dist);
 
 	dist = llabs(dist);
-	sip->total_seeks++;
+	sip->tot_seeks++;
 	sip->total_sectors += dist;
-
-	left = 0;
-	right = sip->nseek_bkts-1;
-	while (left <= right) {
-		mid = (left+right)/2;
-		bkt = &sip->seek_bkts[mid];
-		if (dist == bkt->sectors) {
-			bkt->nseeks++;
-			return;
-		}
-
-		if (dist > bkt->sectors)
-			left = mid + 1;
-		else
-			right = mid - 1;
-	}
-
-	sip->seek_bkts = realloc(sip->seek_bkts, 
-			         (sip->nseek_bkts+1) * sizeof(struct seek_bkt));
-	if (sip->nseek_bkts > left)
-		memmove(&sip->seek_bkts[left+1], &sip->seek_bkts[left], 
-			(sip->nseek_bkts - left) * sizeof(struct seek_bkt));
-	(bkt = &sip->seek_bkts[left])->sectors = dist;
-	bkt->nseeks = 1;
-	sip->nseek_bkts++;
+	__insert(&sip->root, dist);
 }
 
 long long seeki_nseeks(void *handle)
 {
-	return ((struct seeki *)handle)->total_seeks;
+	return ((struct seeki *)handle)->tot_seeks;
 }
 
 double seeki_mean(void *handle)
 {
 	struct seeki *sip = handle;
-	return sip->total_sectors / sip->total_seeks;
+	return sip->total_sectors / sip->tot_seeks;
+}
+
+int __median(struct rb_node *n, long long sofar, long long target, long 
+		   long *rvp)
+{
+	struct seek_bkt *sbp;
+
+	sbp = rb_entry(n, struct seek_bkt, rb_node);
+	if ((sofar + sbp->nseeks) >= target) {
+		*rvp = sbp->sectors;
+		return 1;
+	}
+
+	if (n->rb_left && __median(n->rb_left, sofar, target, rvp))
+		return 1;
+
+	if (n->rb_right && __median(n->rb_right, sofar, target, rvp))
+		return 1;
+
+	return 0;
+
 }
 
 long long seeki_median(void *handle)
 {
-	int i;
-	struct seek_bkt *p;
+	long long rval = 0LL;
 	struct seeki *sip = handle;
-	long long sofar = 0, target = sip->total_seeks / 2;
 
-	if (sip->total_seeks == 0) return 0;
-	for (i = 0, p = sip->seek_bkts; i < sip->nseek_bkts; i++, p++)
-		if ((sofar + p->nseeks) < target)
-			sofar += p->nseeks;
-		else
-			break;
+	if (sip->root.rb_node)
+		(void)__median(sip->root.rb_node, 0LL, sip->tot_seeks / 2, 
+			       &rval);
 
-	return p->sectors;
+	return rval;
 }
 
-int seeki_mode(void *handle, long long **modes_p, int *nseeks_p)
+void __mode(struct rb_node *n, struct mode *mp)
 {
-	int i;
-	struct seek_bkt *p;
-	int most_seeks = 0;
+	struct seek_bkt *sbp;
+
+	if (n->rb_left) __mode(n->rb_left, mp);
+	if (n->rb_right) __mode(n->rb_right, mp);
+
+	sbp = rb_entry(n, struct seek_bkt, rb_node);
+	if (mp->modes == NULL) {
+		mp->modes = malloc(sizeof(long long));
+		mp->nmds = 0;
+	}
+	else if (sbp->nseeks > mp->most_seeks)
+		mp->nmds = 0;
+	else if (sbp->nseeks == mp->most_seeks)
+		mp->modes = realloc(mp->modes, (mp->nmds + 1) * 
+							sizeof(long long));
+	else
+		return;
+
+	mp->most_seeks = sbp->nseeks;
+	mp->modes[mp->nmds++] = sbp->sectors;
+}
+
+int seeki_mode(void *handle, struct mode *mp)
+{
 	struct seeki *sip = handle;
-	int nmodes = 0;
-	long long *modes = NULL;
+	struct rb_root *root = &sip->root;
 
-	for (i = 0, p = sip->seek_bkts; i < sip->nseek_bkts; i++, p++)
-		if ((modes == NULL) || (p->nseeks > most_seeks)) {
-			most_seeks = p->nseeks;
-			modes = realloc(modes, sizeof(long long));
-			*modes = p->sectors;
-			nmodes = 1;
-		}
-		else if (p->nseeks == most_seeks) {
-			most_seeks = p->nseeks;
-			modes = realloc(modes, (nmodes+1) * sizeof(long long));
-			modes[nmodes++] = p->sectors;
-		}
+	memset(mp, 0, sizeof(struct mode));
+	if (root->rb_node) 
+		__mode(root->rb_node, mp);
 
-	*nseeks_p = most_seeks;
-	*modes_p = modes;
-	return nmodes;
+	return mp->nmds;
 }

@@ -25,7 +25,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-
 #include "globals.h"
 
 #define S_OPTS	"d:D:e:hi:I:l:M:o:q:s:S:Vv"
@@ -144,7 +143,6 @@ static void usage(char *prog)
 void handle_args(int argc, char *argv[])
 {
 	int c;
-	char *dev_map_fname = NULL;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -152,39 +150,40 @@ void handle_args(int argc, char *argv[])
 			sscanf(optarg, "%lf", &range_delta);
 			break;
 		case 'D':
-			devices = optarg;
+			devices = strdup(optarg);
 			break;
 		case 'e':
-			exes = optarg;
+			exes = strdup(optarg);
 			break;
 		case 'h':
 			usage(argv[0]);
 			exit(0);
 		case 'i':
-			input_name = optarg;
+			input_name = strdup(optarg);
 			break;
 		case 'l':
-			d2c_name = optarg;
+			d2c_name = strdup(optarg);
 			break;
 		case 'I':
-			iostat_name = optarg;
+			iostat_name = strdup(optarg);
 			break;
 		case 'M':
-			dev_map_fname = optarg;
+			if (dev_map_read(optarg))
+				exit(1);
 			break;
 		case 'o':
-			output_name = optarg;
+			output_name = strdup(optarg);
 			break;
 		case 'q':
-			q2c_name = optarg;
+			q2c_name = strdup(optarg);
 			break;
 		case 's':
-			seek_name = optarg;
+			seek_name = strdup(optarg);
 			break;
 		case 'S': {
 			unsigned int interval;
 			sscanf(optarg, "%u", &interval);
-			iostat_interval = (__u64)interval * (1000 * 1000 * 1000);
+			iostat_interval = (__u64)interval * 1000000000LL;
 			break;
 		}
 		case 'v':
@@ -210,13 +209,10 @@ void handle_args(int argc, char *argv[])
 		exit(1);
 	}
 
-	if (dev_map_fname && dev_map_read(dev_map_fname))
-		exit(1);
-
 	if (output_name == NULL)
 		ranges_ofp = avgs_ofp = stdout;
 	else {
-		char *fname = malloc(sizeof(output_name) + 20);
+		char *fname = malloc(strlen(output_name) + 32);
 
 		sprintf(fname, "%s.dat", output_name);
 		ranges_ofp = fopen(fname, "w");
@@ -225,7 +221,7 @@ void handle_args(int argc, char *argv[])
 			exit(1);
 		}
 		if (verbose)
-			printf("Sending range data to %s\n", output_name);
+			printf("Sending range data to %s.dat\n", output_name);
 
 		sprintf(fname, "%s.avg", output_name);
 		avgs_ofp = fopen(fname, "w");
@@ -234,7 +230,7 @@ void handle_args(int argc, char *argv[])
 			exit(1);
 		}
 		if (verbose)
-			printf("Sending stats data to %s\n", output_name);
+			printf("Sending stats data to %s.avg\n", output_name);
 
 		free(fname);
 	}

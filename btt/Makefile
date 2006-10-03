@@ -8,9 +8,12 @@ PROGS	= btt
 #PLIBS	= -lpthread
 LIBS	= $(PLIBS) $(ELIBS)
 OBJS	= bt_timeline.o args.o output.o proc.o trace.o misc.o devs.o \
-	  traverse.o iofree.o devmap.o cylist.o seek.o iostat.o latency.o
+	  devmap.o seek.o iostat.o latency.o dip_rb.o rbtree.o
 
 all: depend $(PROGS)
+
+rbtree.o: ../rbtree.c
+	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
 
 depend:
 	@$(CC) -MM $(ALL_CFLAGS) -I.. *.c 1> .depend

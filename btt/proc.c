@@ -22,73 +22,128 @@
 
 #include "globals.h"
 
-#define N_PID_HASH	128
-#define PID_HASH(pid)	((pid) & (N_PID_HASH-1))
-struct list_head	*pid_heads = NULL;
+struct pn_info {
+	struct rb_node rb_node;
+	struct p_info *pip;
+	union {
+		char *name;
+		__u32 pid;
+	}  u;
+};
 
-static void init_pid_heads(void)
+struct rb_root root_pid, root_name;
+
+struct p_info * __find_process_pid(__u32 pid)
 {
-	int i;
+	struct pn_info *this;
+	struct rb_node *n = root_pid.rb_node;
 
-	pid_heads = zmalloc(N_PID_HASH * sizeof(struct list_head));
-	for (i = 0; i < N_PID_HASH; i++)
-		INIT_LIST_HEAD(&pid_heads[i]);
-}
-
-static inline struct p_info *pid_to_proc(__u32 pid)
-{
-	struct p_pid *pp;
-	struct list_head *p, *head;
-
-	if (pid_heads == NULL) init_pid_heads();
-
-	head = &pid_heads[PID_HASH(pid)];
-	__list_for_each(p, head) {
-		pp = list_entry(p, struct p_pid, head);
-		if (pp->pid == pid)
-			return pp->pip;
+	while (n) {
+		this = rb_entry(n, struct pn_info, rb_node);
+		if (pid < this->u.pid)
+			n = n->rb_left;
+		else if (pid > this->u.pid)
+			n = n->rb_right;
+		else
+			return this->pip;
 	}
 
 	return NULL;
 }
 
-void insert_proc_hash(struct p_info *pip, __u32 pid)
+struct p_info *__find_process_name(char *name)
 {
-	struct p_pid *pp = zmalloc(sizeof(*pp));
+	int cmp;
+	struct pn_info *this;
+	struct rb_node *n = root_name.rb_node;
 
-	if (pid_heads == NULL) init_pid_heads();
+	while (n) {
+		this = rb_entry(n, struct pn_info, rb_node);
+		cmp = strcmp(name, this->u.name);
+		if (cmp < 0)
+			n = n->rb_left;
+		else if (cmp > 0)
+			n = n->rb_right;
+		else
+			return this->pip;
+	}
 
-	pp->pip = pip;
-	pp->pid = pid;
-
-	list_add_tail(&pp->head, &pid_heads[PID_HASH(pid)]);
-}
-
-int __find_process_pid(__u32 pid)
-{
-	return pid_to_proc(pid) != NULL;
+	return NULL;
 }
 
 struct p_info *find_process(__u32 pid, char *name)
 {
 	struct p_info *pip;
-	struct list_head *p;
 
-	if (pid != ((__u32)-1) && (pip = pid_to_proc(pid)))
+	if (pid != ((__u32)-1) && ((pip = __find_process_pid(pid)) != NULL))
 		return pip;
 
-	if (name) {
-		__list_for_each(p, &all_procs) {
-			pip = list_entry(p, struct p_info, head);
-			if (name && !strcmp(pip->name, name)) {
-				if (pid != ((__u32)-1))
-					insert_proc_hash(pip, pid);
-				return pip;
-			}
+	if (name)
+		return __find_process_name(name);
+
+	return NULL;
+}
+
+static void insert_pid(struct p_info *that)
+{
+	struct pn_info *this;
+	struct rb_node *parent = NULL;
+	struct rb_node **p = &root_pid.rb_node;
+
+	while (*p) {
+		parent = *p;
+		this = rb_entry(parent, struct pn_info, rb_node);
+
+		if (that->pid < this->u.pid)
+			p = &(*p)->rb_left;
+		else if (that->pid > this->u.pid)
+			p = &(*p)->rb_right;
+		else {
+			ASSERT(strcmp(that->name, this->pip->name) == 0);
+			return;	// Already there
 		}
 	}
 
-	return NULL;
+	this = malloc(sizeof(struct pn_info));
+	this->u.pid = that->pid;
+	this->pip = that;
+
+	rb_link_node(&this->rb_node, parent, p);
+	rb_insert_color(&this->rb_node, &root_pid);
+}
+
+static void insert_name(struct p_info *that)
+{
+	int cmp;
+	struct pn_info *this;
+	struct rb_node *parent = NULL;
+	struct rb_node **p = &root_name.rb_node;
+
+	while (*p) {
+		parent = *p;
+		this = rb_entry(parent, struct pn_info, rb_node);
+		cmp = strcmp(that->name, this->u.name);
+
+		if (cmp < 0)
+			p = &(*p)->rb_left;
+		else if (cmp > 0)
+			p = &(*p)->rb_right;
+		else
+			return;	// Already there...
+	}
+
+	this = malloc(sizeof(struct pn_info));
+	this->u.name = strdup(that->name);
+	this->pip = that;
+
+	rb_link_node(&this->rb_node, parent, p);
+	rb_insert_color(&this->rb_node, &root_name);
+}
+
+static void insert(struct p_info *pip)
+{
+	insert_pid(pip);
+	insert_name(pip);
 }
 
 void add_process(__u32 pid, char *name)
@@ -96,13 +151,15 @@ void add_process(__u32 pid, char *name)
 	struct p_info *pip = find_process(pid, name);
 
 	if (pip == NULL) {
-		pip = zmalloc(sizeof(*pip));
+		size_t len = sizeof(struct p_info) + strlen(name) + 1;
 
-		list_add_tail(&pip->head, &all_procs);
-		insert_proc_hash(pip, pid);
-		pip->last_q = (__u64)-1;
-		pip->name = strdup(name);
+		pip = memset(malloc(len), 0, len);
+		pip->pid = pid;
 		init_region(&pip->regions);
+		pip->last_q = (__u64)-1;
+		strcpy(pip->name, name);
+
+		insert(pip);
 	}
 }
 
@@ -111,5 +168,39 @@ void pip_update_q(struct io *iop)
 	if (iop->pip) {
 		update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q, iop->t.time);
 		update_qregion(&iop->pip->regions, iop->t.time);
+	}
+}
+
+void __foreach(struct rb_node *n, void (*f)(struct p_info *, void *), void *arg)
+{
+	if (n) {
+		__foreach(n->rb_left, f, arg);
+		f(rb_entry(n, struct pn_info, rb_node)->pip, arg);
+		__foreach(n->rb_right, f, arg);
+	}
+}
+
+void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg)
+{
+	if (exes == NULL)
+		__foreach(root_name.rb_node, f, arg);
+	else {
+		struct p_info *pip;
+		char *exe, *p, *next, *exes_save = strdup(exes);
+
+		p = exes_save;
+		while (exes_save != NULL) {
+			exe = exes_save;
+			if ((next = strchr(exes_save, ',')) != NULL) {
+				*next = '\0';
+				exes_save = next+1;
+			}
+			else
+				exes_save = NULL;
+
+			pip = __find_process_name(exe);
+			if (pip)
+				f(pip, arg);
+		}
 	}
 }
