@@ -5,3 +5,4 @@ blktrace
 blkrawverify
 doc/.depend
 verify_blkparse
+btt/btt
