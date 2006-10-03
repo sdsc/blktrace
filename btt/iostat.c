@@ -22,9 +22,6 @@
 #include <unistd.h>
 #include "globals.h"
 
-#define TO_SEC(nanosec)		((double)(nanosec) / 1.0e9)
-#define TO_MSEC(nanosec)	(1000.0 * TO_SEC(nanosec))
-
 #define INC_STAT(dip, fld) 						\
 	do { 								\
 		(dip)->stats. fld ++;					\
@@ -93,9 +90,9 @@ void update_tot_qusz(struct d_info *dip, double now)
 	dip->stats.last_qu_change = dip->all_stats.last_qu_change = now;
 }
 
-void update_idle_time(struct d_info *dip, double now)
+void update_idle_time(struct d_info *dip, double now, int force)
 {
-	if (dip->stats.cur_dev == 0) {
+	if (dip->stats.cur_dev == 0 || force) {
 		dip->stats.idle_time += (now - dip->stats.last_dev_change);
 		dip->all_stats.idle_time += 
 				       (now - dip->all_stats.last_dev_change);
@@ -107,7 +104,7 @@ void __dump_stats(__u64 stamp, int all, struct d_info *dip)
 {
 	char hdr[16];
 	struct stats *sp;
-	double dt, nios, avgrq_sz, p_util, nrqm;
+	double dt, nios, avgrq_sz, p_util, nrqm, await, svctm;
 	double now = TO_SEC(stamp);
 
 	if (all) {
@@ -121,42 +118,49 @@ void __dump_stats(__u64 stamp, int all, struct d_info *dip)
 
 	nios = (double)(sp->ios[0] + sp->ios[1]);
 	nrqm = (double)(sp->rqm[0] + sp->rqm[1]);
+	update_idle_time(dip, now, 1);
+	update_tot_qusz(dip, now);
+
 	if (nios > 0.0) {
-		update_idle_time(dip, now);
-		update_tot_qusz(dip, now);
 		avgrq_sz = (double)(sp->sec[0] + sp->sec[1]) / nios;
-		p_util = 100.0 * (1.0 - (sp->idle_time / dt));
+		svctm = TO_MSEC(sp->svctm) / nios;
+	}
+	else
+		avgrq_sz = svctm = 0.0;
 
-		/*
-		 * For AWAIT: nios should be the same as number of inserts
-		 * and we add in nrqm (number of merges), which should give
-		 * us the total number of IOs sent to the block IO layer.
-		 */
-		fprintf(iostat_ofp, "%-11s ", make_dev_hdr(hdr, 11, dip));
-		fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[1] / dt);
-		fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[0] / dt);
-		fprintf(iostat_ofp, "%7.2lf ", (double)sp->ios[1] / dt);
-		fprintf(iostat_ofp, "%7.2lf ", (double)sp->ios[0] / dt);
-		fprintf(iostat_ofp, "%9.2lf ", (double)sp->sec[1] / dt);
-		fprintf(iostat_ofp, "%9.2lf ", (double)sp->sec[0] / dt);
-		fprintf(iostat_ofp, "%9.2lf ", (double)(sp->sec[1] / 2) / dt);
-		fprintf(iostat_ofp, "%9.2lf ", (double)(sp->sec[0] / 2) / dt);
-		fprintf(iostat_ofp, "%8.2lf ", avgrq_sz);
-		fprintf(iostat_ofp, "%8.2lf ", (double)sp->tot_qusz / dt);
-		fprintf(iostat_ofp, "%7.2lf ", TO_MSEC(sp->wait) / (nios+nrqm));
-		fprintf(iostat_ofp, "%7.2lf ", TO_MSEC(sp->svctm) / nios);
-		fprintf(iostat_ofp, "%6.2lf", p_util);
-		if (all)
-			fprintf(iostat_ofp, "%8s\n", "TOTAL");
-		else {
-			fprintf(iostat_ofp, "%8.2lf\n", TO_SEC(stamp));
-			sp->rqm[0] = sp->rqm[1] = 0;
-			sp->ios[0] = sp->ios[1] = 0;
-			sp->sec[0] = sp->sec[1] = 0;
-			sp->wait = sp->svctm = 0;
+	await = ((nios + nrqm) > 0.0) ? TO_MSEC(sp->wait) / (nios+nrqm) : 0.0;
+	p_util = (sp->idle_time <= dt) ? 100.0 * (1.0 - (sp->idle_time / dt)) :
+	                                 0.0;
 
-			sp->tot_qusz = sp->idle_time = 0.0;
-		}
+	/*
+	 * For AWAIT: nios should be the same as number of inserts
+	 * and we add in nrqm (number of merges), which should give
+	 * us the total number of IOs sent to the block IO layer.
+	 */
+	fprintf(iostat_ofp, "%-11s ", make_dev_hdr(hdr, 11, dip));
+	fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[1] / dt);
+	fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[0] / dt);
+	fprintf(iostat_ofp, "%7.2lf ", (double)sp->ios[1] / dt);
+	fprintf(iostat_ofp, "%7.2lf ", (double)sp->ios[0] / dt);
+	fprintf(iostat_ofp, "%9.2lf ", (double)sp->sec[1] / dt);
+	fprintf(iostat_ofp, "%9.2lf ", (double)sp->sec[0] / dt);
+	fprintf(iostat_ofp, "%9.2lf ", (double)(sp->sec[1] / 2) / dt);
+	fprintf(iostat_ofp, "%9.2lf ", (double)(sp->sec[0] / 2) / dt);
+	fprintf(iostat_ofp, "%8.2lf ", avgrq_sz);
+	fprintf(iostat_ofp, "%8.2lf ", (double)sp->tot_qusz / dt);
+	fprintf(iostat_ofp, "%7.2lf ", await);
+	fprintf(iostat_ofp, "%7.2lf ", svctm);
+	fprintf(iostat_ofp, "%6.2lf", p_util);
+	if (all)
+		fprintf(iostat_ofp, "%8s\n", "TOTAL");
+	else {
+		fprintf(iostat_ofp, "%8.2lf\n", TO_SEC(stamp));
+		sp->rqm[0] = sp->rqm[1] = 0;
+		sp->ios[0] = sp->ios[1] = 0;
+		sp->sec[0] = sp->sec[1] = 0;
+		sp->wait = sp->svctm = 0;
+
+		sp->tot_qusz = sp->idle_time = 0.0;
 	}
 }
 
@@ -187,6 +191,9 @@ void iostat_dump_stats(__u64 stamp, int all)
 			if (p) p++;
 		}
 	}
+	if (!all && iostat_ofp)
+		fprintf(iostat_ofp, "\n");
+		
 }
 
 void iostat_check_time(__u64 stamp)
@@ -223,7 +230,7 @@ void iostat_issue(struct io *iop)
 	INC_STAT(dip, ios[rw]);
 	ADD_STAT(dip, sec[rw], iop->t.bytes >> 9);
 
-	update_idle_time(dip, now);
+	update_idle_time(dip, now, 0);
 	INC_STAT(dip, cur_dev);
 }
 
@@ -239,7 +246,7 @@ void iostat_complete(struct io *iop)
 		update_tot_qusz(dip, now);
 		DEC_STAT(dip, cur_qusz);
 
-		update_idle_time(dip, now);
+		update_idle_time(dip, now, 0);
 		DEC_STAT(dip, cur_dev);
 
 		ADD_STAT(dip, svctm, iop->t.time - d_iop->t.time);
