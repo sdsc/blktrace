@@ -1773,7 +1773,7 @@ static void show_usage(char *program)
 
 int main(int argc, char *argv[])
 {
-	static char default_debugfs_path[] = "/debug";
+	static char default_debugfs_path[] = "/sys/kernel/debug";
 	struct statfs st;
 	int i, c;
 	int stop_watch = 0;
