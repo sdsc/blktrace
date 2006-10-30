@@ -1872,8 +1872,14 @@ int main(int argc, char *argv[])
 
 	page_size = getpagesize();
 
-	if (net_mode == Net_server)
+	if (net_mode == Net_server) {
+		if (output_name) {
+			fprintf(stderr, "-o ignored in server mode\n");
+			output_name = NULL;
+		}
+
 		return net_server();
+	}
 
 	while (optind < argc) {
 		if (resize_devices(argv[optind++]) != 0)
