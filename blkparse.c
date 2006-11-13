@@ -272,7 +272,7 @@ static unsigned int act_mask = -1U;
 static int stats_printed;
 int data_is_native = -1;
 
-static int dump_fd;
+static FILE *dump_fp;
 static char *dump_binary;
 
 static unsigned int t_alloc_cache;
@@ -297,10 +297,10 @@ static volatile int done;
 static void output_binary(void *buf, int len)
 {
 	if (dump_binary) {
-		int n = write(dump_fd, buf, len);
-		if (n != len) {
+		size_t n = fwrite(buf, len, 1, dump_fp);
+		if (n != 1) {
 			perror(dump_binary);
-			close(dump_fd);
+			fclose(dump_fp);
 			dump_binary = NULL;
 		}
 	}
@@ -2252,6 +2252,7 @@ int main(int argc, char *argv[])
 	int i, c, ret, mode;
 	int act_mask_tmp = 0;
 	char *ofp_buffer = NULL;
+	char *bin_ofp_buffer = NULL;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -2382,10 +2383,15 @@ int main(int argc, char *argv[])
 	}
 
 	if (dump_binary) {
-		dump_fd = creat(dump_binary, 0666);
-		if (dump_fd < 0) {
+		dump_fp = fopen(dump_binary, "w");
+		if (!dump_fp) {
 			perror(dump_binary);
 			dump_binary = NULL;
+			return 1;
+		}
+		bin_ofp_buffer = malloc(128 * 1024);
+		if (setvbuf(dump_fp, bin_ofp_buffer, _IOFBF, 128 * 1024)) {
+			perror("setvbuf binary");
 			return 1;
 		}
 	}
@@ -2396,7 +2402,9 @@ int main(int argc, char *argv[])
 		ret = do_file();
 
 	show_stats();
-	if (text_output)
+	if (ofp_buffer)
 		free(ofp_buffer);
+	if (bin_ofp_buffer)
+		free(bin_ofp_buffer);
 	return ret;
 }
