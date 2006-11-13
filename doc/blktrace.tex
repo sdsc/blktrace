@@ -457,8 +457,10 @@ will help in understanding the command line options presented below.
   \item The format of the output data can be controlled via the \emph{-f}
   or \emph{-F} options -- see section~\ref{sec:blkparse-format} for details.
 
-  By default, blkparse sends formatted data to standard output. This
-  may be changed via the \emph{-o} option.
+  By default, blkparse sends formatted data to standard output. This may
+  be changed via the \emph{-o} option, or text output can be disabled
+  via the\emph{-O} option. A merged binary stream can be produced using
+  the \emph{-d} option.
 
 \end{itemize}
 
@@ -486,6 +488,7 @@ Short              & Long                       & Description \\ \hline\hline
 -h                 & --hash-by-name             & Hash processes by name, not by PID\\ \hline
 
 -o \emph{file}     & --output=\emph{file}       & Output file \\ \hline
+-O                 & --no-text-output           & Do \emph{not} produce text output, used for binary (-d) only \\ \hline
 
 -d \emph{file}     & --dump-binary=\emph{file}  & Binary output file \\ \hline
 
