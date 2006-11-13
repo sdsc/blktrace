@@ -2227,6 +2227,8 @@ static int handle(struct ms_stream *msp)
 	pci = get_cpu_info(pdi, msp->cpu);
 	pci->nelems++;
 
+	bit->time -= genesis_time;
+	pdi->last_reported_time = bit->time;
 	if (bit->action & (act_mask << BLK_TC_SHIFT))
 		dump_trace(bit, pci, pdi);
 
@@ -2255,6 +2257,12 @@ static int do_file(void)
 		for (cpu = 0; setup_file(pdi, cpu); cpu++)
 			;
 	}
+
+	/*
+	 * Get the initial time stamp
+	 */
+	if (ms_head)
+		genesis_time = ms_peek_time(ms_head);
 
 	/*
 	 * Keep processing traces while any are left
@@ -2560,9 +2568,13 @@ int main(int argc, char *argv[])
 		ret = do_file();
 
 	show_stats();
-	if (ofp_buffer)
+	if (ofp_buffer) {
+		fflush(ofp);
 		free(ofp_buffer);
-	if (bin_ofp_buffer)
+	}
+	if (bin_ofp_buffer) {
+		fflush(dump_fp);
 		free(bin_ofp_buffer);
+	}
 	return ret;
 }
