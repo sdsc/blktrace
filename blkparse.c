@@ -104,7 +104,7 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS	"a:A:i:o:b:stqw:f:F:vVhD:d:"
+#define S_OPTS  "a:A:b:D:d:f:F:hi:o:Oqstw:vV"
 static struct option l_opts[] = {
  	{
 		.name = "act-mask",
@@ -119,46 +119,22 @@ static struct option l_opts[] = {
 		.val = 'A'
 	},
 	{
-		.name = "input",
-		.has_arg = required_argument,
-		.flag = NULL,
-		.val = 'i'
-	},
-	{
-		.name = "output",
-		.has_arg = required_argument,
-		.flag = NULL,
-		.val = 'o'
-	},
-	{
 		.name = "batch",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'b'
 	},
 	{
-		.name = "per-program-stats",
-		.has_arg = no_argument,
-		.flag = NULL,
-		.val = 's'
-	},
-	{
-		.name = "track-ios",
-		.has_arg = no_argument,
-		.flag = NULL,
-		.val = 't'
-	},
-	{
-		.name = "quiet",
-		.has_arg = no_argument,
-		.flag = NULL,
-		.val = 'q'
-	},
-	{
-		.name = "stopwatch",
+		.name = "input-directory",
 		.has_arg = required_argument,
 		.flag = NULL,
-		.val = 'w'
+		.val = 'D'
+	},
+	{
+		.name = "dump-binary",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'd'
 	},
 	{
 		.name = "format",
@@ -179,6 +155,48 @@ static struct option l_opts[] = {
 		.val = 'h'
 	},
 	{
+		.name = "input",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'i'
+	},
+	{
+		.name = "output",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'o'
+	},
+	{
+		.name = "no-text-output",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'O'
+	},
+	{
+		.name = "quiet",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'q'
+	},
+	{
+		.name = "per-program-stats",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 's'
+	},
+	{
+		.name = "track-ios",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 't'
+	},
+	{
+		.name = "stopwatch",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'w'
+	},
+	{
 		.name = "verbose",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -189,18 +207,6 @@ static struct option l_opts[] = {
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 'V'
-	},
-	{
-		.name = "input-directory",
-		.has_arg = required_argument,
-		.flag = NULL,
-		.val = 'D'
-	},
-	{
-		.name = "dump-binary",
-		.has_arg = required_argument,
-		.flag = NULL,
-		.val = 'd'
 	},
 	{
 		.name = NULL,
@@ -276,6 +282,8 @@ static unsigned int bit_alloc_cache;
 static unsigned int rb_batch = RB_BATCH_DEFAULT;
 
 static int pipeline;
+
+static int text_output = 1;
 
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
@@ -1415,10 +1423,12 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 		       struct per_dev_info *pdi)
 {
-	if (t->action & BLK_TC_ACT(BLK_TC_PC))
-		dump_trace_pc(t, pci);
-	else
-		dump_trace_fs(t, pdi, pci);
+	if (text_output) {
+		if (t->action & BLK_TC_ACT(BLK_TC_PC))
+			dump_trace_pc(t, pci);
+		else
+			dump_trace_fs(t, pdi, pci);
+	}
 
 	if (!pdi->events)
 		pdi->first_reported_time = t->time;
@@ -2194,24 +2204,41 @@ static int find_stopwatch_interval(char *string)
 	return 0;
 }
 
-static char usage_str[] = \
-	"[ -i <input name> ] [-o <output name> [ -s ] [ -t ] [ -q ]\n" \
-	"[ -w start:stop ] [ -f output format ] [ -F format spec ] [ -v] \n\n" \
-	"\t-i Input file containing trace data, or '-' for stdin\n" \
-	"\t-D Directory to prepend to input file names\n" \
-	"\t-o Output file. If not given, output is stdout\n" \
-	"\t-d Output file. If specified, binary data is written to file\n" \
+#define S_OPTS  "a:A:b:D:d:f:F:hi:o:Oqstw:vV"
+static char usage_str[] =    "\n\n" \
+	"-i <file>           | --input=<file>\n" \
+	"[ -a <action field> | --act-mask=<action field> ]\n" \
+	"[ -A <action mask>  | --set-mask=<action mask> ]\n" \
+	"[ -b <traces>       | --batch=<traces> ]\n" \
+	"[ -d <file>         | --dump-binary=<file> ]\n" \
+	"[ -D <dir>          | --input-directory=<dir> ]\n" \
+	"[ -f <format>       | --format=<format> ]\n" \
+	"[ -F <spec>         | --format-spec=<spec> ]\n" \
+	"[ -h                | --hash-by-name ]\n" \
+	"[ -o <file>         | --output=<file> ]\n" \
+	"[ -O                | --no-text-output ]\n" \
+	"[ -q                | --quiet ]\n" \
+	"[ -s                | --per-program-stats ]\n" \
+	"[ -t                | --track-ios ]\n" \
+	"[ -w <time>         | --stopwatch=<time> ]\n" \
+	"[ -v                | --verbose ]\n" \
+	"[ -V                | --version ]\n\n" \
 	"\t-b stdin read batching\n" \
-	"\t-s Show per-program io statistics\n" \
-	"\t-h Hash processes by name, not pid\n" \
-	"\t-t Track individual ios. Will tell you the time a request took\n" \
-	"\t   to get queued, to get dispatched, and to get completed\n" \
-	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
-	"\t-w Only parse data between the given time interval in seconds.\n" \
-	"\t   If 'start' isn't given, blkparse defaults the start time to 0\n" \
+	"\t-d Output file. If specified, binary data is written to file\n" \
+	"\t-D Directory to prepend to input file names\n" \
 	"\t-f Output format. Customize the output format. The format field\n" \
 	"\t   identifies can be found in the documentation\n" \
 	"\t-F Format specification. Can be found in the documentation\n" \
+	"\t-h Hash processes by name, not pid\n" \
+	"\t-i Input file containing trace data, or '-' for stdin\n" \
+	"\t-o Output file. If not given, output is stdout\n" \
+	"\t-O Do NOT output text data\n" \
+	"\t-q Quiet. Don't display any stats at the end of the trace\n" \
+	"\t-s Show per-program io statistics\n" \
+	"\t-t Track individual ios. Will tell you the time a request took\n" \
+	"\t   to get queued, to get dispatched, and to get completed\n" \
+	"\t-w Only parse data between the given time interval in seconds.\n" \
+	"\t   If 'start' isn't given, blkparse defaults the start time to 0\n" \
 	"\t-v More verbose for marginal errors\n" \
 	"\t-V Print program version info\n\n";
 
@@ -2222,9 +2249,9 @@ static void usage(char *prog)
 
 int main(int argc, char *argv[])
 {
-	char *ofp_buffer;
 	int i, c, ret, mode;
 	int act_mask_tmp = 0;
+	char *ofp_buffer = NULL;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -2259,6 +2286,9 @@ int main(int argc, char *argv[])
 			break;
 		case 'o':
 			output_name = optarg;
+			break;
+		case 'O':
+			text_output = 0;
 			break;
 		case 'b':
 			rb_batch = atoi(optarg);
@@ -2327,26 +2357,28 @@ int main(int argc, char *argv[])
 
 	setlocale(LC_NUMERIC, "en_US");
 
-	if (!output_name) {
-		ofp = fdopen(STDOUT_FILENO, "w");
-		mode = _IOLBF;
-	} else {
-		char ofname[128];
+	if (text_output) {
+		if (!output_name) {
+			ofp = fdopen(STDOUT_FILENO, "w");
+			mode = _IOLBF;
+		} else {
+			char ofname[128];
 
-		snprintf(ofname, sizeof(ofname) - 1, "%s", output_name);
-		ofp = fopen(ofname, "w");
-		mode = _IOFBF;
-	}
+			snprintf(ofname, sizeof(ofname) - 1, "%s", output_name);
+			ofp = fopen(ofname, "w");
+			mode = _IOFBF;
+		}
 
-	if (!ofp) {
-		perror("fopen");
-		return 1;
-	}
+		if (!ofp) {
+			perror("fopen");
+			return 1;
+		}
 
-	ofp_buffer = malloc(4096);	
-	if (setvbuf(ofp, ofp_buffer, mode, 4096)) {
-		perror("setvbuf");
-		return 1;
+		ofp_buffer = malloc(4096);
+		if (setvbuf(ofp, ofp_buffer, mode, 4096)) {
+			perror("setvbuf");
+			return 1;
+		}
 	}
 
 	if (dump_binary) {
@@ -2364,6 +2396,7 @@ int main(int argc, char *argv[])
 		ret = do_file();
 
 	show_stats();
-	free(ofp_buffer);
+	if (text_output)
+		free(ofp_buffer);
 	return ret;
 }
