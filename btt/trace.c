@@ -58,9 +58,11 @@ void handle_remap(struct io *a_iop)
 	struct d_info *dip = __dip_find(be32_to_cpu(rp->device));
 
 	io_setup(a_iop, IOP_A, 0);
-	q_iop = dip_find_sec(dip, IOP_Q, be64_to_cpu(rp->sector));
-	if (q_iop)
-		update_q2a(q_iop, a_iop->t.time - q_iop->t.time);
+	if (dip) {
+		q_iop = dip_find_sec(dip, IOP_Q, be64_to_cpu(rp->sector));
+		if (q_iop)
+			update_q2a(q_iop, a_iop->t.time - q_iop->t.time);
+	}
 	io_release(a_iop);
 }
 
