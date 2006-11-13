@@ -2000,109 +2000,267 @@ static int read_events(int fd, int always_block, int *fdblock)
 	return events;
 }
 
+/*
+ * Managing input streams
+ */
+
+struct ms_stream {
+	struct ms_stream *next;
+	struct trace *first, *last;
+	struct per_dev_info *pdi;
+	unsigned int cpu;
+};
+
+#define MS_HASH(d, c) ((MAJOR(d) & 0xff) ^ (MINOR(d) & 0xff) ^ (cpu & 0xff))
+
+struct ms_stream *ms_head;
+struct ms_stream *ms_hash[256];
+
+static void ms_sort(struct ms_stream *msp);
+static int ms_prime(struct ms_stream *msp);
+
+static inline struct trace *ms_peek(struct ms_stream *msp)
+{
+	return (msp == NULL) ? NULL : msp->first;
+}
+
+static inline __u64 ms_peek_time(struct ms_stream *msp)
+{
+	return ms_peek(msp)->bit->time;
+}
+
+static inline void ms_resort(struct ms_stream *msp)
+{
+	if (msp->next && ms_peek_time(msp) > ms_peek_time(msp->next)) {
+		ms_head = msp->next;
+		msp->next = NULL;
+		ms_sort(msp);
+	}
+}
+
+static inline void ms_deq(struct ms_stream *msp)
+{
+	msp->first = msp->first->next;
+	if (!msp->first) {
+		msp->last = NULL;
+		if (!ms_prime(msp)) {
+			ms_head = msp->next;
+			msp->next = NULL;
+			return;
+		}
+	}
+
+	ms_resort(msp);
+}
+
+static void ms_sort(struct ms_stream *msp)
+{
+	__u64 msp_t = ms_peek_time(msp);
+	struct ms_stream *this_msp = ms_head;
+
+	if (this_msp == NULL)
+		ms_head = msp;
+	else if (msp_t < ms_peek_time(this_msp)) {
+		msp->next = this_msp;
+		ms_head = msp;
+	}
+	else {
+		while (this_msp->next && ms_peek_time(this_msp->next) < msp_t)
+			this_msp = this_msp->next;
+
+		msp->next = this_msp->next;
+		this_msp->next = msp;
+	}
+}
+
+static int ms_prime(struct ms_stream *msp)
+{
+	__u32 magic;
+	unsigned int i;
+	struct trace *t;
+	struct per_dev_info *pdi = msp->pdi;
+	struct per_cpu_info *pci = get_cpu_info(pdi, msp->cpu);
+	struct blk_io_trace *bit = NULL;
+	int ret, pdu_len, ndone = 0;
+
+	for (i = 0; !is_done() && pci->fd >= 0 && i < rb_batch; i++) {
+		bit = bit_alloc();
+		ret = read_data(pci->fd, bit, sizeof(*bit), 1, &pci->fdblock);
+		if (ret)
+			goto err;
+
+		if (data_is_native == -1 && check_data_endianness(bit->magic))
+			goto err;
+
+		magic = get_magic(bit);
+		if ((magic & 0xffffff00) != BLK_IO_TRACE_MAGIC) {
+			fprintf(stderr, "Bad magic %x\n", magic);
+			goto err;
+
+		}
+
+		pdu_len = get_pdulen(bit);
+		if (pdu_len) {
+			void *ptr = realloc(bit, sizeof(*bit) + pdu_len);
+			ret = read_data(pci->fd, ptr + sizeof(*bit), pdu_len,
+							     1, &pci->fdblock);
+			if (ret) {
+				free(ptr);
+				goto err;
+			}
+
+			bit = ptr;
+		}
+
+		trace_to_cpu(bit);
+		if (verify_trace(bit))
+			goto err;
+
+		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
+			add_ppm_hash(bit->pid, (char *) bit + sizeof(*bit));
+			output_binary(bit, sizeof(*bit) + bit->pdu_len);
+			bit_free(bit);
+
+			i -= 1;
+			continue;
+		}
+
+		if (bit->time > pdi->last_read_time)
+			pdi->last_read_time = bit->time;
+
+		t = t_alloc();
+		memset(t, 0, sizeof(*t));
+		t->bit = bit;
+
+		if (msp->first == NULL)
+			msp->first = msp->last = t;
+		else {
+			msp->last->next = t;
+			msp->last = t;
+		}
+
+		ndone++;
+	}
+
+	return ndone;
+
+err:
+	if (bit) bit_free(bit);
+
+	cpu_mark_offline(pdi, pci->cpu);
+	close(pci->fd);
+	pci->fd = -1;
+
+	return ndone;
+}
+
+static struct ms_stream *ms_alloc(struct per_dev_info *pdi, int cpu)
+{
+	struct ms_stream *msp = malloc(sizeof(*msp));
+
+	msp->next = NULL;
+	msp->first = msp->last = NULL;
+	msp->pdi = pdi;
+	msp->cpu = cpu;
+
+	if (ms_prime(msp))
+		ms_sort(msp);
+
+	return msp;
+}
+
+static int setup_file(struct per_dev_info *pdi, int cpu)
+{
+	int len = 0;
+	struct stat st;
+	char *p, *dname;
+	struct per_cpu_info *pci = get_cpu_info(pdi, cpu);
+
+	pci->cpu = cpu;
+	pci->fdblock = -1;
+
+	p = strdup(pdi->name);
+	dname = dirname(p);
+	if (strcmp(dname, ".")) {
+		input_dir = dname;
+		p = strdup(pdi->name);
+		strcpy(pdi->name, basename(p));
+	}
+	free(p);
+
+	if (input_dir)
+		len = sprintf(pci->fname, "%s/", input_dir);
+
+	snprintf(pci->fname + len, sizeof(pci->fname)-1-len,
+		 "%s.blktrace.%d", pdi->name, pci->cpu);
+	if (stat(pci->fname, &st) < 0 || !st.st_size)
+		return 0;
+
+	pci->fd = open(pci->fname, O_RDONLY);
+	if (pci->fd < 0) {
+		perror(pci->fname);
+		return 0;
+	}
+
+	printf("Input file %s added\n", pci->fname);
+	cpu_mark_online(pdi, pci->cpu);
+
+	pdi->nfiles++;
+	ms_alloc(pdi, pci->cpu);
+
+	return 1;
+}
+
+static int handle(struct ms_stream *msp)
+{
+	struct trace *t;
+	struct per_dev_info *pdi;
+	struct per_cpu_info *pci;
+	struct blk_io_trace *bit;
+
+	t = ms_peek(msp);
+	if (t->bit->time > stopwatch_end)
+		return 0;
+
+	bit = t->bit;
+	pdi = msp->pdi;
+	pci = get_cpu_info(pdi, msp->cpu);
+	pci->nelems++;
+
+	if (bit->action & (act_mask << BLK_TC_SHIFT))
+		dump_trace(bit, pci, pdi);
+
+	ms_deq(msp);
+
+	if (text_output)
+		trace_rb_insert_last(pdi, t);
+	else {
+		bit_free(t->bit);
+		t_free(t);
+	}
+
+	return 1;
+}
+
 static int do_file(void)
 {
-	struct per_cpu_info *pci;
+	int i, cpu;
 	struct per_dev_info *pdi;
-	int i, j, events, events_added;
 
 	/*
 	 * first prepare all files for reading
 	 */
 	for (i = 0; i < ndevices; i++) {
 		pdi = &devices[i];
-		pdi->nfiles = 0;
-
-		for (j = 0;; j++) {
-			struct stat st;
-			int len = 0;
-			char *p, *dname;
-
-			pci = get_cpu_info(pdi, j);
-			pci->cpu = j;
-			pci->fd = -1;
-			pci->fdblock = -1;
-	
-			p = strdup(pdi->name);
-			dname = dirname(p);
-			if (strcmp(dname, ".")) {
-				input_dir = dname;
-				p = strdup(pdi->name);
-				strcpy(pdi->name, basename(p));
-			}
-			free(p);
-
-			if (input_dir)
-				len = sprintf(pci->fname, "%s/", input_dir);
-
-			snprintf(pci->fname + len, sizeof(pci->fname)-1-len,
-				 "%s.blktrace.%d", pdi->name, pci->cpu);
-			if (stat(pci->fname, &st) < 0)
-				break;
-			if (st.st_size) {
-				pci->fd = open(pci->fname, O_RDONLY);
-				if (pci->fd < 0) {
-					perror(pci->fname);
-					continue;
-				}
-			}
-
-			printf("Input file %s added\n", pci->fname);
-			pdi->nfiles++;
-			cpu_mark_online(pdi, pci->cpu);
-		}
+		for (cpu = 0; setup_file(pdi, cpu); cpu++)
+			;
 	}
 
 	/*
-	 * now loop over the files reading in the data
+	 * Keep processing traces while any are left
 	 */
-	do {
-		unsigned long long youngest;
-
-		events_added = 0;
-		last_allowed_time = -1ULL;
-		read_sequence++;
-
-		for (i = 0; i < ndevices; i++) {
-			pdi = &devices[i];
-			pdi->last_read_time = -1ULL;
-
-			for (j = 0; j < pdi->nfiles; j++) {
-
-				pci = get_cpu_info(pdi, j);
-
-				if (pci->fd == -1)
-					continue;
-
-				pci->smallest_seq_read = -1;
-
-				events = read_events(pci->fd, 1, &pci->fdblock);
-				if (events <= 0) {
-					cpu_mark_offline(pdi, pci->cpu);
-					close(pci->fd);
-					pci->fd = -1;
-					continue;
-				}
-
-				if (pdi->last_read_time < last_allowed_time)
-					last_allowed_time = pdi->last_read_time;
-
-				events_added += events;
-			}
-		}
-
-		if (sort_entries(&youngest))
-			break;
-
-		if (youngest > stopwatch_end)
-			break;
-
-		show_entries_rb(0);
-
-	} while (events_added);
-
-	if (rb_sort_entries)
-		show_entries_rb(1);
+	while (!is_done() && ms_head && handle(ms_head))
+		;
 
 	return 0;
 }
