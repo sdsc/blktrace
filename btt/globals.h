@@ -137,6 +137,12 @@ struct stats {
 	int cur_qusz, cur_dev;
 };
 
+struct stats_t {
+	double n;
+	double rqm_s[2], ios_s[2], sec_s[2];
+	double avgrq_sz, avgqu_sz, await, svctm, p_util;
+};
+
 struct d_info {
 	struct list_head all_head, hash_head;
 	void *heads;

@@ -92,7 +92,7 @@ void update_idle_time(struct d_info *dip, double now, int force)
 	dip->stats.last_dev_change = dip->all_stats.last_dev_change = now;
 }
 
-void __dump_stats(__u64 stamp, int all, struct d_info *dip)
+void __dump_stats(__u64 stamp, int all, struct d_info *dip, struct stats_t *asp)
 {
 	char hdr[16];
 	struct stats *sp;
@@ -154,20 +154,63 @@ void __dump_stats(__u64 stamp, int all, struct d_info *dip)
 
 		sp->tot_qusz = sp->idle_time = 0.0;
 	}
+
+	if (asp) {
+		int i;
+
+		asp->n += 1.0;
+		for (i = 0; i < 2; i++) {
+			asp->rqm_s[i] += ((double)sp->rqm[i] / dt);
+			asp->ios_s[i] += ((double)sp->ios[i] / dt);
+			asp->sec_s[i] += ((double)sp->sec[i] / dt);
+		}
+		asp->avgrq_sz += avgrq_sz;
+		asp->avgqu_sz += (double)sp->tot_qusz / dt;
+		asp->await += await;
+		asp->svctm += svctm;
+		asp->p_util += p_util;
+	}
+}
+
+void __dump_stats_t(__u64 stamp, struct stats_t *asp, int all)
+{
+	if (asp->n < 2.0) return;	// What's the point?
+
+	fprintf(iostat_ofp, "%-11s ", "TOTAL");
+	fprintf(iostat_ofp, "%8.2lf ", asp->rqm_s[0]);
+	fprintf(iostat_ofp, "%8.2lf ", asp->rqm_s[1]);
+	fprintf(iostat_ofp, "%7.2lf ", asp->ios_s[0]);
+	fprintf(iostat_ofp, "%7.2lf ", asp->ios_s[1]);
+	fprintf(iostat_ofp, "%9.2lf ", asp->sec_s[0]);
+	fprintf(iostat_ofp, "%9.2lf ", asp->sec_s[1]);
+	fprintf(iostat_ofp, "%9.2lf ", asp->sec_s[0] / 2.0);
+	fprintf(iostat_ofp, "%9.2lf ", asp->sec_s[1] / 2.0);
+	fprintf(iostat_ofp, "%8.2lf ", asp->avgrq_sz / asp->n);
+	fprintf(iostat_ofp, "%8.2lf ", asp->avgqu_sz / asp->n);
+	fprintf(iostat_ofp, "%7.2lf ", asp->await / asp->n);
+	fprintf(iostat_ofp, "%7.2lf ", asp->svctm / asp->n);
+	fprintf(iostat_ofp, "%6.2lf", asp->p_util / asp->n);
+	if (all)
+		fprintf(iostat_ofp, "%8s\n", "TOTAL");
+	else 
+		fprintf(iostat_ofp, "%8.2lf\n", TO_SEC(stamp));
 }
 
 void iostat_dump_stats(__u64 stamp, int all)
 {
 	struct d_info *dip;
+	struct stats_t as;
 
+	memset(&as, 0, sizeof(struct stats_t));
 	if (all)
 		dump_hdr();
+
 	if (devices == NULL) {
 		struct list_head *p;
 
 		__list_for_each(p, &all_devs) {
 			dip = list_entry(p, struct d_info, all_head);
-			__dump_stats(stamp, all, dip);
+			__dump_stats(stamp, all, dip, &as);
 		}
 	}
 	else {
@@ -177,12 +220,15 @@ void iostat_dump_stats(__u64 stamp, int all)
 
 		while (p && ((i = sscanf(p, "%u,%u", &mjr, &mnr)) == 2)) {
 			dip = __dip_find((__u32)((mjr << MINORBITS) | mnr));
-			__dump_stats(stamp, all, dip);
+			__dump_stats(stamp, all, dip, &as);
 
 			p = strchr(p, ';');
 			if (p) p++;
 		}
 	}
+
+	__dump_stats_t(stamp, &as, all);
+
 	if (!all && iostat_ofp)
 		fprintf(iostat_ofp, "\n");
 }
