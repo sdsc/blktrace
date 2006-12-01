@@ -38,7 +38,6 @@ int retry_requeue(struct io *r_iop)
 	if (!ready_requeue(r_iop, r_iop))
 		return 0;
 
-	del_retry(r_iop);
 	run_requeue(r_iop);
 	return 1;
 }
@@ -60,6 +59,7 @@ void run_requeue(struct io *r_iop)
 	run_unissue(d_iop, &del_head);
 	__unlink(d_iop, r_iop);
 
+	del_retry(r_iop);
 	list_add_tail(&r_iop->f_head, &del_head);
 	release_iops(&del_head);
 }

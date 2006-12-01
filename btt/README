@@ -20,6 +20,8 @@ Usage: btt
 	[ -q <output name> | --q2c-latencies=<output name> ]
 	[ -s <output name> | --seeks=<output name> ]
 	[ -S <interval>    | --iostat-interval=<interval> ]
+	[ -t <sec>         | --time-start=<sec> ]
+	[ -T <sec>         | --time-end=<sec> ]
 	[ -V               | --version ]
 	[ -v               | --verbose ]
 
@@ -57,6 +59,12 @@ The -p option will generate a file that contains a list of all IO
 The -s option instructs btt to output seek data, the argument provided
 is the basis for file names output. There are two files per device,
 read seeks and write seeks.
+
+The -t/-T options allow one to set a start and/or end time for analyzing
+- analyzing will only be done for traces after -t's argument and before
+-T's argument. (-t and -T are optional, so if you specify just -t,
+analysis will occur for all traces after the time specified. Similarly,
+if only -T is specified, analysis stops after -T's seconds.)
 
 Overview
 --------

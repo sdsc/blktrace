@@ -27,7 +27,7 @@
 #include <fcntl.h>
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hi:I:l:M:o:p:q:s:S:Vv"
+#define S_OPTS	"d:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -108,6 +108,18 @@ static struct option l_opts[] = {
 		.val = 'S'
 	},
 	{
+		.name = "time-start",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 't'
+	},
+	{
+		.name = "time-end",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'T'
+	},
+	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -138,6 +150,8 @@ static char usage_str[] = \
 	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
+	"[ -t <sec>         | --time-start=<sec> ]\n" \
+	"[ -T <sec>         | --time-end=<sec> ]\n" \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n\n";
 
@@ -196,6 +210,14 @@ void handle_args(int argc, char *argv[])
 			iostat_interval = (__u64)interval * 1000000000LL;
 			break;
 		}
+		case 't':
+			sscanf(optarg, "%lf", &t_astart);
+			time_bounded = 1;
+			break;
+		case 'T':
+			sscanf(optarg, "%lf", &t_aend);
+			time_bounded = 1;
+			break;
 		case 'v':
 			verbose = 1;
 			break;

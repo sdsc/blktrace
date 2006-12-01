@@ -74,8 +74,11 @@ static void run_comp(struct io *c_iop, struct io *top, struct list_head *rmhd)
 			dump_level--;
 		}
 	}
+
 	dump_iop(per_io_ofp, c_iop, NULL, 0);
+
 	LIST_DEL(&c_iop->c_pending);
+	del_retry(c_iop);
 	list_add_tail(&c_iop->f_head, rmhd);
 }
 
@@ -122,7 +125,6 @@ int retry_complete(struct io *c_iop)
 	if (!ready_complete(c_iop, c_iop))
 		return 0;
 
-	del_retry(c_iop);
 	run_complete(c_iop);
 	return 1;
 }

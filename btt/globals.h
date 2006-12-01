@@ -169,7 +169,7 @@ struct io {
 	struct list_head down_head, up_head, c_pending, retry;
 	struct list_head down_list, up_list;
 	__u64 bytes_left;
-	int run_ready, linked, self_remap, displayed;
+	int run_ready, linked, self_remap, displayed, on_retry_list;
 };
 
 /* bt_timeline.c */
@@ -178,7 +178,7 @@ extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;;
-extern int verbose, ifd, dump_level;
+extern int verbose, ifd, dump_level, done, time_bounded;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
 extern struct list_head all_devs, all_procs, retries;
@@ -188,6 +188,7 @@ extern struct region_info all_regions;
 extern struct list_head free_ios;
 extern __u64 iostat_interval, iostat_last_stamp;
 extern time_t genesis, last_vtrace;
+extern double t_astart, t_aend;
 
 /* args.c */
 void handle_args(int argc, char *argv[]);
@@ -262,6 +263,7 @@ int seeki_mode(void *handle, struct mode *mp);
 void dump_iop(FILE *ofp, struct io *to_iop, struct io *from_iop, int indent);
 void release_iops(struct list_head *del_head);
 void add_trace(struct io *iop);
+void do_retries(void);
 
 /* trace_complete.c */
 void trace_complete(struct io *c_iop);

@@ -27,17 +27,19 @@ char bt_timeline_version[] = "0.99";
 
 char *devices, *exes, *input_name, *output_name, *seek_name;
 char *d2c_name, *q2c_name, *per_io_name;
-double range_delta = 0.1;
 FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
-int ifd, verbose = 0;
+int ifd, verbose, done, time_bounded;
+double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;
-__u64 last_q = (__u64)-1;
 unsigned int n_devs;
 time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
 LIST_HEAD(free_ios);
+
+double range_delta = 0.1;
+__u64 last_q = (__u64)-1;
 
 struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
@@ -67,7 +69,7 @@ int process(void)
 	struct io *iop = io_alloc();
 
 	genesis = last_vtrace = time(NULL);
-	while (!do_read(ifd, &iop->t, sizeof(struct blk_io_trace))) {
+	while (!done && !do_read(ifd, &iop->t, sizeof(struct blk_io_trace))) {
 		t = convert_to_cpu(&iop->t);
 		if (t->pdu_len > 0) {
 			iop->pdu = malloc(t->pdu_len);
@@ -79,7 +81,9 @@ int process(void)
 		add_trace(iop);
 		iop = io_alloc();
 	}
+
 	io_release(iop);
+	do_retries();
 
 	if (iostat_ofp) {
 		fprintf(iostat_ofp, "\n");

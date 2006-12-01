@@ -85,7 +85,7 @@ void release_iops(struct list_head *del_head)
 	}
 }
 
-static void do_retries(void)
+void do_retries(void)
 {
 	struct io *iop;
 	struct list_head *p, *q;
@@ -135,7 +135,7 @@ static void __add_trace(struct io *iop)
 
 void add_trace(struct io *iop)
 {
-	if (iop->t.time == 15717167961) dbg_ping();
+
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 		char *slash = strchr(iop->pdu, '/');
 
@@ -147,6 +147,18 @@ void add_trace(struct io *iop)
 	}
 	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))
 		io_release(iop);
-	else
+	else {
+		if (time_bounded) {
+			if (BIT_TIME(iop->t.time) < t_astart) {
+				io_release(iop);
+				return;
+			}
+			else if (BIT_TIME(iop->t.time) > t_aend) {
+				io_release(iop);
+				done = 1;
+				return;
+			}
+		}
 		__add_trace(iop);
+	}
 }

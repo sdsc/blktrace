@@ -259,12 +259,18 @@ static inline void __unlink(struct io *down_iop, struct io *up_iop)
 
 static inline void add_retry(struct io *iop)
 {
-	list_add_tail(&iop->retry, &retries);
+	if (!iop->on_retry_list) {
+		list_add_tail(&iop->retry, &retries);
+		iop->on_retry_list = 1;
+	}
 }
 
 static inline void del_retry(struct io *iop)
 {
-	LIST_DEL(&iop->retry);
+	if (iop->on_retry_list) {
+		LIST_DEL(&iop->retry);
+		iop->on_retry_list = 0;
+	}
 }
 
 static inline __u64 tdelta(struct io *iop1, struct io *iop2)
