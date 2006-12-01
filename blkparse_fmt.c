@@ -11,7 +11,7 @@
 
 #include "blktrace.h"
 
-#define VALID_SPECS	"ABCDFGMPQRSTUWX"
+#define VALID_SPECS	"ABCDFGIMPQRSTUWX"
 
 #define HEADER		"%D %2c %8s %5T.%9t %5p %2a %3d "
 
