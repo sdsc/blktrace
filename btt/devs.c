@@ -46,7 +46,7 @@ struct d_info *__dip_find(__u32 device)
 	return NULL;
 }
 
-struct d_info *dip_add(__u32 device, struct io *iop, int link)
+struct d_info *dip_add(__u32 device, struct io *iop)
 {
 	struct d_info *dip = __dip_find(device);
 
@@ -66,9 +66,7 @@ struct d_info *dip_add(__u32 device, struct io *iop, int link)
 		n_devs++;
 	}
 
-	if (link)
-		dip_rb_ins(dip, iop);
-
+	iop->linked = dip_rb_ins(dip, iop);
 	return dip;
 }
 
@@ -94,6 +92,11 @@ void dip_foreach(struct io *iop, enum iop_type type,
 	}
 	else
 		dip_rb_fe(iop->dip, type, iop, fnc, NULL);
+}
+
+void dip_foreach_list(struct io *iop, enum iop_type type, struct list_head *hd)
+{
+	dip_rb_fe(iop->dip, type, iop, NULL, hd);
 }
 
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec)

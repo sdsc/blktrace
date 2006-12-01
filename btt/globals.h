@@ -62,11 +62,12 @@ enum iop_type {
 	IOP_Q = 0,
 	IOP_X = 1,
 	IOP_A = 2,
-	IOP_M = 3,
-	IOP_I = 4,
-	IOP_D = 5,
-	IOP_C = 6,
-	IOP_R = 7,
+	IOP_L = 3,	// Betwen-device linkage
+	IOP_M = 4,
+	IOP_I = 5,
+	IOP_D = 6,
+	IOP_C = 7,
+	IOP_R = 8,
 };
 #define N_IOP_TYPES	(IOP_R + 1)
 
@@ -164,19 +165,23 @@ struct io {
 	struct blk_io_trace t;
 	void *pdu;
 	enum iop_type type;
-	int linked;
+
+	struct list_head down_head, up_head, c_pending, retry;
+	struct list_head down_list, up_list;
+	__u64 bytes_left;
+	int run_ready, linked, self_remap, displayed;
 };
 
 /* bt_timeline.c */
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
-extern char *seek_name, *iostat_name, *d2c_name, *q2c_name;
+extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern double range_delta;
-extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp;
-extern int verbose, ifd;
+extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;;
+extern int verbose, ifd, dump_level;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
-extern struct list_head all_devs, all_procs;
+extern struct list_head all_devs, all_procs, retries;
 extern struct avgs_info all_avgs;
 extern __u64 last_q;
 extern struct region_info all_regions;
@@ -193,16 +198,17 @@ struct devmap *dev_map_find(__u32 device);
 
 /* devs.c */
 void init_dev_heads(void);
-struct d_info *dip_add(__u32 device, struct io *iop, int link);
+struct d_info *dip_add(__u32 device, struct io *iop);
 void dip_rem(struct io *iop);
 struct d_info *__dip_find(__u32 device);
+void dip_foreach_list(struct io *iop, enum iop_type type, struct list_head *hd);
 void dip_foreach(struct io *iop, enum iop_type type, 
 		 void (*fnc)(struct io *iop, struct io *this), int rm_after);
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
 
 /* dip_rb.c */
-void rb_insert(struct rb_root *root, struct io *iop);
+int rb_insert(struct rb_root *root, struct io *iop);
 struct io *rb_find_sec(struct rb_root *root, __u64 sec);
 void rb_foreach(struct rb_node *n, struct io *iop, 
 		      void (*fnc)(struct io *iop, struct io *this),
@@ -253,6 +259,45 @@ long long seeki_median(void *handle);
 int seeki_mode(void *handle, struct mode *mp);
 
 /* trace.c */
+void dump_iop(FILE *ofp, struct io *to_iop, struct io *from_iop, int indent);
+void release_iops(struct list_head *del_head);
 void add_trace(struct io *iop);
+
+/* trace_complete.c */
+void trace_complete(struct io *c_iop);
+int retry_complete(struct io *c_iop);
+int ready_complete(struct io *c_iop, struct io *top);
+void run_complete(struct io *c_iop);
+
+/* trace_im.c */
+void trace_insert(struct io *i_iop);
+void trace_merge(struct io *m_iop);
+int ready_im(struct io *im_iop, struct io *top);
+void run_im(struct io *im_iop, struct io *top, struct list_head *del_head);
+void run_unim(struct io *im_iop, struct list_head *del_head);
+
+/* trace_issue.c */
+void trace_issue(struct io *d_iop);
+int ready_issue(struct io *d_iop, struct io *top);
+void run_issue(struct io *d_iop, struct io *top, struct list_head *del_head);
+void run_unissue(struct io *d_iop, struct list_head *del_head);
+
+/* trace_queue.c */
+void trace_queue(struct io *q_iop);
+int ready_queue(struct io *q_iop, struct io *top);
+void run_queue(struct io *q_iop, struct io *top, struct list_head *del_head);
+void run_unqueue(struct io *q_iop, struct list_head *del_head);
+
+/* trace_remap.c */
+void trace_remap(struct io *a_iop);
+int ready_remap(struct io *a_iop, struct io *top);
+void run_remap(struct io *a_iop, struct io *top, struct list_head *del_head);
+void run_unremap(struct io *a_iop, struct list_head *del_head);
+
+/* trace_requeue.c */
+void trace_requeue(struct io *r_iop);
+int retry_requeue(struct io *r_iop);
+int ready_requeue(struct io *r_iop, struct io *top);
+void run_requeue(struct io *r_iop);
 
 #include "inlines.h"

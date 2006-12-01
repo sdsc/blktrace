@@ -21,7 +21,7 @@
 #include <stdio.h>
 #include "globals.h"
 
-void rb_insert(struct rb_root *root, struct io *iop)
+int rb_insert(struct rb_root *root, struct io *iop)
 {
 	struct io *__iop;
 	struct rb_node *parent = NULL;
@@ -39,11 +39,12 @@ void rb_insert(struct rb_root *root, struct io *iop)
 		else if (s > __s)
 			p = &(*p)->rb_right;
 		else
-			p = &(*p)->rb_right;
+			return 0;
 	}
 
 	rb_link_node(&iop->rb_node, parent, p);
 	rb_insert_color(&iop->rb_node, root);
+	return 1;
 }
 
 struct io *rb_find_sec(struct rb_root *root, __u64 sec)

@@ -46,24 +46,24 @@ void output_section_hdr(FILE *ofp, char *hdr)
 
 void output_hdr(FILE *ofp, char *hdr)
 {
-	fprintf(ofp, "%12s %13s %13s %13s %11s\n",
+	fprintf(ofp, "%15s %13s %13s %13s %11s\n",
 	        hdr, "MIN", "AVG", "MAX", "N" );
-	fprintf(ofp, "------------ ------------- ------------- ------------- -----------\n");
+	fprintf(ofp, "--------------- ------------- ------------- ------------- -----------\n");
 }
 
 void __output_avg(FILE *ofp, char *hdr, struct avg_info *ap)
 {
 	if (ap->n > 0) {
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
-		fprintf(ofp, "%-12s %13.9f %13.9f %13.9f %11d\n", hdr,
+		fprintf(ofp, "%-15s %13.9f %13.9f %13.9f %11d\n", hdr,
 			BIT_TIME(ap->min), ap->avg, BIT_TIME(ap->max), ap->n);
 	}
 }
 
 void output_hdr2(FILE *ofp, char*hdr)
 {
-	fprintf(ofp, "%12s %13s %13s %13s %13s %13s %13s\n", hdr, "Q2Q", "Q2A", "Q2I", "I2D", "D2C", "Q2C");
-	fprintf(ofp, "------------ ------------- ------------- ------------- ------------- ------------- -------------\n");
+	fprintf(ofp, "%15s %13s %13s %13s %13s %13s %13s\n", hdr, "Q2Q", "Q2A", "Q2I", "I2D", "D2C", "Q2C");
+	fprintf(ofp, "--------------- ------------- ------------- ------------- ------------- ------------- -------------\n");
 }
 
 static inline char *avg2string(struct avg_info *ap, char *string)
@@ -81,7 +81,7 @@ void __output_avg2(FILE *ofp, char *hdr, struct avgs_info *ap)
 
 	if (ap->q2q.n > 0 || ap->q2a.n > 0 || ap->q2i.n > 0 ||
 			ap->i2d.n > 0 || ap->d2c.n > 0 || ap->q2c.n > 0) {
-		fprintf(ofp, "%-12s %13s %13s %13s %13s %13s %13s\n", hdr,
+		fprintf(ofp, "%-15s %13s %13s %13s %13s %13s %13s\n", hdr,
 			avg2string(&ap->q2q,c1), avg2string(&ap->q2a,c2),
 			avg2string(&ap->q2i,c3), avg2string(&ap->i2d,c4),
 			avg2string(&ap->d2c,c5), avg2string(&ap->q2c,c6));
@@ -95,8 +95,8 @@ void __pip_output_avg2(struct p_info *pip, void *arg)
 
 void __dip_output_avg2(struct d_info *dip, void *arg)
 {
-	char dev_info[12];
-	__output_avg2((FILE *)arg, make_dev_hdr(dev_info, 12, dip), &dip->avgs);
+	char dev_info[15];
+	__output_avg2((FILE *)arg, make_dev_hdr(dev_info, 15, dip), &dip->avgs);
 }
 
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip)
@@ -119,9 +119,9 @@ void __output_dip_avg(struct d_info *dip, void *arg)
 	struct __oda *odap = arg;
 	ai_dip_t ap = odap->func(dip);
 	if (ap->n > 0) {
-		char dev_info[12];
+		char dev_info[15];
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
-		__output_avg(odap->ofp, make_dev_hdr(dev_info, 12, dip), ap);
+		__output_avg(odap->ofp, make_dev_hdr(dev_info, 15, dip), ap);
 	}
 }
 
@@ -136,7 +136,7 @@ void output_dip_avg(FILE *ofp, char *hdr, ai_dip_t (*func)(struct d_info *))
 void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 {
 	double blks_avg;
-	char scratch[12];
+	char scratch[15];
 	double ratio, q2c_n = dip->avgs.q2c.n, d2c_n = dip->n_ds;
 
 	if (q2c_n > 0.0 && d2c_n > 0.0) {
@@ -144,7 +144,7 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 		blks_avg = (double)dip->avgs.blks.total / d2c_n;
 		fprintf((FILE *)arg, 
 			"%10s | %8llu %8llu %7.1lf | %8llu %8llu %8llu %8llu\n",
-			make_dev_hdr(scratch, 12, dip),
+			make_dev_hdr(scratch, 15, dip),
 			(unsigned long long)dip->avgs.q2c.n,
 			(unsigned long long)dip->n_ds,
 			ratio,
@@ -206,7 +206,7 @@ char *d2c_v_q2C(struct d_info *dip, char *s)
 
 void __output_dip_prep_ohead(struct d_info *dip, void *arg)
 {
-	char dev_info[12];
+	char dev_info[15];
 	char s1[16], s2[16], s3[16];
 
 	if ((dip->avgs.q2i.n > 0 && dip->avgs.i2d.n > 0 &&
@@ -216,7 +216,7 @@ void __output_dip_prep_ohead(struct d_info *dip, void *arg)
 		CALC_AVG(&dip->avgs.d2c);
 
 		fprintf((FILE *)arg, "%10s | %6s %6s %6s\n",
-			make_dev_hdr(dev_info, 12, dip),
+			make_dev_hdr(dev_info, 15, dip),
 			q2i_v_q2C(dip, s1), i2d_v_q2C(dip, s2),
 			d2c_v_q2C(dip, s3));
 	}
@@ -235,7 +235,7 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 	double mean;
 	int i, nmodes;
 	long long nseeks;
-	char dev_info[12];
+	char dev_info[15];
 	long long median;
 	struct mode m;
 	FILE *ofp = arg;
@@ -247,7 +247,7 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 		nmodes = seeki_mode(dip->seek_handle, &m);
 
 		fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
-			make_dev_hdr(dev_info, 12, dip), nseeks, mean, median, 
+			make_dev_hdr(dev_info, 15, dip), nseeks, mean, median, 
 			nmodes > 0 ? m.modes[0] : 0, m.most_seeks);
 		for (i = 1; i < nmodes; i++)
 			fprintf(ofp, " %lld", m.modes[i]);
@@ -277,8 +277,8 @@ void __output_pip_avg(struct p_info *pip, void *arg)
 	ai_pip_t ap = opap->func(pip);
 
 	if (ap->n > 0) {
-		char proc_name[12];
-		snprintf(proc_name, 12, pip->name);
+		char proc_name[15];
+		snprintf(proc_name, 15, pip->name);
 
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
 		__output_avg(opap->ofp, proc_name, ap);

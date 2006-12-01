@@ -145,4 +145,25 @@ static inline int list_empty(const struct list_head *head)
 	return head->next == head;
 }
 
+/**
+ * list_first - Returns first entry on list, or NULL if empty
+ * @head: the list
+ */
+static inline struct list_head *list_first(const struct list_head *head)
+{
+	return list_empty(head) ? NULL : head->next;
+}
+
+/**
+ * list_move_tail - delete from one list and add as another's tail
+ * @list: the entry to move
+ * @head: the head that will follow our entry
+ */
+static inline void list_move_tail(struct list_head *list,
+				  struct list_head *head)
+{
+        __list_del(list->prev, list->next);
+        list_add_tail(list, head);
+}
+
 #endif

@@ -34,7 +34,7 @@ static inline void update_range(struct list_head *head_p,
 	if (*cur_p == NULL)
 		*cur_p = new_cur(time);
 	else {
-		__u64 my_delta = time - (*cur_p)->end;
+		__u64 my_delta = (time > (*cur_p)->end) ? time - (*cur_p)->end : 1;
 		if (BIT_TIME(my_delta) >= range_delta) {
 			list_add_tail(&(*cur_p)->head, head_p);
 			*cur_p = new_cur(time);
@@ -83,7 +83,7 @@ static inline void avg_unupdate(struct avg_info *ap, __u64 t)
 static inline void update_lq(__u64 *last_q, struct avg_info *avg, __u64 time)
 {
 	if (*last_q != ((__u64)-1))
-		avg_update(avg, time - *last_q);
+		avg_update(avg, (time > *last_q) ? time - *last_q : 1);
 	*last_q = time;
 }
 
@@ -104,28 +104,37 @@ static inline struct io *io_alloc(void)
 	else
 		iop = malloc(sizeof(struct io));
 
-	return memset(iop, 0, sizeof(struct io));
+	memset(iop, 0, sizeof(struct io));
+
+	return iop;
 }
 
 static inline void io_free(struct io *iop)
 {
+#	if defined(DEBUG)
+		memset(iop, 0, sizeof(*iop));
+#	endif
 	list_add_tail(&iop->f_head, &free_ios);
 }
 
-static inline void io_setup(struct io *iop, enum iop_type type, int link)
+static inline int io_setup(struct io *iop, enum iop_type type)
 {
 	iop->type = type;
-	iop->dip = dip_add(iop->t.device, iop, link);
-	iop->pip = find_process(iop->t.pid, NULL);
-	iop->linked = link;
+	iop->dip = dip_add(iop->t.device, iop);
+	if (iop->linked) {
+		iop->pip = find_process(iop->t.pid, NULL);
+		INIT_LIST_HEAD(&iop->down_list);
+		INIT_LIST_HEAD(&iop->up_list);
+		iop->bytes_left = iop->t.bytes;
+	}
+
+	return iop->linked;
 }
 
 static inline void io_release(struct io *iop)
 {
-	if (iop->linked) {
+	if (iop->linked)
 		dip_rem(iop);
-		iop->linked = 0;
-	}
 	if (iop->pdu) 
 		free(iop->pdu);
 	io_free(iop);
@@ -195,9 +204,9 @@ static inline void *dip_rb_mkhds(void)
 	return memset(malloc(len), 0, len);
 }
 
-static inline void dip_rb_ins(struct d_info *dip, struct io *iop)
+static inline int dip_rb_ins(struct d_info *dip, struct io *iop)
 {
-	rb_insert(__get_root(dip, iop->type), iop);
+	return rb_insert(__get_root(dip, iop->type), iop);
 }
 
 static inline void dip_rb_rem(struct io *iop)
@@ -217,4 +226,50 @@ static inline struct io *dip_rb_find_sec(struct d_info *dip,
 		                         enum iop_type type, __u64 sec)
 {
 	return rb_find_sec(__get_root(dip, type), sec);
+}
+
+static inline struct io *list_first_down(struct io *iop)
+{
+	struct list_head *p = list_first(&iop->down_list);
+	return p ? list_entry(p, struct io, up_head) : NULL;
+}
+
+static inline struct io *list_first_up(struct io *iop)
+{
+	struct list_head *p = list_first(&iop->up_list);
+	return p ? list_entry(p, struct io, down_head) : NULL;
+}
+
+static inline int list_empty_up(struct io *iop)
+{
+	return list_empty(&iop->up_list);
+}
+
+static inline void __link(struct io *down_iop, struct io *up_iop)
+{
+	list_add_tail(&down_iop->up_head, &up_iop->down_list);
+	list_add_tail(&up_iop->down_head, &down_iop->up_list);
+}
+
+static inline void __unlink(struct io *down_iop, struct io *up_iop)
+{
+	LIST_DEL(&down_iop->up_head);
+	LIST_DEL(&up_iop->down_head);
+}
+
+static inline void add_retry(struct io *iop)
+{
+	list_add_tail(&iop->retry, &retries);
+}
+
+static inline void del_retry(struct io *iop)
+{
+	LIST_DEL(&iop->retry);
+}
+
+static inline __u64 tdelta(struct io *iop1, struct io *iop2)
+{
+	__u64 t1 = iop1->t.time;
+	__u64 t2 = iop2->t.time;
+	return (t1 < t2) ? (t2 - t1) : 1;
 }

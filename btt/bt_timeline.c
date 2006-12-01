@@ -26,9 +26,9 @@
 char bt_timeline_version[] = "0.99";
 
 char *devices, *exes, *input_name, *output_name, *seek_name;
-char *d2c_name, *q2c_name;
+char *d2c_name, *q2c_name, *per_io_name;
 double range_delta = 0.1;
-FILE *ranges_ofp, *avgs_ofp;
+FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
 int ifd, verbose = 0;
 unsigned long n_traces;
 struct avgs_info all_avgs;

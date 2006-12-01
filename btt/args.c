@@ -27,7 +27,7 @@
 #include <fcntl.h>
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hi:I:l:M:o:q:s:S:Vv"
+#define S_OPTS	"d:D:e:hi:I:l:M:o:p:q:s:S:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "range-delta",
@@ -84,6 +84,12 @@ static struct option l_opts[] = {
 		.val = 'o'
 	},
 	{
+		.name = "per-io-dump",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'p'
+	},
+	{
 		.name = "q2c-latencies",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -128,6 +134,7 @@ static char usage_str[] = \
 	"[ -l <output name> | --d2c-latencies=<output name> ]\n" \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
+	"[ -p <output name> | --per-io-dump=<output name> ]\n" \
 	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
@@ -173,6 +180,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'o':
 			output_name = strdup(optarg);
+			break;
+		case 'p':
+			per_io_name = strdup(optarg);
 			break;
 		case 'q':
 			q2c_name = strdup(optarg);
@@ -239,6 +249,14 @@ void handle_args(int argc, char *argv[])
 		iostat_ofp = fopen(iostat_name, "w");
 		if (iostat_ofp == NULL) {
 			perror(iostat_name);
+			exit(1);
+		}
+	}
+
+	if (per_io_name != NULL) {
+		per_io_ofp = fopen(per_io_name, "w");
+		if (per_io_ofp == NULL) {
+			perror(per_io_name);
 			exit(1);
 		}
 	}
