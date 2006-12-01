@@ -94,7 +94,8 @@ int process(void)
 	latency_clean();
 
 	if (verbose) {
-		double tps = (double)n_traces / (double)(time(NULL) - genesis);
+		double tps = (double)n_traces / 
+					(double)((time(NULL) + 1) - genesis);
 		printf("%10lu traces @ %.1lf Ktps\n", n_traces, tps/1000.0);
 	}
 
