@@ -12,21 +12,19 @@ Requirements
 ------------
 
 blktrace was integrated into the mainline kernel between 2.6.16 and 2.6.17-rc1.
-The target trace needs to run on a kernel at least that new. The blktrace
-repository contains a kernel patch against 2.6.16 and will continue to do
-so until 2.6.17 is released. If you forgot where you got it, the url is:
+The target trace needs to run on a kernel at least that new.
 
-rsync://rsync.kernel.org/pub/scm/linux/kernel/git/axboe/blktrace.git
+git://git.kernel.dk/data/git/blktrace.git
 
 If you don't have git, you can get hourly snapshots from:
 
-http://www.kernel.org/pub/linux/kernel/people/axboe/blktrace/
+http://brick.kernel.dk/snaps/
 
 The snapshots include the full git object database as well. kernel.org has
 excessively long mirror times, so if you have git installed, you can pull
 the master tree from:
 
-git://brick.kernel.dk/data/git/blktrace.git
+git://git.kernel.dk/data/git/blktrace.git
 
 For browsing the repo over http and viewing history etc, you can direct
 your browser to:
