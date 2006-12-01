@@ -49,6 +49,14 @@ enum {
 };
 
 /*
+ * Notify events.
+ */
+enum blktrace_notify {
+	__BLK_TN_PROCESS = 0,		/* establish pid/name mapping */
+	__BLK_TN_TIMESTAMP,		/* include system clock */
+};
+
+/*
  * Trace actions in full. Additionally, read or write is masked
  */
 #define BLK_TA_QUEUE		(__BLK_TA_QUEUE | BLK_TC_ACT(BLK_TC_QUEUE))
@@ -66,6 +74,9 @@ enum {
 #define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
 #define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
 #define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
+
+#define BLK_TN_PROCESS		(__BLK_TN_PROCESS | BLK_TC_ACT(BLK_TC_NOTIFY))
+#define BLK_TN_TIMESTAMP	(__BLK_TN_TIMESTAMP | BLK_TC_ACT(BLK_TC_NOTIFY))
 
 #define BLK_IO_TRACE_MAGIC	0x65617400
 #define BLK_IO_TRACE_VERSION	0x07

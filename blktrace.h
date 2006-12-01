@@ -55,6 +55,7 @@ struct per_cpu_info {
 
 extern FILE *ofp;
 extern int data_is_native;
+extern struct timespec abs_start_time;
 
 #define CHECK_MAGIC(t)		(((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 #define SUPPORTED_VERSION	(0x07)

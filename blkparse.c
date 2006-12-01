@@ -288,6 +288,9 @@ static int text_output = 1;
 #define is_done()	(*(volatile int *)(&done))
 static volatile int done;
 
+struct timespec		abs_start_time;
+static unsigned long long start_timestamp;
+
 #define JHASH_RANDOM	(0x3af5f2ee)
 
 #define CPUS_PER_LONG	(8 * sizeof(unsigned long))
@@ -553,6 +556,40 @@ static void add_ppm_hash(pid_t pid, const char *name)
 		strcpy(ppm->comm, name);
 		ppm->hash_next = ppm_hash_table[hash_idx];
 		ppm_hash_table[hash_idx] = ppm;
+	}
+}
+
+static void handle_notify(struct blk_io_trace *bit)
+{
+	void	*payload = (caddr_t) bit + sizeof(*bit);
+	__u32	two32[2];
+
+	switch (bit->action) {
+	case BLK_TN_PROCESS:
+		add_ppm_hash(bit->pid, payload);
+		break;
+
+	case BLK_TN_TIMESTAMP:
+		if (bit->pdu_len != sizeof(two32))
+			return;
+		memcpy(two32, payload, sizeof(two32));
+		if (!data_is_native) {
+			two32[0] = be32_to_cpu(two32[0]);
+			two32[1] = be32_to_cpu(two32[1]);
+		}
+		start_timestamp = bit->time;
+		abs_start_time.tv_sec  = two32[0];
+		abs_start_time.tv_nsec = two32[1];
+		if (abs_start_time.tv_nsec < 0) {
+			abs_start_time.tv_sec--;
+			abs_start_time.tv_nsec += 1000000000;
+		}
+
+		break;
+
+	default:
+		/* Ignore unknown notify events */
+		;
 	}
 }
 
@@ -1654,6 +1691,25 @@ static void find_genesis(void)
 
 		t = t->next;
 	}
+
+	/* The time stamp record will usually be the first
+	 * record in the trace, but not always.
+	 */
+	if (start_timestamp
+	 && start_timestamp != genesis_time) {
+		long delta = genesis_time - start_timestamp;
+
+		abs_start_time.tv_sec  += SECONDS(delta);
+		abs_start_time.tv_nsec += NANO_SECONDS(delta);
+		if (abs_start_time.tv_nsec < 0) {
+			abs_start_time.tv_nsec += 1000000000;
+			abs_start_time.tv_sec -= 1;
+		} else
+		if (abs_start_time.tv_nsec > 1000000000) {
+			abs_start_time.tv_nsec -= 1000000000;
+			abs_start_time.tv_sec += 1;
+		}
+	}
 }
 
 static inline int check_stopwatch(struct blk_io_trace *bit)
@@ -1975,7 +2031,7 @@ static int read_events(int fd, int always_block, int *fdblock)
 		 * not a real trace, so grab and handle it here
 		 */
 		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
-			add_ppm_hash(bit->pid, (char *) bit + sizeof(*bit));
+			handle_notify(bit);
 			output_binary(bit, sizeof(*bit) + bit->pdu_len);
 			continue;
 		}
@@ -2117,7 +2173,7 @@ static int ms_prime(struct ms_stream *msp)
 			goto err;
 
 		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
-			add_ppm_hash(bit->pid, (char *) bit + sizeof(*bit));
+			handle_notify(bit);
 			output_binary(bit, sizeof(*bit) + bit->pdu_len);
 			bit_free(bit);
 

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "blktrace.h"
 
@@ -83,6 +84,31 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 		rwbs[i++] = 'M';
 
 	rwbs[i] = '\0';
+}
+
+static const char *
+print_time(unsigned long long timestamp)
+{
+	static char	timebuf[128];
+	struct tm	*tm;
+	time_t		sec;
+	unsigned long	nsec;
+
+	sec  = abs_start_time.tv_sec + SECONDS(timestamp);
+	nsec = abs_start_time.tv_nsec + NANO_SECONDS(timestamp);
+	if (nsec >= 1000000000) {
+		nsec -= 1000000000;
+		sec += 1;
+	}
+
+	tm = localtime(&sec);
+	snprintf(timebuf, sizeof(timebuf),
+			"%02u:%02u:%02u.%06lu",
+			tm->tm_hour,
+			tm->tm_min,
+			tm->tm_sec,
+			nsec / 1000);
+	return timebuf;
 }
 
 static inline int pdu_rest_is_zero(unsigned char *pdu, int len)
@@ -221,10 +247,12 @@ static void print_field(char *act, struct per_cpu_info *pci,
 		}
 		fprintf(ofp, strcat(format, "llu"), elapsed / 1000);
 		break;
-	case 'U': {
+	case 'U':
 		fprintf(ofp, strcat(format, "u"), get_pdu_int(t));
 		break;
-	}
+	case 'z':
+		fprintf(ofp, strcat(format, "s"), print_time(t->time));
+		break;
 	default:
 		fprintf(ofp,strcat(format, "c"), field);
 		break;
