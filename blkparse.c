@@ -2249,8 +2249,10 @@ static int setup_file(struct per_dev_info *pdi, int cpu)
 
 	snprintf(pci->fname + len, sizeof(pci->fname)-1-len,
 		 "%s.blktrace.%d", pdi->name, pci->cpu);
-	if (stat(pci->fname, &st) < 0 || !st.st_size)
+	if (stat(pci->fname, &st) < 0)
 		return 0;
+	if (!st.st_size)
+		return 1;
 
 	pci->fd = open(pci->fname, O_RDONLY);
 	if (pci->fd < 0) {
