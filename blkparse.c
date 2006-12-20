@@ -282,6 +282,7 @@ static unsigned int bit_alloc_cache;
 static unsigned int rb_batch = RB_BATCH_DEFAULT;
 
 static int pipeline;
+static char *pipename;
 
 static int text_output = 1;
 
@@ -2331,18 +2332,12 @@ static int do_file(void)
 	return 0;
 }
 
-static int do_stdin(void)
+static void do_pipe(int fd)
 {
 	unsigned long long youngest;
-	int fd, events, fdblock;
+	int events, fdblock;
 
 	last_allowed_time = -1ULL;
-	fd = dup(STDIN_FILENO);
-	if (fd == -1) {
-		perror("dup stdin");
-		return -1;
-	}
-
 	fdblock = -1;
 	while ((events = read_events(fd, 0, &fdblock)) > 0) {
 		read_sequence++;
@@ -2362,7 +2357,23 @@ static int do_stdin(void)
 
 	if (rb_sort_entries)
 		show_entries_rb(1);
+}
 
+static int do_fifo(void)
+{
+	int fd;
+
+	if (!strcmp(pipename, "-"))
+		fd = dup(STDIN_FILENO);
+	else
+		fd = open(pipename, O_RDONLY);
+
+	if (fd == -1) {
+		perror("dup stdin");
+		return -1;
+	}
+
+	do_pipe(fd);
 	close(fd);
 	return 0;
 }
@@ -2424,6 +2435,18 @@ static int find_stopwatch_interval(char *string)
 			stopwatch_start, stopwatch_end);
 		return 1;
 	}
+
+	return 0;
+}
+
+static int is_pipe(const char *str)
+{
+	struct stat st;
+
+	if (!strcmp(str, "-"))
+		return 1;
+	if (!stat(str, &st) && S_ISFIFO(st.st_mode))
+		return 1;
 
 	return 0;
 }
@@ -2501,9 +2524,10 @@ int main(int argc, char *argv[])
 			act_mask_tmp = i;
 			break;
 		case 'i':
-			if (!strcmp(optarg, "-") && !pipeline)
+			if (is_pipe(optarg) && !pipeline) {
 				pipeline = 1;
-			else if (resize_devices(optarg) != 0)
+				pipename = strdup(optarg);
+			} else if (resize_devices(optarg) != 0)
 				return 1;
 			break;
 		case 'D':
@@ -2559,9 +2583,10 @@ int main(int argc, char *argv[])
 	}
 
 	while (optind < argc) {
-		if (!strcmp(argv[optind], "-") && !pipeline)
+		if (is_pipe(argv[optind]) && !pipeline) {
 			pipeline = 1;
-		else if (resize_devices(argv[optind]) != 0)
+			pipename = strdup(optarg);
+		} else if (resize_devices(argv[optind]) != 0)
 			return 1;
 		optind++;
 	}
@@ -2621,7 +2646,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (pipeline)
-		ret = do_stdin();
+		ret = do_fifo();
 	else
 		ret = do_file();
 
