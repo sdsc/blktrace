@@ -2654,7 +2654,9 @@ int main(int argc, char *argv[])
 	else
 		ret = do_file();
 
-	show_stats();
+	if (!ret)
+		show_stats();
+
 	if (ofp_buffer) {
 		fflush(ofp);
 		free(ofp_buffer);
