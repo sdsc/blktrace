@@ -1615,6 +1615,7 @@ static void show_device_and_cpu_stats(void)
 	int i, j, pci_events;
 	char line[3 + 8/*cpu*/ + 2 + 32/*dev*/ + 3];
 	char name[32];
+	double ratio;
 
 	for (pdi = devices, i = 0; i < ndevices; i++, pdi++) {
 
@@ -1674,10 +1675,13 @@ static void show_device_and_cpu_stats(void)
 			get_dev_name(pdi, line, sizeof(line)), pdi->events);
 
 		collect_pdi_skips(pdi);
+		if (!pdi->skips && !pdi->events)
+			ratio = 0.0;
+		else
+			ratio = 100.0 * ((double)pdi->seq_skips /
+					(double)(pdi->events + pdi->seq_skips));
 		fprintf(ofp, "Skips: %'lu forward (%'llu - %5.1lf%%)\n",
-			pdi->skips,pdi->seq_skips,
-			100.0 * ((double)pdi->seq_skips /
-				(double)(pdi->events + pdi->seq_skips)));
+			pdi->skips, pdi->seq_skips, ratio);
 	}
 }
 
