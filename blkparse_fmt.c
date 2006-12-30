@@ -335,7 +335,7 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	case 'D': 	/* Issue */
 	case 'I': 	/* Insert */
 	case 'Q': 	/* Queue */
-	case 'W':	/* Bounce */
+	case 'B':	/* Bounce */
 		if (t->action & BLK_TC_ACT(BLK_TC_PC)) {
 			char *p;
 			fprintf(ofp, "%u ", t->bytes);
@@ -356,9 +356,8 @@ static void process_default(char *act, struct per_cpu_info *pci,
 		}
 		break;
 
-	case 'B':	/* Back merge */
+	case 'M':	/* Back merge */
 	case 'F':	/* Front merge */
-	case 'M':	/* Front or back merge */
 	case 'G':	/* Get request */
 	case 'S':	/* Sleep request */
 		fprintf(ofp, "%llu + %u [%s]\n", (unsigned long long) t->sector,

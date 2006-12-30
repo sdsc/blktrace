@@ -527,21 +527,19 @@ Short              & Long                       & Description \\ \hline\hline
   \item[Q -- queued] This notes intent to queue io at the given location.
   No real requests exists yet.
 
-  \item[W -- bounced] The data pages attached to this \emph{bio} are
+  \item[B -- bounced] The data pages attached to this \emph{bio} are
   not reachable by the hardware and must be bounced to a lower memory
   location. This causes a big slowdown in io performance, since the data
   must be copied to/from kernel buffers. Usually this can be fixed with
   using better hardware - either a better io controller, or a platform
   with an IOMMU.
 
-  \item[B -- back merge] A previously inserted request exists that ends
+  \item[M -- back merge] A previously inserted request exists that ends
   on the boundary of where this io begins, so the io scheduler can merge
   them together.
 
   \item[F -- front merge] Same as the back merge, except this io ends
   where a previously inserted requests starts.
-
-  \item[M -- front or back merge] One of the above.
 
   \item[G -- get request] To send any type of request to a block device,
   a \emph{struct request} container must be allocated first.
@@ -625,18 +623,18 @@ The following table shows the various actions which may be output.
 \begin{tabular}{|l|l|}\hline
 Act & Description \\ \hline\hline
 A & IO was remapped to a different device \\ \hline
-B & IO back merged with request on queue \\ \hline
+B & IO bounced \\ \hline
 C & IO completion \\ \hline
 D & IO issued to driver \\ \hline
 F & IO front merged with request on queue \\ \hline
 G & Get request \\ \hline
 I & IO inserted onto request queue \\ \hline
+M & IO back merged with request on queue \\ \hline
 P & Plug request \\ \hline
 Q & IO handled by request queue code \\ \hline
 S & Sleep request \\ \hline
 T & Unplug due to timeout \\ \hline
 U & Unplug request \\ \hline
-W & IO bounced \\ \hline
 X & Split \\ \hline
 \end{tabular}
 
@@ -690,7 +688,7 @@ The default output for all event types includes this header.
   \item[D -- issued]
   \item[I -- inserted]
   \item[Q -- queued]
-  \item[W -- bounced] If a payload is present, the number of payload bytes
+  \item[B -- bounced] If a payload is present, the number of payload bytes
   is output, followed by the payload in hexadecimal between parenthesis.
 
   If no payload is present, the sector and number of blocks are presented
@@ -699,10 +697,9 @@ The default output for all event types includes this header.
   either case, it is followed by the command associated with the event
   (surrounded by square brackets).
 
-  \item[B -- back merge]
+  \item[M -- back merge]
   \item[F -- front merge]
   \item[G -- get request]
-  \item[M -- front or back merge]
   \item[S -- sleep] The starting sector and number of blocks is output
   (with an intervening plus (+) character), followed by the command
   associated with the event (surrounded by square brackets).
