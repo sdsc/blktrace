@@ -2167,6 +2167,7 @@ static int ms_prime(struct ms_stream *msp)
 							     1, &pci->fdblock);
 			if (ret) {
 				free(ptr);
+				bit = NULL;
 				goto err;
 			}
 
