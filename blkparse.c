@@ -2308,9 +2308,27 @@ static int handle(struct ms_stream *msp)
 	return 1;
 }
 
+/*
+ * Check if we need to sanitize the name. We allow 'foo', or if foo.blktrace.X
+ * is given, then strip back down to 'foo' to avoid missing files.
+ */
+static int name_fixup(char *name)
+{
+	char *b;
+
+	if (!name)
+		return 1;
+
+	b = strstr(name, ".blktrace.");
+	if (b)
+		*b = '\0';
+
+	return 0;
+}
+
 static int do_file(void)
 {
-	int i, cpu;
+	int i, cpu, ret;
 	struct per_dev_info *pdi;
 
 	/*
@@ -2318,6 +2336,10 @@ static int do_file(void)
 	 */
 	for (i = 0; i < ndevices; i++) {
 		pdi = &devices[i];
+		ret = name_fixup(pdi->name);
+		if (ret)
+			return ret;
+
 		for (cpu = 0; setup_file(pdi, cpu); cpu++)
 			;
 	}
