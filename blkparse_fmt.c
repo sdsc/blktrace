@@ -49,14 +49,7 @@ int add_format_spec(char *option)
 		return 1;
 	}
 
-	/*
-	 * Set both merges (front and back)
-	 */
-	if (spec == 'M') {
-		override_format['B'] = strdup(option);
-		override_format['M'] = strdup(option);
-	} else
-		override_format[spec] = strdup(option);
+	override_format[spec] = strdup(option);
 
 	return 0;
 }
