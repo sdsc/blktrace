@@ -20,83 +20,82 @@
  */
 #include "globals.h"
 
+struct params {
+	struct io *c_iop;
+	struct list_head *rmhd;
+};
+
+void __run_issue(struct io *im_iop, struct io *d_iop, void *param)
+{
+	struct params *p = param;
+
+	update_i2d(im_iop, tdelta(im_iop, d_iop));
+	run_im(im_iop, p->c_iop, p->rmhd);
+	dump_iop(d_iop, 0);
+	list_add_tail(&d_iop->f_head, p->rmhd);
+}
+
+void __run_unissue(struct io *im_iop, struct io *d_iop, void *param)
+{
+	struct params *p = param;
+
+	unupdate_i2d(im_iop, tdelta(im_iop, d_iop));
+	run_unim(im_iop, p->rmhd);
+	list_add_tail(&d_iop->f_head, p->rmhd);
+}
+
+void run_issue(struct io *d_iop, struct io *c_iop, void *param)
+{
+	struct params p = {
+		.c_iop = c_iop,
+		.rmhd = (struct list_head *)param
+	};
+	bilink_for_each_down(__run_issue, d_iop, &p, 1);
+}
+
+void run_unissue(struct io *d_iop, struct list_head *rmhd)
+{
+	struct params p = {
+		.c_iop = NULL,
+		.rmhd = rmhd
+	};
+	bilink_for_each_down(__run_unissue, d_iop, &p, 1);
+}
+
+int ready_issue(struct io *d_iop, struct io *c_iop)
+{
+	if (d_iop->bytes_left > 0) {
+		LIST_HEAD(head);
+		struct io *im_iop;
+		struct list_head *p, *q;
+
+		dip_foreach_list(d_iop, IOP_I, &head);
+		dip_foreach_list(d_iop, IOP_M, &head);
+		list_for_each_safe(p, q, &head) {
+			im_iop = list_entry(p, struct io, f_head);
+			LIST_DEL(&im_iop->f_head);
+
+			if (ready_im(im_iop, c_iop)) {
+				ASSERT(d_iop->bytes_left >= im_iop->t.bytes);
+				bilink(im_iop, d_iop);
+				dip_rem(im_iop);
+				d_iop->bytes_left -= im_iop->t.bytes;
+			}
+		}
+	}
+
+	return d_iop->bytes_left == 0;
+}
+
 void trace_issue(struct io *d_iop)
 {
-	if (!io_setup(d_iop, IOP_D)) {
+	if (io_setup(d_iop, IOP_D)) {
+		if (seek_name)
+			seeki_add(d_iop->dip->seek_handle, d_iop);
+		iostat_issue(d_iop);
+		d_iop->dip->n_ds++;
+	}
+	else
 		io_release(d_iop);
-		return;
-	}
 
-	if (seek_name)
-		seeki_add(d_iop->dip->seek_handle, d_iop);
-	iostat_issue(d_iop);
-	d_iop->dip->n_ds++;
-}
-
-int ready_issue(struct io *d_iop, struct io *top)
-{
-	LIST_HEAD(head);
-	struct io *im_iop;
-	struct list_head *p, *q;
-	__u64 bl = d_iop->bytes_left;
-
-	dip_foreach_list(d_iop, IOP_I, &head);
-	dip_foreach_list(d_iop, IOP_M, &head);
-	list_for_each_safe(p, q, &head) {
-		im_iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&im_iop->f_head);
-
-		if (!ready_im(im_iop, top))
-			return 0;
-
-		bl -= im_iop->bytes_left;
-	}
-
-	return bl == 0;
-}
-
-void run_issue(struct io *d_iop, struct io *top, struct list_head *del_head)
-{
-	LIST_HEAD(head);
-	struct list_head *p, *q;
-	struct io *im_iop;
-
-	dip_foreach_list(d_iop, IOP_I, &head);
-	dip_foreach_list(d_iop, IOP_M, &head);
-	list_for_each_safe(p, q, &head) {
-		im_iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&im_iop->f_head);
-
-		update_i2d(im_iop, tdelta(im_iop, d_iop));
-
-		__link(im_iop, d_iop);
-		run_im(im_iop, top, del_head);
-		__unlink(im_iop, d_iop);
-	}
-
-	dump_iop(per_io_ofp, d_iop, NULL, 0);
-	list_add_tail(&d_iop->f_head, del_head);
-}
-
-void run_unissue(struct io *d_iop, struct list_head *del_head)
-{
-	LIST_HEAD(head);
-	struct io *im_iop;
-	struct list_head *p, *q;
-
-	iostat_unissue(d_iop);
-
-	dip_foreach_list(d_iop, IOP_I, &head);
-	dip_foreach_list(d_iop, IOP_M, &head);
-	list_for_each_safe(p, q, &head) {
-		im_iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&im_iop->f_head);
-
-		__link(im_iop, d_iop);
-		unupdate_i2d(im_iop, tdelta(im_iop, d_iop));
-		run_unim(im_iop, del_head);
-		__unlink(im_iop, d_iop);
-	}
-
-	list_add_tail(&d_iop->f_head, del_head);
 }

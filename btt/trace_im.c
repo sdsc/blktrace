@@ -20,58 +20,99 @@
  */
 #include "globals.h"
 
+struct params {
+	struct io *c_iop;
+	struct list_head *rmhd;
+};
+
+void __run_im(struct io *q_iop, struct io *im_iop, void *param)
+{
+	struct params *p = param;
+	run_queue(q_iop, p->c_iop, p->rmhd);
+	dump_iop(im_iop, 0);
+	list_add_tail(&im_iop->f_head, p->rmhd);
+}
+
+void __run_unim(struct io *q_iop, struct io *im_iop, void *param)
+{
+	struct params *p = param;
+	if (q_iop->bytes_left == 0) {
+		q_iop->linked = dip_rb_ins(q_iop->dip, q_iop);
+		ASSERT(q_iop->linked);
+#if defined(DEBUG)
+		rb_tree_size++;
+#endif
+	}
+
+	q_iop->bytes_left += im_iop->t.bytes;
+	unupdate_q2i(q_iop, tdelta(q_iop, im_iop));
+	list_add_tail(&im_iop->f_head, p->rmhd);
+}
+
+void run_im(struct io *im_iop, struct io *c_iop, void *param)
+{
+	struct params p = {
+		.c_iop = c_iop,
+		.rmhd = (struct list_head *)param
+	};
+	bilink_for_each_down(__run_im, im_iop, &p, 1);
+}
+
+void run_unim(struct io *im_iop, struct list_head *rmhd)
+{
+	struct params p = {
+		.c_iop = NULL,
+		.rmhd = rmhd
+	};
+	bilink_for_each_down(__run_unim, im_iop, &p, 1);
+}
+
+int ready_im(struct io *im_iop, struct io *c_iop)
+{
+	if (im_iop->bytes_left > 0) {
+		__u64 xfer;
+		LIST_HEAD(head);
+		struct io *q_iop;
+		struct list_head *p, *q;
+
+		dip_foreach_list(im_iop, IOP_Q, &head);
+		list_for_each_safe(p, q, &head) {
+			q_iop = list_entry(p, struct io, f_head);
+			LIST_DEL(&q_iop->f_head);
+
+			if (ready_queue(q_iop, c_iop)) {
+				update_q2i(q_iop, tdelta(q_iop, im_iop));
+
+				bilink(q_iop, im_iop);
+				dip_rem(q_iop);
+
+				xfer = min(im_iop->bytes_left, 
+							    q_iop->bytes_left);
+				im_iop->bytes_left -= xfer;
+				q_iop->bytes_left -= xfer;
+
+				if (q_iop->bytes_left == 0)
+					dip_rem(q_iop);
+			}
+		}
+	}
+
+	return im_iop->bytes_left == 0;
+}
+
 void trace_insert(struct io *i_iop)
 {
-	if (!io_setup(i_iop, IOP_I)) {
+	if (io_setup(i_iop, IOP_I))
+		iostat_insert(i_iop);
+	else
 		io_release(i_iop);
-		return;
-	}
-	iostat_insert(i_iop);
+
 }
 
 void trace_merge(struct io *m_iop)
 {
-	if (!io_setup(m_iop, IOP_M)) {
+	if (io_setup(m_iop, IOP_M))
+		iostat_merge(m_iop);
+	else
 		io_release(m_iop);
-		return;
-	}
-	iostat_merge(m_iop);
-}
-
-int ready_im(struct io *im_iop, struct io *top)
-{
-	struct io *q_iop = dip_find_sec(im_iop->dip, IOP_Q, BIT_START(im_iop));
-
-	if (q_iop) {
-		ASSERT(q_iop->bytes_left >= im_iop->bytes_left);
-		return ready_queue(q_iop, top);
-	}
-
-	return 0;
-}
-
-void run_im(struct io *im_iop, struct io *top, struct list_head *del_head)
-{
-	struct io *q_iop = dip_find_sec(im_iop->dip, IOP_Q, BIT_START(im_iop));
-
-	ASSERT(q_iop);
-	update_q2i(q_iop, tdelta(q_iop, im_iop));
-
-	__link(q_iop, im_iop);
-	run_queue(q_iop, top, del_head);
-	__unlink(q_iop, im_iop);
-
-	dump_iop(per_io_ofp, im_iop, NULL, 0);
-	list_add_tail(&im_iop->f_head, del_head);
-}
-
-void run_unim(struct io *im_iop, struct list_head *del_head)
-{
-	struct io *q_iop = dip_find_sec(im_iop->dip, IOP_Q, BIT_START(im_iop));
-
-	__link(q_iop, im_iop);
-	run_unqueue(q_iop, del_head);
-	__unlink(q_iop, im_iop);
-
-	list_add_tail(&im_iop->f_head, del_head);
 }

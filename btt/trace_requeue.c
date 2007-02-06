@@ -22,44 +22,24 @@
 
 void trace_requeue(struct io *r_iop)
 {
-	if (!io_setup(r_iop, IOP_R)) {
+	LIST_HEAD(rmhd);
+	struct io *d_iop;
+
+	if ((io_setup(r_iop, IOP_R) == 0) ||
+	    (d_iop = dip_find_sec(r_iop->dip, IOP_D, 
+	    					BIT_START(r_iop))) == NULL) {
 		io_release(r_iop);
 		return;
 	}
+	dip_rem(d_iop);
 
-	if (ready_requeue(r_iop, r_iop))
-		run_requeue(r_iop);
-	else 
-		add_retry(r_iop);
-}
+#if defined(DEBUG)
+	ASSERT(ready_issue(d_iop, r_iop) != 0);
+#else
+	(void)ready_issue(d_iop, r_iop);
+#endif
 
-int retry_requeue(struct io *r_iop)
-{
-	if (!ready_requeue(r_iop, r_iop))
-		return 0;
-
-	run_requeue(r_iop);
-	return 1;
-}
-
-int ready_requeue(struct io *r_iop, struct io *top)
-{
-	struct io *d_iop = dip_find_sec(r_iop->dip, IOP_D, BIT_START(r_iop));
-	if (d_iop)
-		return ready_issue(d_iop, top);
-	return 0;
-}
-
-void run_requeue(struct io *r_iop)
-{
-	LIST_HEAD(del_head);
-	struct io *d_iop = dip_find_sec(r_iop->dip, IOP_D, BIT_START(r_iop));
-
-	__link(d_iop, r_iop);
-	run_unissue(d_iop, &del_head);
-	__unlink(d_iop, r_iop);
-
-	del_retry(r_iop);
-	list_add_tail(&r_iop->f_head, &del_head);
-	release_iops(&del_head);
+	run_unissue(d_iop, &rmhd);
+	list_add_tail(&r_iop->f_head, &rmhd);
+	release_iops(&rmhd);
 }

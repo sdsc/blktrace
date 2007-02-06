@@ -21,6 +21,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/time.h>
+#include <time.h>
 #include "globals.h"
 
 char bt_timeline_version[] = "0.99";
@@ -28,7 +30,7 @@ char bt_timeline_version[] = "0.99";
 char *devices, *exes, *input_name, *output_name, *seek_name;
 char *d2c_name, *q2c_name, *per_io_name;
 FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
-int ifd, verbose, done, time_bounded;
+int verbose, done, time_bounded;
 double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;
@@ -40,6 +42,7 @@ LIST_HEAD(free_ios);
 
 double range_delta = 0.1;
 __u64 last_q = (__u64)-1;
+__u64 next_retry_check = 0;
 
 struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
@@ -47,6 +50,10 @@ struct region_info all_regions = {
 	.qr_cur = NULL,
 	.cr_cur = NULL
 };
+
+#if defined(DEBUG)
+int rb_tree_size;
+#endif
 
 int process(void);
 
@@ -62,28 +69,28 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
+static inline double tv2dbl(struct timeval *tv)
+{
+	return (double)tv->tv_sec + (((double)tv->tv_usec) / (1000.0 * 1000.0));
+}
+
 int process(void)
 {
 	int ret = 0;
-	struct blk_io_trace *t;
 	struct io *iop = io_alloc();
+	struct timeval tvs, tvi, tve;
 
 	genesis = last_vtrace = time(NULL);
-	while (!done && !do_read(ifd, &iop->t, sizeof(struct blk_io_trace))) {
-		t = convert_to_cpu(&iop->t);
-		if (t->pdu_len > 0) {
-			iop->pdu = malloc(t->pdu_len);
-			if (do_read(ifd, iop->pdu, t->pdu_len)) {
-				ret = 1;
-				break;
-			}
-		}
+	gettimeofday(&tvs, NULL);
+	while (!done && next_trace(&iop->t, &iop->pdu)) {
 		add_trace(iop);
 		iop = io_alloc();
 	}
 
 	io_release(iop);
-	do_retries();
+	do_retries(0);
+
+	gettimeofday(&tvi, NULL);
 
 	if (iostat_ofp) {
 		fprintf(iostat_ofp, "\n");
@@ -92,11 +99,21 @@ int process(void)
 
 	seek_clean();
 	latency_clean();
+	gettimeofday(&tve, NULL);
 
 	if (verbose) {
-		double tps = (double)n_traces / 
-					(double)((time(NULL) + 1) - genesis);
-		printf("%10lu traces @ %.1lf Ktps\n", n_traces, tps/1000.0);
+		double tps, dt_input = tv2dbl(&tvi) - tv2dbl(&tvs);
+		
+		tps = (double)n_traces / dt_input;
+		printf("%10lu traces @ %.1lf Ktps\t%.6lf+%.6lf=%.6lf\n", 
+			n_traces, tps/1000.0,
+			dt_input, tv2dbl(&tve) - tv2dbl(&tvi),
+			tv2dbl(&tve) - tv2dbl(&tvs));
+#if defined(DEBUG)
+		printf("\ttree = |%d|\n", rb_tree_size);
+		if (rb_tree_size > 0)
+			dump_rb_trees();
+#endif
 	}
 
 	return ret;

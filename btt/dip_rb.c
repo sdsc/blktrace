@@ -76,7 +76,10 @@ void rb_foreach(struct rb_node *n, struct io *iop,
 
 		if ((iop_s <= this_s) && (this_e <= iop_e)) {
 			if (fnc) fnc(iop, this);
-			if (head) list_add_tail(&this->f_head, head);
+			if (head) {
+				ASSERT(this->f_head.next == LIST_POISON1);
+				list_add_tail(&this->f_head, head);
+			}
 		}
 		if (iop_s < this_s)
 			rb_foreach(n->rb_left, iop, fnc, head);

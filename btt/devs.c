@@ -25,6 +25,55 @@
 #define DEV_HASH(dev)	((MAJOR(dev) ^ MINOR(dev)) & (N_DEV_HASH - 1))
 struct list_head	dev_heads[N_DEV_HASH];
 
+#if defined(DEBUG)
+void __dump_rb_node(struct rb_node *n)
+{
+	struct io *iop = rb_entry(n, struct io, rb_node);
+
+	dbg_ping();
+	if (iop->type == IOP_A)
+		__dump_iop2(stdout, iop, bilink_first_down(iop, NULL));
+	else
+		__dump_iop(stdout, iop, 0);
+	if (n->rb_left)
+		__dump_rb_node(n->rb_left);
+	if (n->rb_right)
+		__dump_rb_node(n->rb_right);
+}
+
+void __dump_rb_tree(struct d_info *dip, enum iop_type type)
+{
+	struct rb_root *roots = dip->heads;
+	struct rb_root *root = &roots[type];
+	struct rb_node *n = root->rb_node;
+
+	if (n) {
+		printf("\tIOP_%c\n", type2c(type));
+		__dump_rb_node(n);
+	}
+}
+
+void dump_rb_trees(void)
+{
+	int i;
+	enum iop_type type;
+	struct d_info *dip;
+	struct list_head *p;
+
+	for (i = 0; i < N_DEV_HASH; i++) {
+		__list_for_each(p, &dev_heads[i]) {
+			dip = list_entry(p, struct d_info, hash_head);
+			printf("Trees for %3d,%-3d\n", MAJOR(dip->device),
+			       MINOR(dip->device));
+			for (type = IOP_Q; type < N_IOP_TYPES; type++) {
+				if (type != IOP_L)
+					__dump_rb_tree(dip, type);
+			}
+		}
+	}
+}
+#endif
+
 void init_dev_heads(void)
 {
 	int i;
@@ -34,8 +83,8 @@ void init_dev_heads(void)
 
 struct d_info *__dip_find(__u32 device)
 {
-	struct list_head *p;
 	struct d_info *dip;
+	struct list_head *p;
 
 	__list_for_each(p, &dev_heads[DEV_HASH(device)]) {
 		dip = list_entry(p, struct d_info, hash_head);
@@ -67,12 +116,19 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 	}
 
 	iop->linked = dip_rb_ins(dip, iop);
+#if defined(DEBUG)
+	if (iop->linked) 
+		rb_tree_size++;
+#endif
 	return dip;
 }
 
 void dip_rem(struct io *iop)
 {
-	dip_rb_rem(iop);
+	if (iop->linked) {
+		dip_rb_rem(iop);
+		iop->linked = 0;
+	}
 }
 
 void dip_foreach(struct io *iop, enum iop_type type, 

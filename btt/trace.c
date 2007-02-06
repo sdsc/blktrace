@@ -23,92 +23,74 @@
 int dump_level;
 LIST_HEAD(retries);
 
-static inline void dump_dev(FILE *ofp, __u32 dev)
+void __dump_iop(FILE *ofp, struct io *iop, int extra_nl)
 {
-	fprintf(ofp, "%3d,%-3d ", MAJOR(dev), MINOR(dev));
+	fprintf(ofp, "%5d.%09lu %3d,%-3d %c %10llu+%-4u\n",
+		(int)SECONDS(iop->t.time),
+		(unsigned long)NANO_SECONDS(iop->t.time),
+		MAJOR(iop->t.device), MINOR(iop->t.device), type2c(iop->type),
+		(unsigned long long)iop->t.sector, t_sec(&iop->t));
+	if (extra_nl) fprintf(ofp, "\n");
 }
 
-static inline void dump_desc(FILE *ofp, struct io *iop)
+void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop)
 {
-	fprintf(ofp, "%10llu+%-4u ", (unsigned long long)iop->t.sector, 
-		t_sec(&iop->t));
+	fprintf(ofp, "%5d.%09lu %3d,%-3d %c %10llu+%-4u <- (%3d,%-3d) %10llu\n",
+		(int)SECONDS(a_iop->t.time),
+		(unsigned long)NANO_SECONDS(a_iop->t.time),
+		MAJOR(a_iop->t.device), MINOR(a_iop->t.device), 
+		type2c(a_iop->type), (unsigned long long)a_iop->t.sector, 
+		t_sec(&a_iop->t), MAJOR(l_iop->t.device), 
+		MINOR(l_iop->t.device), (unsigned long long)l_iop->t.sector);
 }
 
-void dump_iop(FILE *ofp, struct io *to_iop, struct io *from_iop, int indent)
-{
-	int i, c;
-
-	if (!ofp) return;
-	if (to_iop->displayed) return;
-
-	fprintf(ofp, "%5d.%09lu ", (int)SECONDS(to_iop->t.time),
-		(unsigned long)NANO_SECONDS(to_iop->t.time));
-
-	for (i = 0; i < ((dump_level * 4) + indent); i++)
-		fprintf(ofp, " ");
-
-	dump_dev(ofp, to_iop->t.device);
-
-	switch (to_iop->type) {
-	case IOP_Q: c = 'Q'; break;
-	case IOP_L: c = 'L'; break;
-	case IOP_A: c = 'A'; break;
-	case IOP_I: c = 'I'; break;
-	case IOP_M: c = 'M'; break;
-	case IOP_D: c = 'D'; break;
-	case IOP_C: c = 'C'; break;
-	default   : c = '?'; break;
-	}
-
-	fprintf(ofp, "%c ", c);
-	dump_desc(ofp, to_iop);
-	if (from_iop) {
-		fprintf(ofp, "<- ");
-		dump_dev(ofp, from_iop->t.device);
-		dump_desc(ofp, from_iop);
-	}
-		
-	fprintf(ofp, "\n");
-
-	to_iop->displayed = 1;
-}
-
-void release_iops(struct list_head *del_head)
+void release_iops(struct list_head *rmhd)
 {
 	struct io *x_iop;
 	struct list_head *p, *q;
 
-	list_for_each_safe(p, q, del_head) {
+	list_for_each_safe(p, q, rmhd) {
 		x_iop = list_entry(p, struct io, f_head);
 		LIST_DEL(&x_iop->f_head);
 		io_release(x_iop);
 	}
 }
 
-void do_retries(void)
+void do_retries(__u64 now)
 {
 	struct io *iop;
 	struct list_head *p, *q;
 
 	list_for_each_safe(p, q, &retries) {
 		iop = list_entry(p, struct io, retry);
+		ASSERT(iop->type == IOP_C);
+
 		// iop could be gone after call...
-		if (iop->type == IOP_C) 
-			retry_complete(iop);
-		else
-			retry_requeue(iop);
+		retry_complete(iop, now);
 	}
+}
+
+static inline int retry_check_time(__u64 t)
+{
+	return next_retry_check && (t > next_retry_check);
 }
 
 static void __add_trace(struct io *iop)
 {
 	time_t now = time(NULL);
+	__u64 tstamp = iop->t.time;
+	int run_retry = retry_check_time(iop->t.time);
 
 	n_traces++;
 	iostat_check_time(iop->t.time);
 
 	if (verbose && ((now - last_vtrace) > 0)) {
+#if defined(DEBUG)
+		printf("%10lu t\tretries=|%10d|\ttree size=|%10d|\r", 
+			n_traces, list_len(&retries), rb_tree_size);
+#else
 		printf("%10lu t\r", n_traces);
+#endif
 		if ((n_traces % 1000000) == 0) printf("\n");
 		fflush(stdout);
 		last_vtrace = now;
@@ -128,21 +110,25 @@ static void __add_trace(struct io *iop)
 		return;
 	}
 
-	if (((iop->t.action & 0xffff) != __BLK_TA_REQUEUE) && 
-						!list_empty(&retries))
-		do_retries();
+	if (run_retry && !list_empty(&retries)) {
+		do_retries(tstamp);
+		bump_retry(tstamp);
+	}
 }
 
 void add_trace(struct io *iop)
 {
 
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
-		char *slash = strchr(iop->pdu, '/');
+		if (iop->t.pid == 0) 
+			add_process(0, "kernel");
+		else {
+			char *slash = strchr(iop->pdu, '/');
+			if (slash)
+				*slash = '\0';
 
-		if (slash)
-			*slash = '\0';
-
-		add_process(iop->t.pid, iop->pdu);
+			add_process(iop->t.pid, iop->pdu);
+		}
 		io_release(iop);
 	}
 	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))

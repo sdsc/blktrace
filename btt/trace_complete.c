@@ -22,135 +22,139 @@
 
 LIST_HEAD(pending_cs);
 
-static void gen_c_list(struct io *c_iop, struct list_head *c_head)
+static inline void __run_complete(struct io *c_iop)
 {
-	struct io *iop;
-	struct list_head *p;
+	LIST_HEAD(rmhd);
 
-	__list_for_each(p, &pending_cs) {
-		iop = list_entry(p, struct io, c_pending);
-		if (iop->t.device == c_iop->t.device)
-			continue;
-		if (dip_find_sec(iop->dip, IOP_D, BIT_START(iop)) == NULL)
-			continue;
+	if (remapper_dev(c_iop->t.device))
+		bilink_for_each_down(run_remap, c_iop, &rmhd, 1);
+	else
+		bilink_for_each_down(run_issue, c_iop, &rmhd, 1);
 
-		__link(iop, c_iop);
-		if (ready_complete(iop, c_iop))
-			list_add_tail(&iop->f_head, c_head);
-		__unlink(iop, c_iop);
-	}
-}
-
-static void run_comp(struct io *c_iop, struct io *top, struct list_head *rmhd)
-{
-	struct io *d_iop = dip_find_sec(c_iop->dip, IOP_D, BIT_START(c_iop));
-
-	update_blks(c_iop);
-	if (d_iop) {
-		__u64 d2c = tdelta(d_iop, c_iop);
-
-		update_d2c(d_iop, d2c);
-		latency_d2c(d_iop->dip, c_iop->t.time, d2c);
-		iostat_complete(d_iop, c_iop);
-
-		__link(d_iop, c_iop);
-		run_issue(d_iop, top, rmhd);
-		__unlink(d_iop, c_iop);
-	}
-	else {
-		LIST_HEAD(head);
-		struct io *iop;
-		struct list_head *p, *q;
-
-		gen_c_list(c_iop, &head);
-		list_for_each_safe(p, q, &head) {
-			iop = list_entry(p, struct io, f_head);
-			LIST_DEL(&iop->f_head);
-
-			dump_level++;
-			__link(iop, c_iop);
-			run_comp(iop, top, rmhd);
-			__unlink(iop, c_iop);
-			dump_level--;
-		}
-	}
-
-	dump_iop(per_io_ofp, c_iop, NULL, 0);
+	dump_iop(c_iop, 1);
 
 	LIST_DEL(&c_iop->c_pending);
 	del_retry(c_iop);
-	list_add_tail(&c_iop->f_head, rmhd);
+
+	list_add_tail(&c_iop->f_head, &rmhd);
+	release_iops(&rmhd);
 }
 
-static int ready_comp(struct io *c_iop, 
-				__attribute__((__unused__)) struct io *top)
+static int ready_complete_remapper(struct io *c_iop)
 {
 	LIST_HEAD(head);
-	struct io *iop;
 	struct list_head *p, *q;
-	__u64 bl = c_iop->bytes_left;
+	struct io *l_iop, *a_iop;
 
-	gen_c_list(c_iop, &head);
+	dip_foreach_list(c_iop, IOP_L, &head);
 	list_for_each_safe(p, q, &head) {
-		iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&iop->f_head);
+		l_iop = list_entry(p, struct io, f_head);
+		LIST_DEL(&l_iop->f_head);
 
-		__link(iop, c_iop);
-		if (ready_complete(iop, c_iop))
-			bl -= iop->bytes_left;
-		__unlink(iop, c_iop);
+		ASSERT(!list_empty(&l_iop->up_list));
+		a_iop = bilink_first_up(l_iop, NULL);
+		if (ready_remap(a_iop, c_iop)) {
+			dip_rem(l_iop);
+			bilink(a_iop, c_iop);
+			c_iop->bytes_left -= a_iop->t.bytes;
+		}
 	}
 
-	return bl == 0;
+	return c_iop->bytes_left == 0;
+}
+
+int ready_complete(struct io *c_iop)
+{
+	__u64 d2c;
+	struct io *d_iop;
+
+	if (c_iop->bytes_left == 0)
+		return 1;
+
+	if (remapper_dev(c_iop->t.device))
+		return ready_complete_remapper(c_iop);
+
+	if (!list_empty(&c_iop->down_list))
+		return 1;
+
+	d_iop = dip_find_sec(c_iop->dip, IOP_D, BIT_START(c_iop));
+	if (!d_iop)
+		return -1;
+
+	if (c_iop->t.bytes != d_iop->t.bytes) {
+		fprintf(stderr, 
+			"\nFATAL: Probable time anomaly detected\n");
+		fprintf(stderr, 
+			"D @ %15.9lf missing C, later C @ %15.9lf\n", 
+			BIT_TIME(d_iop->t.time), 
+			BIT_TIME(c_iop->t.time));
+		exit(1);
+	}
+
+	if (!ready_issue(d_iop, c_iop))
+		return 0;
+
+	c_iop->bytes_left = 0;
+
+	d2c = tdelta(d_iop, c_iop);
+	update_d2c(d_iop, d_iop->down_len, d2c);
+	latency_d2c(d_iop->dip, c_iop->t.time, d2c);
+	iostat_complete(d_iop, c_iop);
+
+	bilink(d_iop, c_iop);
+	dip_rem(d_iop);
+	return 1;
 }
 
 void trace_complete(struct io *c_iop)
 {
-	if (!io_setup(c_iop, IOP_C)) {
+	if (io_setup(c_iop, IOP_C)) {
+		update_blks(c_iop);
+		update_cregion(&all_regions, c_iop->t.time);
+		update_cregion(&c_iop->dip->regions, c_iop->t.time);
+		if (c_iop->pip)
+			update_cregion(&c_iop->pip->regions, c_iop->t.time);
+
+		list_add_tail(&c_iop->c_pending, &pending_cs);
+		switch (ready_complete(c_iop)) {
+		case  1: 
+			__run_complete(c_iop); 
+			break;
+		case  0: 
+			add_retry(c_iop); 
+			break;
+		case -1: 
+			LIST_DEL(&c_iop->c_pending);
+			del_retry(c_iop);
+			io_release(c_iop);
+			break;
+		}
+	}
+	else 
 		io_release(c_iop);
-		return;
-	}
-
-	list_add_tail(&c_iop->c_pending, &pending_cs);
-	if (ready_complete(c_iop, c_iop)) {
-		dump_level = 0;
-		run_complete(c_iop);
-	}
-	else 
-		add_retry(c_iop);
 }
 
-int retry_complete(struct io *c_iop)
+void retry_complete(struct io *c_iop, __u64 now)
 {
-	if (!ready_complete(c_iop, c_iop))
-		return 0;
+	double tc = BIT_TIME(c_iop->t.time);
 
-	run_complete(c_iop);
-	return 1;
-}
-
-int ready_complete(struct io *c_iop, struct io *top)
-{
-	struct io *d_iop = dip_find_sec(c_iop->dip, IOP_D, BIT_START(c_iop));
-
-	if (d_iop) {
-		ASSERT(d_iop->t.bytes == c_iop->bytes_left);
-		return ready_issue(d_iop, top);
+	switch (ready_complete(c_iop)) {
+	case  1: 
+#if defined(DEBUG)
+		fprintf(stderr, "Retried %15.9lf success!\n", tc);
+#endif
+		__run_complete(c_iop); 
+		break;
+	case  0:
+		if (now == 0 || ((BIT_TIME(now) - tc) < 1.0))
+			break;
+		if (!list_empty(&c_iop->down_list))
+			break;
+		/*FALLTHROUGH*/
+	case -1: 
+		LIST_DEL(&c_iop->c_pending);
+		del_retry(c_iop);
+		io_release(c_iop);
+		break;
 	}
-	else 
-		return ready_comp(c_iop, top);
-}
-
-void run_complete(struct io *c_iop)
-{
-	LIST_HEAD(rmhd);
-
-	update_cregion(&all_regions, c_iop->t.time);
-	update_cregion(&c_iop->dip->regions, c_iop->t.time);
-	if (c_iop->pip)
-		update_cregion(&c_iop->pip->regions, c_iop->t.time);
-
-	run_comp(c_iop, c_iop, &rmhd);
-	if (per_io_ofp) fprintf(per_io_ofp, "\n");
-	release_iops(&rmhd);
 }

@@ -20,106 +20,95 @@
  */
 #include "globals.h"
 
+void run_remap(struct io *a_iop, struct io *c_iop, void *param)
+{
+	struct bilink *blp = blp, *blp2;
+	struct list_head *rmhd = param;
+	struct io *q_iop, *l_iop = bilink_first_down(a_iop, &blp);
+
+	ASSERT(l_iop);
+	q_iop = bilink_first_down(l_iop, &blp2);
+	if (q_iop) {
+		run_queue(q_iop, c_iop, rmhd);
+		biunlink(blp2);
+	}
+
+	dump_iop2(a_iop, l_iop);
+
+	biunlink(blp);
+	list_add_tail(&l_iop->f_head, rmhd);
+	list_add_tail(&a_iop->f_head, rmhd);
+}
+
+int ready_dev_remap(struct io *l_iop, struct io *c_iop)
+{
+	struct io *q_iop;
+
+	if (!list_empty(&l_iop->down_list)) 
+		return 1;
+
+	q_iop = dip_find_sec(l_iop->dip, IOP_Q, l_iop->t.sector);
+	if (!q_iop || !ready_queue(q_iop, c_iop))
+		return 0;
+
+	ASSERT(l_iop->t.bytes <= q_iop->t.bytes);
+	update_q2a(q_iop, tdelta(q_iop, l_iop));
+	bilink(q_iop, l_iop);
+
+	q_iop->bytes_left -= l_iop->t.bytes;
+	if (q_iop->bytes_left == 0)
+		dip_rem(q_iop);
+	return 1;
+}
+
+int ready_self_remap(struct io *l_iop)
+{
+	struct io *a_iop = dip_find_sec(l_iop->dip, IOP_A, l_iop->t.sector);
+
+	if (a_iop) {
+		update_q2a(a_iop, tdelta(a_iop, l_iop));
+		dip_rem(a_iop);
+	}
+
+	return 1;
+}
+
+int ready_remap(struct io *a_iop, struct io *c_iop)
+{
+	struct io *l_iop = bilink_first_down(a_iop, NULL);
+
+	ASSERT(l_iop);
+	if (remapper_dev(l_iop->t.device))
+		return ready_dev_remap(l_iop, c_iop);
+	else
+		return ready_self_remap(l_iop);
+}
+
 void trace_remap(struct io *a_iop)
 {
 	struct io *l_iop;
 	struct blk_io_trace_remap *rp = a_iop->pdu;
-	__u32 remap_dev = be32_to_cpu(rp->device);
-	__u64 remap_sec = be64_to_cpu(rp->sector);
 
+	a_iop->t.device = be32_to_cpu(rp->device_from);
 	if (!io_setup(a_iop, IOP_A)) {
 		io_release(a_iop);
 		return;
 	}
 
-	/* 
-	 * Create a fake LINK trace
-	 */
 	l_iop = io_alloc();
 	memcpy(&l_iop->t, &a_iop->t, sizeof(a_iop->t));
-	l_iop->t.device = remap_dev;
-	l_iop->t.sector = remap_sec;
+	if (l_iop->t.pdu_len) {
+		l_iop->pdu = malloc(l_iop->t.pdu_len);
+		memcpy(l_iop->pdu, a_iop->pdu, l_iop->t.pdu_len);
+	}
 
+	l_iop->t.device = be32_to_cpu(rp->device);
+	l_iop->t.sector = be64_to_cpu(rp->sector);
 	if (!io_setup(l_iop, IOP_L)) {
 		io_release(l_iop);
 		io_release(a_iop);
 		return;
 	}
 
-	__link(l_iop, a_iop);
-	l_iop->self_remap = (MAJOR(a_iop->t.device) == MAJOR(remap_dev));
-}
-
-
-int ready_remap(struct io *a_iop, struct io *top)
-{
-	struct io *l_iop = list_first_down(a_iop);
-	struct blk_io_trace_remap *rp = a_iop->pdu;
-	__u64 remap_sec = be64_to_cpu(rp->sector);
-
-	if (l_iop->self_remap) {
-		struct io *a_iop = dip_find_sec(l_iop->dip, IOP_A, remap_sec);
-		if (a_iop)
-			return ready_remap(a_iop, top);
-	}
-	else {
-		struct io *q_iop = dip_find_sec(l_iop->dip, IOP_Q, remap_sec);
-		if (q_iop)
-			return ready_queue(q_iop, top);
-	}
-
-	return 0;
-}
-
-void run_remap(struct io *a_iop, struct io *top, struct list_head *del_head)
-{
-	struct io *l_iop = list_first_down(a_iop);
-	struct blk_io_trace_remap *rp = a_iop->pdu;
-	__u64 remap_sec = be64_to_cpu(rp->sector);
-
-	if (l_iop->self_remap) {
-		struct io *a2_iop = dip_find_sec(l_iop->dip, IOP_A, remap_sec);
-		ASSERT(a2_iop);
-		__link(a2_iop, l_iop);
-		run_remap(a2_iop, top, del_head);
-		__unlink(a2_iop, l_iop);
-	}
-	else {
-		struct io *q_iop = dip_find_sec(l_iop->dip, IOP_Q, remap_sec);
-		ASSERT(q_iop);
-		__link(q_iop, l_iop);
-		update_q2a(q_iop, tdelta(q_iop, a_iop));
-		run_queue(q_iop, top, del_head);
-		__unlink(q_iop, l_iop);
-	}
-
-	dump_iop(per_io_ofp, a_iop, l_iop, 0);
-
-	__unlink(l_iop, a_iop);
-	list_add_tail(&l_iop->f_head, del_head);
-	list_add_tail(&a_iop->f_head, del_head);
-}
-
-void run_unremap(struct io *a_iop, struct list_head *del_head)
-{
-	struct io *l_iop = list_first_down(a_iop);
-	struct blk_io_trace_remap *rp = a_iop->pdu;
-	__u64 remap_sec = be64_to_cpu(rp->sector);
-
-	if (l_iop->self_remap) {
-		struct io *a_iop = dip_find_sec(l_iop->dip, IOP_A, remap_sec);
-		__link(a_iop, l_iop);
-		run_unremap(a_iop, del_head);
-		__unlink(a_iop, l_iop);
-	}
-	else {
-		struct io *q_iop = dip_find_sec(l_iop->dip, IOP_Q, remap_sec);
-		__link(q_iop, l_iop);
-		run_unqueue(q_iop, del_head);
-		__unlink(q_iop, l_iop);
-	}
-
-	__unlink(l_iop, a_iop);
-	list_add_tail(&l_iop->f_head, del_head);
-	list_add_tail(&a_iop->f_head, del_head);
+	bilink(l_iop, a_iop);
 }

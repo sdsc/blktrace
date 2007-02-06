@@ -27,21 +27,6 @@
 #define INLINE_DECLARE
 #include "globals.h"
 
-int data_is_native = -1;
-
-struct blk_io_trace *convert_to_cpu(struct blk_io_trace *t)
-{
-	if (data_is_native == -1)
-		check_data_endianness(t->magic);
-
-	trace_to_cpu(t);
-
-	ASSERT(CHECK_MAGIC(t));
-	ASSERT((t->magic & 0xff) == SUPPORTED_VERSION);
-
-	return t;
-}
-
 int in_devices(struct blk_io_trace *t)
 {
 	int i;
@@ -62,25 +47,6 @@ int in_devices(struct blk_io_trace *t)
 			break;
 		p++;
 	}
-
-	return 0;
-}
-
-unsigned int do_read(int ifd, void *buf, int len)
-{
-	int n;
-
-	n = read(ifd, buf, len);
-	if (n < 0) {
-		perror(input_name);
-		return 1;
-	}
-	else if (0 < n && n < len) {
-		fprintf(stderr,"Short read on %s\n", input_name);
-		return 1;
-	}
-	else if (n == 0) /* EOF */
-		return 1;
 
 	return 0;
 }

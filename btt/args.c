@@ -235,11 +235,7 @@ void handle_args(int argc, char *argv[])
 		exit(1);
 	}
 
-	ifd = open(input_name, O_RDONLY);
-	if (ifd < 0) {
-		perror(input_name);
-		exit(1);
-	}
+	setup_ifile(input_name);
 
 	if (output_name == NULL)
 		ranges_ofp = avgs_ofp = stdout;
@@ -273,6 +269,7 @@ void handle_args(int argc, char *argv[])
 			perror(iostat_name);
 			exit(1);
 		}
+		setbuffer(iostat_ofp, malloc(64 * 1024), 64 * 1024);
 	}
 
 	if (per_io_name != NULL) {
@@ -281,5 +278,6 @@ void handle_args(int argc, char *argv[])
 			perror(per_io_name);
 			exit(1);
 		}
+		setbuffer(per_io_ofp, malloc(64 * 1024), 64 * 1024);
 	}
 }
