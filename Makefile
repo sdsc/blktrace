@@ -5,7 +5,7 @@ PROGS	= blkparse blktrace verify_blkparse blkrawverify
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
-all: depend $(PROGS) $(SCRIPTS)
+all: $(PROGS) $(SCRIPTS)
 	$(MAKE) -C btt
 
 %.o: %.c
@@ -22,6 +22,8 @@ verify_blkparse: verify_blkparse.o
 
 blkrawverify: blkrawverify.o
 	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^)
+
+$(PROGS): | depend
 
 docs:
 	$(MAKE) -C doc all
