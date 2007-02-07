@@ -107,20 +107,20 @@ Install the new kernel (and modules\ldots) and reboot.
 \subsection{\label{sec:mount}Mounting the debugfs file system}
 
 blktrace utilizes files under the debug file system, and thus must have
-the mount point set up -- mounted on the directory /debug. To do this
-one may do either of the following:
+the mount point set up -- mounted on the directory /sys/kernel/debug.
+To do this one may do either of the following:
 
 \begin{enumerate}
   \item Manually mount after each boot:
 \begin{verbatim}
-% mount -t debugfs debugfs /debug
+% mount -t debugfs debugfs /sys/kernel/debug
 \end{verbatim}
 
   \item Add an entry into /etc/fstab, and have it done automatically at
   each boot\footnote{Note: after adding the entry to /etc/fstab, you
-  could then mount the directory this time only by doing: \% mount /relay}:
+  could then mount the directory this time only by doing: \% mount debug}:
 \begin{verbatim}
-debug /debug debugfs default 0 0
+debug /sys/kernel/debug debugfs default 0 0
 \end{verbatim}
 \end{enumerate}
 
@@ -341,8 +341,8 @@ of the more arcane command line options:
   \item blktrace receives data from the kernel in buffers passed up
   through the debug file system (relay). Each device being traced has
   a file created in the mounted directory for the debugfs, which defaults
-  to \emph{/debug} -- this can be overridden with the \emph{-r} command
-  line argument.
+  to \emph{/sys/kernel/debug} -- this can be overridden with the \emph{-r}
+  command line argument.
   
   \item blktrace defaults to collecting \emph{all} events that can be
   traced. To limit the events being captured, you can specify one or

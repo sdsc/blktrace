@@ -1751,7 +1751,7 @@ static char usage_str[] = \
 	"-d <dev> [ -r debugfs path ] [ -o <output> ] [-k ] [ -w time ]\n" \
 	"[ -a action ] [ -A action mask ] [ -v ]\n\n" \
 	"\t-d Use specified device. May also be given last after options\n" \
-	"\t-r Path to mounted debugfs, defaults to /debug\n" \
+	"\t-r Path to mounted debugfs, defaults to /sys/kernel/debug\n" \
 	"\t-o File(s) to send output to\n" \
 	"\t-D Directory to prepend to output file names\n" \
 	"\t-k Kill a running trace\n" \

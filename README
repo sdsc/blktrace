@@ -39,7 +39,7 @@ $ blktrace -d <dev> [ -r debug_path ] [ -o output ] [ -k ] [ -w time ]
 		    [ -a action ] [ -A action mask ]
 
 	-d Use specified device. May also be given last after options.
-	-r Path to mounted debugfs, defaults to /debug.
+	-r Path to mounted debugfs, defaults to /sys/kernel/debug.
 	-o File(s) to send output to.
 	-D Directory to prepend to output file names.
 	-k Kill running trace.
