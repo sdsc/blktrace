@@ -351,10 +351,8 @@ int output_avgs(FILE *ofp)
 	output_section_hdr(ofp, "Device Overhead");
 	output_dip_prep_ohead(ofp);
 
-	if (seek_name) {
-		output_section_hdr(ofp, "Device Seek Information");
-		output_dip_seek_info(ofp);
-	}
+	output_section_hdr(ofp, "Device Seek Information");
+	output_dip_seek_info(ofp);
 
 	return 0;
 }

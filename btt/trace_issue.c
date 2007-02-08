@@ -90,8 +90,7 @@ int ready_issue(struct io *d_iop, struct io *c_iop)
 void trace_issue(struct io *d_iop)
 {
 	if (io_setup(d_iop, IOP_D)) {
-		if (seek_name)
-			seeki_add(d_iop->dip->seek_handle, d_iop);
+		seeki_add(d_iop->dip->seek_handle, d_iop);
 		iostat_issue(d_iop);
 		d_iop->dip->n_ds++;
 	}
