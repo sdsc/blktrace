@@ -257,6 +257,95 @@ void output_dip_prep_ohead(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+int n_seeks;
+struct seek_mode_info {
+	struct seek_mode_info *next;
+	long long mode;
+	int nseeks;
+};
+struct o_seek_info {
+	long long nseeks, median;
+	double mean;
+	struct seek_mode_info *head;
+} seek_info = {
+	.nseeks = 0L,
+	.median = 0L,
+	.mean = 0.0,
+	.head = NULL
+};
+void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
+{
+	struct seek_mode_info *p, *this, *new_list = NULL;
+
+	ASSERT(sip->head != NULL);
+	while ((this = sip->head) != NULL) {
+		sip->head = this->next;
+		if (new_list == NULL) {
+			this->next = NULL;
+			new_list = this;
+			continue;
+		}
+		if (this->nseeks < new_list->nseeks) {
+			free(this);
+			continue;
+		}
+		if (this->nseeks > new_list->nseeks) {
+			while ((p = new_list) != NULL) {
+				new_list = p->next;
+				free(p);
+			}
+			this->next = NULL;
+			new_list = this;
+			continue;
+		}
+		for (p = new_list; p; p++) 
+			if (p->mode == this->mode) {
+				this->nseeks += p->nseeks;
+				free(p);
+				break;
+			}
+		if (p)
+			p->next = new_list;
+	}
+
+	fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
+	        "Average", sip->nseeks, sip->mean / sip->nseeks, 
+		sip->median / sip->nseeks, new_list->mode, new_list->nseeks);
+
+	p = new_list;
+	new_list = p->next;
+	free(p);
+	while((p = new_list) != NULL) {
+		fprintf(ofp, " %lld", p->mode);
+		new_list = p->next;
+		free(p);
+	}
+}
+void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
+{
+	int i;
+	long long *lp = mp->modes;
+	struct seek_mode_info *smip;
+
+	n_seeks++;
+	for (i = 0; i < mp->nmds; i++) {
+		for (smip = sip->head; smip; smip = smip->next) {
+			if (smip->mode == lp[i]) {
+				smip->nseeks += mp->most_seeks;
+				break;
+			}
+		}
+		if (!smip) {
+			struct seek_mode_info *new = malloc(sizeof(*new));
+
+			new->next = sip->head; 
+			sip->head = new;
+			new->mode = lp[i];
+			new->nseeks = mp->most_seeks;
+		}
+	}
+}
+
 void __output_dip_seek_info(struct d_info *dip, void *arg)
 {
 	double mean;
@@ -279,6 +368,11 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 		for (i = 1; i < nmodes; i++)
 			fprintf(ofp, " %lld", m.modes[i]);
 		fprintf(ofp, "\n");
+
+		seek_info.nseeks += nseeks;
+		seek_info.mean += (nseeks * mean);
+		seek_info.median += (nseeks * median);
+		add_seek_mode_info(&seek_info, &m);
 	}
 }
 
@@ -286,10 +380,14 @@ void output_dip_seek_info(FILE *ofp)
 {
 	fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", "DEV", "NSEEKS", 
 			"MEAN", "MEDIAN", "MODE");
-	fprintf(ofp, "---------- "
-			"| --------------- --------------- --------------- "
-			"| ---------------\n");
+	fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
 	dip_foreach_out(__output_dip_seek_info, ofp);
+	if (n_seeks > 1) {
+		fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
+		fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", 
+		        "Overall", "NSEEKS", "MEAN", "MEDIAN", "MODE");
+		output_seek_mode_info(ofp, &seek_info);
+	}
 	fprintf(ofp, "\n");
 }
 
