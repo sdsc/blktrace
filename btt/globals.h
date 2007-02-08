@@ -155,6 +155,9 @@ struct d_info {
 	struct stats stats, all_stats;
 	__u64 last_q, n_ds;
 	__u32 device;
+
+	int is_plugged, nplugs, n_timer_unplugs;
+	double start_time, last_plug, plugged_time, end_time;
 };
 
 struct io {
@@ -216,6 +219,8 @@ void dip_foreach(struct io *iop, enum iop_type type,
 		 void (*fnc)(struct io *iop, struct io *this), int rm_after);
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
+void dip_plug(__u32 dev, double cur_time);
+void dip_unplug(__u32 dev, double cur_time, int is_timer);
 
 /* dip_rb.c */
 int rb_insert(struct rb_root *root, struct io *iop);
@@ -294,6 +299,11 @@ void run_issue(struct io *d_iop, struct io *c_iop, void *param);
 void run_unissue(struct io *d_iop, struct list_head *rmhd);
 int ready_issue(struct io *d_iop, struct io *c_iop);
 void trace_issue(struct io *d_iop);
+
+/* trace_plug.c */
+void trace_plug(struct io *p_iop);
+void trace_unplug_io(struct io *u_iop);
+void trace_unplug_timer(struct io *u_iop);
 
 /* trace_queue.c */
 void run_queue(struct io *q_iop, struct io *c_iop, struct list_head *rmhd);

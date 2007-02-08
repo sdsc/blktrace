@@ -105,6 +105,9 @@ static void __add_trace(struct io *iop)
 	case __BLK_TA_REQUEUE:		trace_requeue(iop); break;
 	case __BLK_TA_ISSUE:		trace_issue(iop); break;
 	case __BLK_TA_COMPLETE:		trace_complete(iop); break;
+	case __BLK_TA_PLUG:		trace_plug(iop); break;
+	case __BLK_TA_UNPLUG_IO:	trace_unplug_io(iop); break;
+	case __BLK_TA_UNPLUG_TIMER:	trace_unplug_timer(iop); break;
 	default:			
 		io_release(iop); 
 		return;

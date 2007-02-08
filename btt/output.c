@@ -433,6 +433,30 @@ void output_pip_avgs(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+void __dip_output_plug(struct d_info *dip, void *arg)
+{
+	char dev_info[15];
+	FILE *ofp = arg;
+	double delta;
+
+	if (dip->is_plugged) dip_unplug(dip->device, dip->end_time, 0);
+
+	fprintf(ofp, "%10s | %10s %10s  | %s\n", 
+	        "DEV", "# Plugs", "# Timer Us", "% Time Q Plugged");
+	fprintf(ofp, "---------- | ---------- ----------  | ----------------\n");
+	delta = dip->end_time - dip->start_time;
+	fprintf(ofp, "%10s | %10d(%10d) | %6.2lf%%\n", 
+		make_dev_hdr(dev_info, 15, dip), 
+		dip->nplugs, dip->n_timer_unplugs, 
+		100.0 * ((dip->plugged_time / delta) / delta));
+}
+
+void output_plug_info(FILE *ofp)
+{
+	dip_foreach_out(__dip_output_plug, ofp);
+	fprintf(ofp, "\n");
+}
+
 int output_avgs(FILE *ofp)
 {
 	if (exes == NULL || *exes != '\0') {
@@ -461,6 +485,10 @@ int output_avgs(FILE *ofp)
 	__output_avg(ofp, "I2D", &all_avgs.i2d);
 	__output_avg(ofp, "D2C", &all_avgs.d2c);
 	__output_avg(ofp, "Q2C", &all_avgs.q2c);
+	fprintf(ofp, "\n");
+
+	output_section_hdr(ofp, "Device Overhead");
+	output_dip_prep_ohead(ofp);
 
 	if (exes == NULL || *exes != '\0') {
 		output_section_hdr(ofp, "Per Process (avgs)");
@@ -473,11 +501,11 @@ int output_avgs(FILE *ofp)
 	output_section_hdr(ofp, "Device Merge Information");
 	output_dip_merge_ratio(ofp);
 
-	output_section_hdr(ofp, "Device Overhead");
-	output_dip_prep_ohead(ofp);
-
 	output_section_hdr(ofp, "Device Seek Information");
 	output_dip_seek_info(ofp);
+
+	output_section_hdr(ofp, "Plug Information");
+	output_plug_info(ofp);
 
 	return 0;
 }

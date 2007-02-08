@@ -111,6 +111,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		latency_init(dip);
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);
+		dip->start_time = BIT_TIME(iop->t.time);
 		n_devs++;
 	}
 
@@ -119,6 +120,8 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 	if (iop->linked) 
 		rb_tree_size++;
 #endif
+
+	dip->end_time = BIT_TIME(iop->t.time);
 	return dip;
 }
 
@@ -182,4 +185,27 @@ void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg)
 			if (p) p++;
 		}
 	}
+}
+
+void dip_plug(__u32 dev, double cur_time)
+{
+	struct d_info *dip = __dip_find(dev);
+
+	if (!dip || dip->is_plugged) return;
+
+	dip->is_plugged = 1;
+	dip->last_plug = cur_time;
+}
+
+void dip_unplug(__u32 dev, double cur_time, int is_timer)
+{
+	struct d_info *dip = __dip_find(dev);
+
+	if (!dip || !dip->is_plugged) return;
+
+	dip->nplugs++;
+	if (is_timer) dip->n_timer_unplugs++;
+
+	dip->plugged_time += (cur_time - dip->last_plug);
+	dip->is_plugged = 0;
 }
