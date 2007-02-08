@@ -118,7 +118,6 @@ static void __add_trace(struct io *iop)
 
 void add_trace(struct io *iop)
 {
-
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 		if (iop->t.pid == 0) 
 			add_process(0, "kernel");
