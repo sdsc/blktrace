@@ -101,6 +101,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 
 	if (dip == NULL) {
 		dip = malloc(sizeof(struct d_info));
+		memset(dip, 0, sizeof(*dip));
 		dip->heads = dip_rb_mkhds();
 		init_region(&dip->regions);
 		dip->device = device;
@@ -108,8 +109,6 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip->map = dev_map_find(device);
 		dip->seek_handle = seeki_init(device);
 		latency_init(dip);
-		memset(&dip->stats, 0, sizeof(dip->stats));
-		memset(&dip->all_stats, 0, sizeof(dip->all_stats));
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);
 		n_devs++;

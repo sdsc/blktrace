@@ -99,7 +99,7 @@ static void __add_trace(struct io *iop)
 	switch (iop->t.action & 0xffff) {
 	case __BLK_TA_QUEUE:		trace_queue(iop); break;
 	case __BLK_TA_REMAP:		trace_remap(iop); break;
-	case __BLK_TA_INSERT:		trace_insert(iop); break;
+	case __BLK_TA_GETRQ:		trace_insert(iop); break;
 	case __BLK_TA_BACKMERGE:	trace_merge(iop); break;
 	case __BLK_TA_FRONTMERGE:	trace_merge(iop); break;
 	case __BLK_TA_REQUEUE:		trace_requeue(iop); break;
@@ -118,7 +118,6 @@ static void __add_trace(struct io *iop)
 
 void add_trace(struct io *iop)
 {
-
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 		if (iop->t.pid == 0) 
 			add_process(0, "kernel");

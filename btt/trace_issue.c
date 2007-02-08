@@ -75,8 +75,8 @@ int ready_issue(struct io *d_iop, struct io *c_iop)
 			im_iop = list_entry(p, struct io, f_head);
 			LIST_DEL(&im_iop->f_head);
 
+			ASSERT(d_iop->bytes_left >= im_iop->t.bytes);
 			if (ready_im(im_iop, c_iop)) {
-				ASSERT(d_iop->bytes_left >= im_iop->t.bytes);
 				bilink(im_iop, d_iop);
 				dip_rem(im_iop);
 				d_iop->bytes_left -= im_iop->t.bytes;
@@ -90,8 +90,7 @@ int ready_issue(struct io *d_iop, struct io *c_iop)
 void trace_issue(struct io *d_iop)
 {
 	if (io_setup(d_iop, IOP_D)) {
-		if (seek_name)
-			seeki_add(d_iop->dip->seek_handle, d_iop);
+		seeki_add(d_iop->dip->seek_handle, d_iop);
 		iostat_issue(d_iop);
 		d_iop->dip->n_ds++;
 	}
