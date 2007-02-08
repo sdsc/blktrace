@@ -133,6 +133,10 @@ void output_dip_avg(FILE *ofp, char *hdr, ai_dip_t (*func)(struct d_info *))
 	fprintf(ofp, "\n");
 }
 
+int n_merges = 0;
+struct {
+	unsigned long long nq, nd, blkmin, blkmax, total;
+} merge_data;
 void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 {
 	double blks_avg;
@@ -153,6 +157,18 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 			(unsigned long long)dip->avgs.blks.max,
 			(unsigned long long)dip->avgs.blks.total);
 
+		if (n_merges++ == 0) {
+			merge_data.blkmin = dip->avgs.blks.min;
+			merge_data.blkmax = dip->avgs.blks.max;
+		}
+
+		merge_data.nq += dip->avgs.q2c.n;
+		merge_data.nd += dip->n_ds;
+		merge_data.total += dip->avgs.blks.total;
+		if (dip->avgs.blks.min < merge_data.blkmin)
+			merge_data.blkmin = dip->avgs.blks.min;
+		if (dip->avgs.blks.max > merge_data.blkmax)
+			merge_data.blkmax = dip->avgs.blks.max;
 	}
 }
 
@@ -161,6 +177,17 @@ void output_dip_merge_ratio(FILE *ofp)
 	fprintf(ofp, "%10s | %8s %8s %7s | %8s %8s %8s %8s\n", "DEV", "#Q", "#D", "Ratio", "BLKmin", "BLKavg", "BLKmax", "Total");
 	fprintf(ofp, "---------- | -------- -------- ------- | -------- -------- -------- --------\n");
 	dip_foreach_out(__output_dip_merge_ratio, ofp);
+	if (n_merges > 1) {
+		fprintf(ofp, "---------- | -------- -------- ------- | -------- -------- -------- --------\n");
+		fprintf(ofp, "%10s | %8s %8s %7s | %8s %8s %8s %8s\n", "DEV", "#Q", "#D", "Ratio", "BLKmin", "BLKavg", "BLKmax", "Total");
+		fprintf((FILE *)ofp, 
+			"%10s | %8llu %8llu %7.1lf | %8llu %8llu %8llu %8llu\n",
+			"TOTAL", merge_data.nq, merge_data.nd, 
+			(float)merge_data.nq / (float)merge_data.nd,
+			merge_data.blkmin, 
+			merge_data.total / merge_data.nd,
+			merge_data.blkmax, merge_data.total);
+	}
 	fprintf(ofp, "\n");
 }
 
