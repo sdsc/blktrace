@@ -276,7 +276,7 @@ int main(int argc, char *argv[])
 {
 	char *devname;
 	struct stat st;
-	int i, cpu, nbad;
+	int i, cpu, nbad, rval = 0;
 	FILE *ofp;
 	char *ofname = malloc(1024);
 	char *fname = malloc(1024);
@@ -299,8 +299,10 @@ int main(int argc, char *argv[])
 				break;
 			printf("    CPU %d ", cpu); fflush(stdout);
 			nbad = process(&ofp, devname, fname, cpu);
-			if (nbad)
+			if (nbad) {
 				printf("-- %d bad", nbad);
+				rval = 1;
+			}
 			printf("\n");
 		}
 		if (ofp) {
@@ -309,5 +311,5 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	return 0;
+	return rval;
 }
