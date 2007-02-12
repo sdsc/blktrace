@@ -433,27 +433,52 @@ void output_pip_avgs(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+int n_plugs;
+struct plug_info {
+	long n_plugs, n_timer_unplugs;
+	double t_percent;
+} plug_info;
+
 void __dip_output_plug(struct d_info *dip, void *arg)
 {
 	char dev_info[15];
 	FILE *ofp = arg;
-	double delta;
+	double delta, pct;
 
 	if (dip->is_plugged) dip_unplug(dip->device, dip->end_time, 0);
 
+	delta = dip->end_time - dip->start_time;
+	pct = 100.0 * ((dip->plugged_time / delta) / delta);
+
+	fprintf(ofp, "%10s | %10d(%10d) | %13.9lf%%\n", 
+		make_dev_hdr(dev_info, 15, dip), 
+		dip->nplugs, dip->n_timer_unplugs, pct);
+
+	n_plugs++;
+	plug_info.n_plugs += dip->nplugs;
+	plug_info.n_timer_unplugs += dip->n_timer_unplugs;
+	plug_info.t_percent += pct;
+}
+
+void __dip_output_plug_all(FILE *ofp, struct plug_info *p)
+{
+	fprintf(ofp, "---------- | ---------- ----------  | ----------------\n");
 	fprintf(ofp, "%10s | %10s %10s  | %s\n", 
 	        "DEV", "# Plugs", "# Timer Us", "% Time Q Plugged");
-	fprintf(ofp, "---------- | ---------- ----------  | ----------------\n");
-	delta = dip->end_time - dip->start_time;
-	fprintf(ofp, "%10s | %10d(%10d) | %6.2lf%%\n", 
-		make_dev_hdr(dev_info, 15, dip), 
-		dip->nplugs, dip->n_timer_unplugs, 
-		100.0 * ((dip->plugged_time / delta) / delta));
+	fprintf(ofp, "%10s | %10ld(%10ld) | %13.9lf%%\n", "OVERALL",
+	        p->n_plugs / n_plugs, p->n_timer_unplugs / n_plugs, 
+		p->t_percent / n_plugs);
+
 }
 
 void output_plug_info(FILE *ofp)
 {
+	fprintf(ofp, "%10s | %10s %10s  | %s\n", 
+	        "DEV", "# Plugs", "# Timer Us", "% Time Q Plugged");
+	fprintf(ofp, "---------- | ---------- ----------  | ----------------\n");
 	dip_foreach_out(__dip_output_plug, ofp);
+	if (n_plugs > 1)
+		__dip_output_plug_all(ofp, &plug_info);
 	fprintf(ofp, "\n");
 }
 
