@@ -387,6 +387,7 @@ void output_dip_seek_info(FILE *ofp)
 		fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", 
 		        "Overall", "NSEEKS", "MEAN", "MEDIAN", "MODE");
 		output_seek_mode_info(ofp, &seek_info);
+		fprintf(ofp, "\n");
 	}
 	fprintf(ofp, "\n");
 }
@@ -445,19 +446,20 @@ void __dip_output_plug(struct d_info *dip, void *arg)
 	FILE *ofp = arg;
 	double delta, pct;
 
-	if (dip->is_plugged) dip_unplug(dip->device, dip->end_time, 0);
+	if (dip->nplugs > 0) {
+		if (dip->is_plugged) dip_unplug(dip->device, dip->end_time, 0);
+		delta = dip->end_time - dip->start_time;
+		pct = 100.0 * ((dip->plugged_time / delta) / delta);
 
-	delta = dip->end_time - dip->start_time;
-	pct = 100.0 * ((dip->plugged_time / delta) / delta);
+		fprintf(ofp, "%10s | %10d(%10d) | %13.9lf%%\n", 
+			make_dev_hdr(dev_info, 15, dip), 
+			dip->nplugs, dip->n_timer_unplugs, pct);
 
-	fprintf(ofp, "%10s | %10d(%10d) | %13.9lf%%\n", 
-		make_dev_hdr(dev_info, 15, dip), 
-		dip->nplugs, dip->n_timer_unplugs, pct);
-
-	n_plugs++;
-	plug_info.n_plugs += dip->nplugs;
-	plug_info.n_timer_unplugs += dip->n_timer_unplugs;
-	plug_info.t_percent += pct;
+		n_plugs++;
+		plug_info.n_plugs += dip->nplugs;
+		plug_info.n_timer_unplugs += dip->n_timer_unplugs;
+		plug_info.t_percent += pct;
+	}
 }
 
 void __dip_output_plug_all(FILE *ofp, struct plug_info *p)
