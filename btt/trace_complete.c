@@ -26,8 +26,17 @@ static inline void __run_complete(struct io *c_iop)
 {
 	LIST_HEAD(rmhd);
 
-	if (remapper_dev(c_iop->t.device))
-		bilink_for_each_down(run_remap, c_iop, &rmhd, 1);
+	if (remapper_dev(c_iop->t.device)) {
+		struct bilink *blp;
+		struct io *iop = bilink_first_down(c_iop, &blp);
+
+		if (iop->type == IOP_Q) {
+			run_queue(iop, c_iop, &rmhd);
+			biunlink(blp);
+		}
+		else
+			bilink_for_each_down(run_remap, c_iop, &rmhd, 1);
+	}
 	else
 		bilink_for_each_down(run_issue, c_iop, &rmhd, 1);
 
@@ -44,19 +53,40 @@ static int ready_complete_remapper(struct io *c_iop)
 {
 	LIST_HEAD(head);
 	struct list_head *p, *q;
-	struct io *l_iop, *a_iop;
 
 	dip_foreach_list(c_iop, IOP_L, &head);
-	list_for_each_safe(p, q, &head) {
-		l_iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&l_iop->f_head);
+	if (list_empty(&head)) {
+		struct io *q_iop;
 
-		ASSERT(!list_empty(&l_iop->up_list));
-		a_iop = bilink_first_up(l_iop, NULL);
-		if (ready_remap(a_iop, c_iop)) {
-			dip_rem(l_iop);
-			bilink(a_iop, c_iop);
-			c_iop->bytes_left -= a_iop->t.bytes;
+		dip_foreach_list(c_iop, IOP_Q, &head);
+		list_for_each_safe(p, q, &head) {
+			q_iop = list_entry(p, struct io, f_head);
+			LIST_DEL(&q_iop->f_head);
+
+			ASSERT(list_empty(&q_iop->up_list));
+			ASSERT(list_empty(&q_iop->down_list));
+			ASSERT(q_iop->t.bytes == c_iop->t.bytes);
+			if (ready_queue(q_iop, c_iop)) {
+				dip_rem(q_iop);
+				bilink(q_iop, c_iop);
+				c_iop->bytes_left -= q_iop->t.bytes;
+			}
+		}
+	}
+	else {
+		struct io *l_iop, *a_iop;
+
+		list_for_each_safe(p, q, &head) {
+			l_iop = list_entry(p, struct io, f_head);
+			LIST_DEL(&l_iop->f_head);
+
+			ASSERT(!list_empty(&l_iop->up_list));
+			a_iop = bilink_first_up(l_iop, NULL);
+			if (ready_remap(a_iop, c_iop)) {
+				dip_rem(l_iop);
+				bilink(a_iop, c_iop);
+				c_iop->bytes_left -= a_iop->t.bytes;
+			}
 		}
 	}
 

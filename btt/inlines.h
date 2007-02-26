@@ -321,8 +321,7 @@ static inline __u64 tdelta(struct io *iop1, struct io *iop2)
 static inline int remapper_dev(__u32 dev)
 {
 	int mjr = MAJOR(dev);
-	return mjr == 9 || mjr == 254;	// 253? That's what is in blkparse.c
-					// But I see 254...
+	return mjr == 9 || mjr == 253 || mjr == 254;
 }
 
 static inline void dump_iop(struct io *iop, int extra_nl)
@@ -416,7 +415,7 @@ static inline struct io *bilink_first_up(struct io *iop, struct bilink **blp_p)
 
 	if (blp_p != NULL) 
 		*blp_p = blp;
-	return blp->diop;
+	return blp->uiop;
 }
 
 typedef void (*bilink_func)(struct io *diop, struct io *uiop, void *param);
