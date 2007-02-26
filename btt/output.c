@@ -484,6 +484,43 @@ void output_plug_info(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+void output_histos(void)
+{
+	int i;
+	FILE *ofp;
+	char fname[256];
+
+	if (output_name == NULL) return;
+
+	sprintf(fname, "%s_qhist.dat", output_name);
+	ofp = fopen(fname, "w");
+	if (!ofp) {
+		perror(fname);
+		return;
+	}
+
+	fprintf(ofp, "# BTT histogram data\n");
+	fprintf(ofp, "# Q buckets\n");
+	for (i = 0; i < (N_HIST_BKTS-1); i++) 
+		fprintf(ofp, "%4d %lld\n", (i+1), (long long)q_histo[i]);
+	fprintf(ofp, "\n# Q bucket for > %d\n%4d %lld\n", (int)N_HIST_BKTS-1,
+		N_HIST_BKTS-1, q_histo[N_HIST_BKTS-1]);
+	fclose(ofp);
+
+	sprintf(fname, "%s_dhist.dat", output_name);
+	ofp = fopen(fname, "w");
+	if (!ofp) {
+		perror(fname);
+		return;
+	}
+	fprintf(ofp, "# D buckets\n");
+	for (i = 0; i < (N_HIST_BKTS-1); i++)
+		fprintf(ofp, "%4d %lld\n", (i+1), (long long)d_histo[i]);
+	fprintf(ofp, "\n# D bucket for > %d\n%4d %lld\n", (int)N_HIST_BKTS-1,
+		N_HIST_BKTS-1, d_histo[N_HIST_BKTS-1]);
+	fclose(ofp);
+}
+
 int output_avgs(FILE *ofp)
 {
 	if (exes == NULL || *exes != '\0') {
@@ -533,6 +570,8 @@ int output_avgs(FILE *ofp)
 
 	output_section_hdr(ofp, "Plug Information");
 	output_plug_info(ofp);
+
+	output_histos();
 
 	return 0;
 }

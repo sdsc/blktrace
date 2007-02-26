@@ -27,7 +27,7 @@ static inline void __run_complete(struct io *c_iop)
 	LIST_HEAD(rmhd);
 
 	if (remapper_dev(c_iop->t.device)) {
-		struct bilink *blp;
+		struct bilink *blp = blp;
 		struct io *iop = bilink_first_down(c_iop, &blp);
 
 		if (iop->type == IOP_Q) {

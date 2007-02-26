@@ -39,6 +39,7 @@ time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
 LIST_HEAD(free_ios);
+__u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 
 double range_delta = 0.1;
 __u64 last_q = (__u64)-1;

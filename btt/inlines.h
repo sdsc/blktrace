@@ -432,3 +432,19 @@ static inline void bilink_for_each_down(bilink_func func, struct io *uiop,
 			biunlink(blp);
 	}
 }
+
+static inline int histo_idx(__u64 nbytes)
+{
+	int idx = (nbytes >> 9) - 1;
+	return min(idx, N_HIST_BKTS-1);
+}
+
+static inline void update_q_histo(__u64 nbytes)
+{
+	q_histo[histo_idx(nbytes)]++;
+}
+
+static inline void update_d_histo(__u64 nbytes)
+{
+	d_histo[histo_idx(nbytes)]++;
+}

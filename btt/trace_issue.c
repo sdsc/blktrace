@@ -93,6 +93,8 @@ void trace_issue(struct io *d_iop)
 		seeki_add(d_iop->dip->seek_handle, d_iop);
 		iostat_issue(d_iop);
 		d_iop->dip->n_ds++;
+		if (!remapper_dev(d_iop->t.device))
+			update_d_histo(d_iop->t.bytes);
 	}
 	else
 		io_release(d_iop);

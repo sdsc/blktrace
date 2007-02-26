@@ -27,6 +27,16 @@
 #include "rbtree.h"
 #include "list.h"
 
+/*
+ * 0 == 1 blk
+ * 1 == 2 blks
+ * ...
+ * 1022 == 1023 blks
+ * 1023 == 1024 blks
+ * 1024 == > 1024 blks
+ */
+#define N_HIST_BKTS	1025
+
 #define BIT_TIME(t)	((double)SECONDS(t) + ((double)NANO_SECONDS(t) / 1.0e9))
 
 #define BIT_START(iop)	((iop)->t.sector)
@@ -195,6 +205,7 @@ extern struct list_head free_ios;
 extern __u64 iostat_interval, iostat_last_stamp;
 extern time_t genesis, last_vtrace;
 extern double t_astart, t_aend;
+extern __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 #if defined(DEBUG)
 extern int rb_tree_size;
 #endif

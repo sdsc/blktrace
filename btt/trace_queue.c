@@ -71,6 +71,8 @@ void trace_queue(struct io *q_iop)
 		update_qregion(&all_regions, q_iop->t.time);
 		dip_update_q(q_iop->dip, q_iop);
 		pip_update_q(q_iop);
+		if (!remapper_dev(q_iop->t.device))
+			update_q_histo(q_iop->t.bytes);
 	}
 	else
 		io_release(q_iop);
