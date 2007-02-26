@@ -112,7 +112,15 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);
 		dip->start_time = BIT_TIME(iop->t.time);
+		dip->pre_culling = 1;
 		n_devs++;
+	}
+
+	if (dip->pre_culling) {
+		if (iop->type == IOP_Q || iop->type == IOP_A)
+			dip->pre_culling = 0;
+		else
+			return NULL;
 	}
 
 	iop->linked = dip_rb_ins(dip, iop);

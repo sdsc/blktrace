@@ -166,6 +166,7 @@ struct d_info {
 	__u64 last_q, n_ds;
 	__u32 device;
 
+	int pre_culling;
 	int is_plugged, nplugs, n_timer_unplugs;
 	double start_time, last_plug, plugged_time, end_time;
 };
