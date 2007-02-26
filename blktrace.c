@@ -60,13 +60,19 @@ static char blktrace_version[] = "0.99.2";
 
 #define DEBUGFS_TYPE	0x64626720
 
-#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:s"
+#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:sI:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'd'
+	},
+	{
+		.name = "input-devs",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'I'
 	},
 	{
 		.name = "act-mask",
@@ -1749,7 +1755,7 @@ static int net_setup_client(void)
 
 static char usage_str[] = \
 	"-d <dev> [ -r debugfs path ] [ -o <output> ] [-k ] [ -w time ]\n" \
-	"[ -a action ] [ -A action mask ] [ -v ]\n\n" \
+	"[ -a action ] [ -A action mask ] [ -I  <devs file> ] [ -v ]\n\n" \
 	"\t-d Use specified device. May also be given last after options\n" \
 	"\t-r Path to mounted debugfs, defaults to /sys/kernel/debug\n" \
 	"\t-o File(s) to send output to\n" \
@@ -1764,6 +1770,7 @@ static char usage_str[] = \
 	"\t-h Run in network client mode, connecting to the given host\n" \
 	"\t-p Network port to use (default 8462)\n" \
 	"\t-s Make the network client NOT use sendfile() to transfer data\n" \
+	"\t-I Add devices found in <devs file>\n" \
 	"\t-V Print program version info\n\n";
 
 static void show_usage(char *program)
@@ -1806,6 +1813,24 @@ int main(int argc, char *argv[])
 			if (resize_devices(optarg) != 0)
 				return 1;
 			break;
+
+		case 'I': {
+			char dev_line[256];
+			FILE *ifp = fopen(optarg, "r");
+
+			if (!ifp) {
+				fprintf(stderr, 
+				        "Invalid file for devices %s\n", 
+					optarg);
+				return 1;
+			}
+
+			while (fscanf(ifp, "%s\n", dev_line) == 1)
+				if (resize_devices(strdup(dev_line)) != 0)
+					return 1;
+			break;
+		}
+			
 
 		case 'r':
 			debugfs_path = optarg;

@@ -21,7 +21,7 @@
 \title{blktrace User Guide}
 \author{blktrace: Jens Axboe (axboe@suse.de)\\
         User Guide: Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{23 February 2005}
+\date{18 February 2007}
 
 \begin{document}
 \maketitle
@@ -393,6 +393,8 @@ Short              & Long                       & Description \\ \hline\hline
 -r \emph{rel-path} & --relay=\emph{rel-path}    & Specifies debugfs mount point \\ \hline
 -V                 & --version                  & Outputs version \\ \hline
 -w \emph{seconds}  & --stopwatch=\emph{seconds} & Sets run time to the number of seconds specified \\ \hline
+-I \emph{devs file}& --input-devs=\emph{devs file}& Adds devices found in \emph{devs file} to list of devices to trace. \\
+                   &                              & (One device per line.) \\ \hline
 \end{tabular}
 
 \subsubsection{\label{sec:filter-mask}Filter Masks}
