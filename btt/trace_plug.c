@@ -33,7 +33,7 @@ void trace_unplug_io(struct io *u_iop)
 
 void trace_unplug_timer(struct io *u_iop)
 {
-	trace_unplug(u_iop, 0);
+	trace_unplug(u_iop, 1);
 }
 
 void trace_plug(struct io *p_iop)
