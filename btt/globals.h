@@ -195,7 +195,7 @@ extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;;
-extern int verbose, done, time_bounded;
+extern int verbose, done, time_bounded, output_all_data;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
 extern struct list_head all_devs, all_procs, retries;

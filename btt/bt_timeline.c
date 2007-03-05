@@ -30,7 +30,7 @@ char bt_timeline_version[] = "0.99";
 char *devices, *exes, *input_name, *output_name, *seek_name;
 char *d2c_name, *q2c_name, *per_io_name;
 FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
-int verbose, done, time_bounded;
+int verbose, done, time_bounded, output_all_data;
 double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;

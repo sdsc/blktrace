@@ -523,23 +523,25 @@ void output_histos(void)
 
 int output_avgs(FILE *ofp)
 {
-	if (exes == NULL || *exes != '\0') {
-		output_section_hdr(ofp, "Per Process");
-		output_pip_avg(ofp, "Q2Q", pip_q2q_avg);
-		output_pip_avg(ofp, "Q2A", pip_q2a_avg);
-		output_pip_avg(ofp, "Q2I", pip_q2i_avg);
-		output_pip_avg(ofp, "I2D", pip_i2d_avg);
-		output_pip_avg(ofp, "D2C", pip_d2c_avg);
-		output_pip_avg(ofp, "Q2C", pip_q2c_avg);
-	}
+	if (output_all_data) {
+		if (exes == NULL || *exes != '\0') {
+			output_section_hdr(ofp, "Per Process");
+			output_pip_avg(ofp, "Q2Q", pip_q2q_avg);
+			output_pip_avg(ofp, "Q2A", pip_q2a_avg);
+			output_pip_avg(ofp, "Q2I", pip_q2i_avg);
+			output_pip_avg(ofp, "I2D", pip_i2d_avg);
+			output_pip_avg(ofp, "D2C", pip_d2c_avg);
+			output_pip_avg(ofp, "Q2C", pip_q2c_avg);
+		}
 
-	output_section_hdr(ofp, "Per Device");
-	output_dip_avg(ofp, "Q2Q", dip_q2q_avg);
-	output_dip_avg(ofp, "Q2A", dip_q2a_avg);
-	output_dip_avg(ofp, "Q2I", dip_q2i_avg);
-	output_dip_avg(ofp, "I2D", dip_i2d_avg);
-	output_dip_avg(ofp, "D2C", dip_d2c_avg);
-	output_dip_avg(ofp, "Q2C", dip_q2c_avg);
+		output_section_hdr(ofp, "Per Device");
+		output_dip_avg(ofp, "Q2Q", dip_q2q_avg);
+		output_dip_avg(ofp, "Q2A", dip_q2a_avg);
+		output_dip_avg(ofp, "Q2I", dip_q2i_avg);
+		output_dip_avg(ofp, "I2D", dip_i2d_avg);
+		output_dip_avg(ofp, "D2C", dip_d2c_avg);
+		output_dip_avg(ofp, "Q2C", dip_q2c_avg);
+	}
 
 	output_section_hdr(ofp, "All Devices");
 	output_hdr(ofp, "ALL");
@@ -554,13 +556,15 @@ int output_avgs(FILE *ofp)
 	output_section_hdr(ofp, "Device Overhead");
 	output_dip_prep_ohead(ofp);
 
-	if (exes == NULL || *exes != '\0') {
-		output_section_hdr(ofp, "Per Process (avgs)");
-		output_pip_avgs(ofp);
-	}
+	if (output_all_data) {
+		if (exes == NULL || *exes != '\0') {
+			output_section_hdr(ofp, "Per Process (avgs)");
+			output_pip_avgs(ofp);
+		}
 
-	output_section_hdr(ofp, "Per Device (avgs)");
-	output_dip_avgs(ofp);
+		output_section_hdr(ofp, "Per Device (avgs)");
+		output_dip_avgs(ofp);
+	}
 
 	output_section_hdr(ofp, "Device Merge Information");
 	output_dip_merge_ratio(ofp);

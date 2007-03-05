@@ -27,8 +27,14 @@
 #include <fcntl.h>
 #include "globals.h"
 
-#define S_OPTS	"d:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
+#define S_OPTS	"Ad:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
 static struct option l_opts[] = {
+	{
+		.name = "all-data",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'A'
+	},
 	{
 		.name = "range-delta",
 		.has_arg = required_argument,
@@ -167,6 +173,9 @@ void handle_args(int argc, char *argv[])
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
+		case 'A':
+			output_all_data = 1;
+			break;
 		case 'd':
 			sscanf(optarg, "%lf", &range_delta);
 			break;
