@@ -232,7 +232,9 @@ static inline void unupdate_i2d(struct io *iop, __u64 d_time)
 
 static inline void update_d2c(struct io *iop, int n, __u64 c_time)
 {
+#if defined(DEBUG)
 	if (per_io_ofp) fprintf(per_io_ofp, "d2c %13.9f\n", n*BIT_TIME(c_time));
+#endif
 	UPDATE_AVGS_N(d2c, iop, iop->pip, c_time, n);
 }
 

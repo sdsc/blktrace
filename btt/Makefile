@@ -19,7 +19,7 @@ rbtree.o: ../rbtree.c
 depend:
 	@$(CC) -MM $(ALL_CFLAGS) -I.. *.c 1> .depend
 
-clean:
+clean: docsclean
 	-rm -f *.o $(PROGS) .depend
 
 %.o: %.c
@@ -27,6 +27,12 @@ clean:
 
 btt: $(OBJS)
 	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
+
+docs:
+	$(MAKE) -C doc all
+
+docsclean:
+	$(MAKE) -C doc clean
 
 ifneq ($(wildcard .depend),)
 include .depend

@@ -27,9 +27,11 @@ $(PROGS): | depend
 
 docs:
 	$(MAKE) -C doc all
+	$(MAKE) -C btt docs
 
 docsclean:
 	$(MAKE) -C doc clean
+	$(MAKE) -C btt clean
 
 depend:
 	@$(CC) -MM $(ALL_CFLAGS) *.c 1> .depend

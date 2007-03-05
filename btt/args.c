@@ -143,7 +143,8 @@ static struct option l_opts[] = {
 };
 
 static char usage_str[] = \
-	"\n[ -d <seconds>     | --range-delta=<seconds> ]\n" \
+	"\n[ -A               | --all-data ]\n" \
+	"[ -d <seconds>     | --range-delta=<seconds> ]\n" \
 	"[ -D <dev;...>     | --devices=<dev;...> ]\n" \
 	"[ -e <exe,...>     | --exes=<exe,...>  ]\n" \
 	"[ -h               | --help ]\n" \
