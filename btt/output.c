@@ -504,7 +504,7 @@ void output_histos(void)
 	for (i = 0; i < (N_HIST_BKTS-1); i++) 
 		fprintf(ofp, "%4d %lld\n", (i+1), (long long)q_histo[i]);
 	fprintf(ofp, "\n# Q bucket for > %d\n%4d %lld\n", (int)N_HIST_BKTS-1,
-		N_HIST_BKTS-1, q_histo[N_HIST_BKTS-1]);
+		N_HIST_BKTS-1, (long long)q_histo[N_HIST_BKTS-1]);
 	fclose(ofp);
 
 	sprintf(fname, "%s_dhist.dat", output_name);
@@ -517,7 +517,7 @@ void output_histos(void)
 	for (i = 0; i < (N_HIST_BKTS-1); i++)
 		fprintf(ofp, "%4d %lld\n", (i+1), (long long)d_histo[i]);
 	fprintf(ofp, "\n# D bucket for > %d\n%4d %lld\n", (int)N_HIST_BKTS-1,
-		N_HIST_BKTS-1, d_histo[N_HIST_BKTS-1]);
+		N_HIST_BKTS-1, (long long)d_histo[N_HIST_BKTS-1]);
 	fclose(ofp);
 }
 
