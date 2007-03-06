@@ -2,7 +2,7 @@ DOCTMP	= btt.log btt.aux btt.dvi btt.toc
 
 all: btt.pdf
 
-btt.tex:
+btt.tex: activity.eps qhist.eps dhist.eps seek.eps
 	@touch btt.tex
 
 btt.pdf: btt.tex

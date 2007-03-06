@@ -1,4 +1,5 @@
 \documentclass{article}
+\usepackage{epsfig}
 
 %
 % Copyright (C) 2007 Alan D. Brunelle <Alan.Brunelle@hp.com>
@@ -414,13 +415,14 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 
   \begin{figure}[hb]
   \leavevmode\centering
+  \epsfig{file=activity.eps,width=4.5in}
   \caption{\label{fig:activity}Simple Activity Chart}
   \end{figure}
 
-  When the black line (system Q activity) is \emph{high}, then the
-  system is seeing relatively continuous incoming queues. Conversely,
-  when it is low, it represents an extended period of time where no
-  queue requests were coming in.
+  When the black line (system Q activity) is \emph{high}, then the system
+  is seeing relatively continuous incoming queues. Conversely, when it is
+  low, it represents an extended period of time where no queue requests
+  were coming in. Similarly for the red line and C activity.
 
 \newpage\section{\label{sec:hist}Histogram Data Files}
 
@@ -449,6 +451,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 
   \begin{figure}[hb]
   \leavevmode\centering
+  \epsfig{file=qhist.eps,width=4.5in}
   \caption{\label{fig:qhist}Q Histogram}
   \end{figure}
 
@@ -463,6 +466,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 
   \begin{figure}[hb]
   \leavevmode\centering
+  \epsfig{file=dhist.eps,width=4.5in}
   \caption{\label{fig:dhist}D Histogram}
   \end{figure}
 
@@ -545,14 +549,6 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
   while the second column (Y values) shows the actual latency for a
   command at that time (either Q2C or D2C).
 
-  Figure~\ref{fig:lat} shows a simple chart illustrating both sets of
-  data collected by btt.
-
-  \begin{figure}[hb]
-  \leavevmode\centering
-  \caption{\label{fig:lat}D2C and Q2C Latencies}
-  \end{figure}
-
 \newpage\section{\label{sec:seek}Seek Data File}
 
   \texttt{btt} can also produce a data file containing all IO-to-IO sector
@@ -590,8 +586,9 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
   Figure~\ref{fig:seek} shows a simple graph that can be produced which
   provides visual details concerning seek patterns.
 
-  \begin{figure}[hb]
+  \begin{figure}[h!]
   \leavevmode\centering
+  \epsfig{file=seek.eps,width=4.5in}
   \caption{\label{fig:seek}Seek Chart}
   \end{figure}
 
@@ -705,7 +702,7 @@ Usage: \texttt{btt} 0.99.1
   interval, likewise, \texttt{btt} allows one to specify how many seconds
   between its generation of snapshots of the data via this option. Details
   about the iostat-like capabilities of \texttt{btt} may be found in
-  section~\ref{sec;iostat}.
+  section~\ref{sec:iostat}.
 
 \subsection{\label{sec:o-tT}\texttt{--time-start}/\texttt{-t} and
 \texttt{--time-end}/\texttt{T}}
