@@ -124,12 +124,13 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 	}
 
 	iop->linked = dip_rb_ins(dip, iop);
-#if defined(DEBUG)
-	if (iop->linked) 
-		rb_tree_size++;
-#endif
-
 	dip->end_time = BIT_TIME(iop->t.time);
+
+#	if defined(DEBUG)
+		if (iop->linked) 
+			rb_tree_size++;
+#	endif
+
 	return dip;
 }
 

@@ -173,15 +173,18 @@ struct d_info {
 
 struct io {
 	struct rb_node rb_node;
-	struct list_head f_head, c_pending, retry;
+	struct list_head f_head, c_pending, retry, rm_head;
 	struct list_head down_list, up_list;
 	struct d_info *dip;
 	struct p_info *pip;
 	void *pdu;
 	struct blk_io_trace t;
 	__u64 bytes_left;
-	int linked, on_retry_list, down_len, up_len;
+	int linked, on_retry_list, down_len, up_len, on_rm_list;
 	enum iop_type type;
+#if defined(COUNT_IOS)
+	struct list_head cio_head;
+#endif
 };
 
 struct bilink {
@@ -198,7 +201,7 @@ extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;;
 extern int verbose, done, time_bounded, output_all_data;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
-extern struct list_head all_devs, all_procs, retries;
+extern struct list_head all_devs, all_procs, retries, rmhd;
 extern struct avgs_info all_avgs;
 extern __u64 last_q, next_retry_check;
 extern struct region_info all_regions;
@@ -209,6 +212,10 @@ extern double t_astart, t_aend;
 extern __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 #if defined(DEBUG)
 extern int rb_tree_size;
+#endif
+#if defined(COUNT_IOS)
+extern unsigned long nios_reused, nios_alloced, nios_freed;
+extern struct list_head cios;
 #endif
 
 /* args.c */
@@ -291,7 +298,7 @@ int seeki_mode(void *handle, struct mode *mp);
 /* trace.c */
 void __dump_iop(FILE *ofp, struct io *iop, int extra_nl);
 void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop);
-void release_iops(struct list_head *rmhd);
+void release_iops(void);
 void add_trace(struct io *iop);
 void do_retries(__u64 now);
 
@@ -300,15 +307,15 @@ void trace_complete(struct io *c_iop);
 void retry_complete(struct io *c_iop, __u64 now);
 
 /* trace_im.c */
-void run_im(struct io *im_iop, struct io *c_iop, void *param);
-void run_unim(struct io *im_iop, struct list_head *rmhd);
+void run_im(struct io *im_iop, struct io *d_iop, struct io *c_iop);
+void run_unim(struct io *im_iop, struct io *d_iop, struct io *c_iop);
 int ready_im(struct io *im_iop, struct io *c_iop);
 void trace_insert(struct io *i_iop);
 void trace_merge(struct io *m_iop);
 
 /* trace_issue.c */
-void run_issue(struct io *d_iop, struct io *c_iop, void *param);
-void run_unissue(struct io *d_iop, struct list_head *rmhd);
+void run_issue(struct io *d_iop, struct io *u_iop, struct io *c_iop);
+void run_unissue(struct io *d_iop, struct io *u_iop, struct io *c_iop);
 int ready_issue(struct io *d_iop, struct io *c_iop);
 void trace_issue(struct io *d_iop);
 
@@ -318,12 +325,12 @@ void trace_unplug_io(struct io *u_iop);
 void trace_unplug_timer(struct io *u_iop);
 
 /* trace_queue.c */
-void run_queue(struct io *q_iop, struct io *c_iop, struct list_head *rmhd);
+void run_queue(struct io *q_iop, struct io *u_iop, struct io *c_iop);
 int ready_queue(struct io *q_iop, struct io *c_iop);
 void trace_queue(struct io *q_iop);
 
 /* trace_remap.c */
-void run_remap(struct io *a_iop, struct io *c_iop, void *param);
+void run_remap(struct io *a_iop, struct io *u_iop, struct io *c_iop);
 int ready_remap(struct io *a_iop, struct io *c_iop);
 void trace_remap(struct io *a_iop);
 

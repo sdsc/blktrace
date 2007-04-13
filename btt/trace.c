@@ -21,7 +21,6 @@
 #include "globals.h"
 
 int dump_level;
-LIST_HEAD(retries);
 
 void __dump_iop(FILE *ofp, struct io *iop, int extra_nl)
 {
@@ -44,14 +43,14 @@ void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop)
 		MINOR(l_iop->t.device), (unsigned long long)l_iop->t.sector);
 }
 
-void release_iops(struct list_head *rmhd)
+void release_iops(void)
 {
 	struct io *x_iop;
 	struct list_head *p, *q;
 
-	list_for_each_safe(p, q, rmhd) {
-		x_iop = list_entry(p, struct io, f_head);
-		LIST_DEL(&x_iop->f_head);
+	list_for_each_safe(p, q, &rmhd) {
+		x_iop = list_entry(p, struct io, rm_head);
+		LIST_DEL(&x_iop->rm_head);
 		io_release(x_iop);
 	}
 }
@@ -85,12 +84,14 @@ static void __add_trace(struct io *iop)
 	iostat_check_time(iop->t.time);
 
 	if (verbose && ((now - last_vtrace) > 0)) {
-#if defined(DEBUG)
+
+#	if defined(DEBUG)
 		printf("%10lu t\tretries=|%10d|\ttree size=|%10d|\r", 
 			n_traces, list_len(&retries), rb_tree_size);
-#else
+#	else
 		printf("%10lu t\r", n_traces);
-#endif
+#	endif
+
 		if ((n_traces % 1000000) == 0) printf("\n");
 		fflush(stdout);
 		last_vtrace = now;

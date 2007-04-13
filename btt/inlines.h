@@ -117,28 +117,47 @@ static inline struct io *io_alloc(void)
 	if (!list_empty(&free_ios)) {
 		iop = list_entry(free_ios.next, struct io, f_head);
 		LIST_DEL(&iop->f_head);
+
+#		if defined(COUNT_IOS)
+			nios_reused++;
+#		endif
 	}
-	else
+	else {
 		iop = malloc(sizeof(struct io));
+
+#		if defined(COUNT_IOS)
+			nios_alloced++;
+#		endif
+	}
 
 	memset(iop, 0, sizeof(struct io));
 	INIT_LIST_HEAD(&iop->down_list);
 	INIT_LIST_HEAD(&iop->up_list);
 
-#if defined(DEBUG)
-	iop->f_head.next = LIST_POISON1;
-	iop->c_pending.next = LIST_POISON1;
-	iop->retry.next = LIST_POISON1;
-#endif
+#	if defined(DEBUG)
+		iop->f_head.next = LIST_POISON1;
+		iop->c_pending.next = LIST_POISON1;
+		iop->retry.next = LIST_POISON1;
+#	endif
+
+#	if defined(COUNT_IOS)
+		list_add_tail(&iop->cio_head, &cios);
+#	endif
 
 	return iop;
 }
 
 static inline void io_free(struct io *iop)
 {
+#	if defined(COUNT_IOS)
+		nios_freed++;
+		LIST_DEL(&iop->cio_head);
+#	endif
+
 #	if defined(DEBUG)
 		memset(iop, 0, sizeof(*iop));
 #	endif
+
 	list_add_tail(&iop->f_head, &free_ios);
 }
 
@@ -190,25 +209,29 @@ static inline void io_release(struct io *iop)
 
 static inline void update_q2c(struct io *iop, __u64 c_time)
 {
-#if defined(DEBUG)
-	if (per_io_ofp) fprintf(per_io_ofp, "q2c %13.9f\n", BIT_TIME(c_time));
-#endif
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "q2c %13.9f\n", BIT_TIME(c_time));
+#	endif
 	UPDATE_AVGS(q2c, iop, iop->pip, c_time);
 }
 
 static inline void update_q2a(struct io *iop, __u64 a_time)
 {
-#if defined(DEBUG)
-	if (per_io_ofp) fprintf(per_io_ofp, "q2a %13.9f\n", BIT_TIME(a_time));
-#endif
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "q2a %13.9f\n", BIT_TIME(a_time));
+#	endif
 	UPDATE_AVGS(q2a, iop, iop->pip, a_time);
 }
 
 static inline void update_q2i(struct io *iop, __u64 i_time)
 {
-#if defined(DEBUG)
-	if (per_io_ofp) fprintf(per_io_ofp, "q2i %13.9f\n", BIT_TIME(i_time));
-#endif
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "q2i %13.9f\n", BIT_TIME(i_time));
+#	endif
+
 	UPDATE_AVGS(q2i, iop, iop->pip, i_time);
 }
 
@@ -219,9 +242,11 @@ static inline void unupdate_q2i(struct io *iop, __u64 i_time)
 
 static inline void update_i2d(struct io *iop, __u64 d_time)
 {
-#if defined(DEBUG)
-	if (per_io_ofp) fprintf(per_io_ofp, "i2d %13.9f\n", BIT_TIME(d_time));
-#endif
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "i2d %13.9f\n", BIT_TIME(d_time));
+#	endif
+
 	UPDATE_AVGS(i2d, iop, iop->pip, d_time);
 }
 
@@ -232,9 +257,12 @@ static inline void unupdate_i2d(struct io *iop, __u64 d_time)
 
 static inline void update_d2c(struct io *iop, int n, __u64 c_time)
 {
-#if defined(DEBUG)
-	if (per_io_ofp) fprintf(per_io_ofp, "d2c %13.9f\n", n*BIT_TIME(c_time));
-#endif
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "d2c %13.9f\n", 
+							n*BIT_TIME(c_time));
+#	endif
+
 	UPDATE_AVGS_N(d2c, iop, iop->pip, c_time, n);
 }
 
@@ -268,9 +296,10 @@ static inline int dip_rb_ins(struct d_info *dip, struct io *iop)
 static inline void dip_rb_rem(struct io *iop)
 {
 	rb_erase(&iop->rb_node, __get_root(iop->dip, iop->type));
-#if defined(DEBUG)
-	rb_tree_size--;
-#endif
+
+#	if defined(DEBUG)
+		rb_tree_size--;
+#	endif
 }
 
 static inline void dip_rb_fe(struct d_info *dip, enum iop_type type, 
@@ -420,16 +449,17 @@ static inline struct io *bilink_first_up(struct io *iop, struct bilink **blp_p)
 	return blp->uiop;
 }
 
-typedef void (*bilink_func)(struct io *diop, struct io *uiop, void *param);
-static inline void bilink_for_each_down(bilink_func func, struct io *uiop, 
-							void *param, int ul)
+typedef void (*bilink_func)(struct io *diop, struct io *uiop, 
+							struct io *c_iop);
+static inline void bilink_for_each_down(bilink_func func, struct io *uiop,
+				        struct io *c_iop, int ul)
 {
 	struct bilink *blp;
 	struct list_head *p, *q;
 
 	list_for_each_safe(p, q, &uiop->down_list) {
 		blp = list_entry(p, struct bilink, up_head);
-		func(blp->diop, uiop, param);
+		func(blp->diop, uiop, c_iop);
 		if (ul)
 			biunlink(blp);
 	}
@@ -449,4 +479,12 @@ static inline void update_q_histo(__u64 nbytes)
 static inline void update_d_histo(__u64 nbytes)
 {
 	d_histo[histo_idx(nbytes)]++;
+}
+
+static inline void add_rmhd(struct io *iop)
+{
+	if (!iop->on_rm_list) {
+		list_add_tail(&iop->rm_head, &rmhd);
+		iop->on_rm_list = 1;
+	}
 }

@@ -22,7 +22,6 @@
 
 void trace_requeue(struct io *r_iop)
 {
-	LIST_HEAD(rmhd);
 	struct io *d_iop;
 
 	if ((io_setup(r_iop, IOP_R) == 0) ||
@@ -33,13 +32,14 @@ void trace_requeue(struct io *r_iop)
 	}
 	dip_rem(d_iop);
 
-#if defined(DEBUG)
-	ASSERT(ready_issue(d_iop, r_iop) != 0);
-#else
-	(void)ready_issue(d_iop, r_iop);
-#endif
+#	if defined(DEBUG)
+		ASSERT(ready_issue(d_iop, r_iop) != 0);
+#	else
+		(void)ready_issue(d_iop, r_iop);
+#	endif
 
-	run_unissue(d_iop, &rmhd);
-	list_add_tail(&r_iop->f_head, &rmhd);
-	release_iops(&rmhd);
+	run_unissue(d_iop, r_iop, r_iop);
+	add_rmhd(r_iop);
+
+	release_iops();
 }

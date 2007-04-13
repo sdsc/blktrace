@@ -28,20 +28,20 @@ static inline void __update_q2c(struct io *q_iop, struct io *c_iop)
 	latency_q2c(q_iop->dip, q_iop->t.time, q2c);
 }
 
-void run_queue(struct io *q_iop, struct io *c_iop, struct list_head *rmhd)
+void run_queue(struct io *q_iop, __attribute__((__unused__))struct io *u_iop,
+	       struct io *c_iop)
 {
 	struct bilink *blp;
 	struct io *a_iop = bilink_first_down(q_iop, &blp);
 
 	if (a_iop) {
-		run_remap(a_iop, c_iop, rmhd);
+		run_remap(a_iop, q_iop, c_iop);
 		biunlink(blp);
 	}
 
 	__update_q2c(q_iop, c_iop);
 	dump_iop(q_iop, 0);
-
-	list_add_tail(&q_iop->f_head, rmhd);
+	add_rmhd(q_iop);
 }
 
 int ready_queue(struct io *q_iop, struct io *c_iop)

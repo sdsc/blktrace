@@ -39,6 +39,8 @@ time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
 LIST_HEAD(free_ios);
+LIST_HEAD(rmhd);
+LIST_HEAD(retries);
 __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 
 double range_delta = 0.1;
@@ -53,7 +55,12 @@ struct region_info all_regions = {
 };
 
 #if defined(DEBUG)
-int rb_tree_size;
+	int rb_tree_size;
+#endif
+
+#if defined(COUNT_IOS)
+unsigned long nios_reused, nios_alloced, nios_freed;
+LIST_HEAD(cios);
 #endif
 
 int process(void);
@@ -110,11 +117,33 @@ int process(void)
 			n_traces, tps/1000.0,
 			dt_input, tv2dbl(&tve) - tv2dbl(&tvi),
 			tv2dbl(&tve) - tv2dbl(&tvs));
-#if defined(DEBUG)
-		printf("\ttree = |%d|\n", rb_tree_size);
-		if (rb_tree_size > 0)
-			dump_rb_trees();
-#endif
+
+#		if defined(DEBUG)
+			printf("\ttree = |%d|\n", rb_tree_size);
+			if (rb_tree_size > 0)
+				dump_rb_trees();
+#		endif
+
+#		if defined(COUNT_IOS)
+			{
+				struct io *_iop;
+				struct list_head *_p;
+				FILE *_ofp = fopen("cios.txt", "w");
+				printf("(%ld + %ld) = %ld - %ld = %ld\n", 
+					nios_alloced, nios_reused, 
+					nios_alloced + nios_reused, 
+					nios_freed, 
+					(nios_alloced + nios_reused) 
+								- nios_freed);
+
+				__list_for_each(_p, &cios) {
+					_iop = list_entry(_p, struct io, 
+								cio_head);
+					__dump_iop(_ofp, _iop, 0);
+				}
+				fclose(_ofp);
+			}
+#		endif
 	}
 
 	return ret;

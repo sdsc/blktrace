@@ -20,51 +20,40 @@
  */
 #include "globals.h"
 
-struct params {
-	struct io *c_iop;
-	struct list_head *rmhd;
-};
-
-void __run_im(struct io *q_iop, struct io *im_iop, void *param)
+static void __run_im(struct io *q_iop, struct io *im_iop, struct io *c_iop)
 {
-	struct params *p = param;
-	run_queue(q_iop, p->c_iop, p->rmhd);
+	run_queue(q_iop, im_iop, c_iop);
 	dump_iop(im_iop, 0);
-	list_add_tail(&im_iop->f_head, p->rmhd);
 }
 
-void __run_unim(struct io *q_iop, struct io *im_iop, void *param)
+static void __run_unim(struct io *q_iop, struct io *im_iop, 
+		       __attribute__((__unused__))struct io *c_iop)
 {
-	struct params *p = param;
 	if (q_iop->bytes_left == 0) {
 		q_iop->linked = dip_rb_ins(q_iop->dip, q_iop);
 		ASSERT(q_iop->linked);
-#if defined(DEBUG)
-		rb_tree_size++;
-#endif
+
+#		if defined(DEBUG)
+			rb_tree_size++;
+#		endif
 	}
 
 	q_iop->bytes_left += im_iop->t.bytes;
 	unupdate_q2i(q_iop, tdelta(q_iop, im_iop));
-	list_add_tail(&im_iop->f_head, p->rmhd);
 }
 
-void run_im(struct io *im_iop, struct io *c_iop, void *param)
+void run_im(struct io *im_iop, __attribute__((__unused__))struct io *d_iop, 
+	    struct io *c_iop)
 {
-	struct params p = {
-		.c_iop = c_iop,
-		.rmhd = (struct list_head *)param
-	};
-	bilink_for_each_down(__run_im, im_iop, &p, 1);
+	bilink_for_each_down(__run_im, im_iop, c_iop, 1);
+	add_rmhd(im_iop);
 }
 
-void run_unim(struct io *im_iop, struct list_head *rmhd)
+void run_unim(struct io *im_iop, __attribute__((__unused__))struct io *d_iop, 
+	      struct io *c_iop)
 {
-	struct params p = {
-		.c_iop = NULL,
-		.rmhd = rmhd
-	};
-	bilink_for_each_down(__run_unim, im_iop, &p, 1);
+	bilink_for_each_down(__run_unim, im_iop, c_iop, 1);
+	add_rmhd(im_iop);
 }
 
 int ready_im(struct io *im_iop, struct io *c_iop)

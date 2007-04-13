@@ -24,29 +24,27 @@ LIST_HEAD(pending_cs);
 
 static inline void __run_complete(struct io *c_iop)
 {
-	LIST_HEAD(rmhd);
-
 	if (remapper_dev(c_iop->t.device)) {
 		struct bilink *blp = blp;
 		struct io *iop = bilink_first_down(c_iop, &blp);
 
 		if (iop->type == IOP_Q) {
-			run_queue(iop, c_iop, &rmhd);
+			run_queue(iop, c_iop, c_iop);
 			biunlink(blp);
 		}
 		else
-			bilink_for_each_down(run_remap, c_iop, &rmhd, 1);
+			bilink_for_each_down(run_remap, c_iop, c_iop, 1);
 	}
 	else
-		bilink_for_each_down(run_issue, c_iop, &rmhd, 1);
+		bilink_for_each_down(run_issue, c_iop, c_iop, 1);
 
 	dump_iop(c_iop, 1);
 
 	LIST_DEL(&c_iop->c_pending);
 	del_retry(c_iop);
+	add_rmhd(c_iop);
 
-	list_add_tail(&c_iop->f_head, &rmhd);
-	release_iops(&rmhd);
+	release_iops();
 }
 
 static int ready_complete_remapper(struct io *c_iop)
@@ -170,9 +168,10 @@ void retry_complete(struct io *c_iop, __u64 now)
 
 	switch (ready_complete(c_iop)) {
 	case  1: 
-#if defined(DEBUG)
-		fprintf(stderr, "Retried %15.9lf success!\n", tc);
-#endif
+#		if defined(DEBUG)
+			fprintf(stderr, "Retried %15.9lf success!\n", tc);
+#		endif
+
 		__run_complete(c_iop); 
 		break;
 	case  0:
