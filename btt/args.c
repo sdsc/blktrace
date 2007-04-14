@@ -27,13 +27,27 @@
 #include <fcntl.h>
 #include "globals.h"
 
-#define S_OPTS	"Ad:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
+#define SETBUFFER_SIZE	(64 * 1024)
+
+#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
 static struct option l_opts[] = {
+	{
+		.name = "seek-absolute",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'a'
+	},
 	{
 		.name = "all-data",
 		.has_arg = no_argument,
 		.flag = NULL,
 		.val = 'A'
+	},
+	{
+		.name = "dump-blocknos",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'B'
 	},
 	{
 		.name = "range-delta",
@@ -143,7 +157,9 @@ static struct option l_opts[] = {
 };
 
 static char usage_str[] = \
-	"\n[ -A               | --all-data ]\n" \
+	"\n[ -a               | --seek-absolute ]\n" \
+	"[ -A               | --all-data ]\n" \
+	"[ -B <output name> | --dump-blocknos=<output name> ]\n" \
 	"[ -d <seconds>     | --range-delta=<seconds> ]\n" \
 	"[ -D <dev;...>     | --devices=<dev;...> ]\n" \
 	"[ -e <exe,...>     | --exes=<exe,...>  ]\n" \
@@ -162,10 +178,40 @@ static char usage_str[] = \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n\n";
 
+static struct file_info *arg_files = NULL;
+
 static void usage(char *prog)
 {
 	fprintf(stderr, "Usage: %s %s %s", prog, bt_timeline_version,
 		usage_str);
+}
+
+static FILE *setup_ofile(char *fname)
+{
+	if (fname) {
+		char *buf;
+		FILE *ofp = fopen(fname, "w");
+
+		if (!ofp) {
+			perror(fname);
+			exit(1);
+		}
+
+		buf = malloc(SETBUFFER_SIZE);
+		assert(buf);
+
+		setbuffer(ofp, buf, SETBUFFER_SIZE);
+		add_file(&arg_files, ofp, fname);
+		add_buf(buf);
+		return ofp;
+	}
+
+	return NULL;
+}
+
+void clean_args(void)
+{
+	clean_files(&arg_files);
 }
 
 void handle_args(int argc, char *argv[])
@@ -174,8 +220,14 @@ void handle_args(int argc, char *argv[])
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
+		case 'a':
+			seek_absolute = 1;
+			break;
 		case 'A':
 			output_all_data = 1;
+			break;
+		case 'B':
+			bno_dump_name = strdup(optarg);
 			break;
 		case 'd':
 			sscanf(optarg, "%lf", &range_delta);
@@ -273,21 +325,6 @@ void handle_args(int argc, char *argv[])
 		free(fname);
 	}
 
-	if (iostat_name != NULL) {
-		iostat_ofp = fopen(iostat_name, "w");
-		if (iostat_ofp == NULL) {
-			perror(iostat_name);
-			exit(1);
-		}
-		setbuffer(iostat_ofp, malloc(64 * 1024), 64 * 1024);
-	}
-
-	if (per_io_name != NULL) {
-		per_io_ofp = fopen(per_io_name, "w");
-		if (per_io_ofp == NULL) {
-			perror(per_io_name);
-			exit(1);
-		}
-		setbuffer(per_io_ofp, malloc(64 * 1024), 64 * 1024);
-	}
+	iostat_ofp = setup_ofile(iostat_name);
+	per_io_ofp = setup_ofile(per_io_name);
 }

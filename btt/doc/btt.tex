@@ -1,5 +1,5 @@
 \documentclass{article}
-\usepackage{epsfig}
+\usepackage{epsfig,placeins}
 
 %
 % Copyright (C) 2007 Alan D. Brunelle <Alan.Brunelle@hp.com>
@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{1 March 2007}
+\date{10 April 2007}
 
 \begin{document}
 \maketitle
@@ -591,12 +591,29 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
   \epsfig{file=seek.eps,width=4.5in}
   \caption{\label{fig:seek}Seek Chart}
   \end{figure}
+  \FloatBarrier
+
+  The seek difference is calculated in one of two ways:
+
+  \begin{description}
+    \item[default] By default, the seek distance is calculated as the
+    \emph{closest} distance between the previous IO and this IO. The
+    concept of \emph{closeness} means that it could either be the
+    \emph{end} of the previous IO and the beginning of the next, or the
+    end of this IO and the start of the next.
+
+    \item[\texttt{-a}] If the \texttt{-a} or \texttt{--seek-absolute}
+    option is specified, then the seek distance is simply the difference
+    between the end of the previous IO and the start of this IO.
+  \end{description}
 
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
 Usage: \texttt{btt} 0.99.1 
+[ -a               | --seek-absolute ]
 [ -A               | --all-data ]
+[ -B <output name> | --dump-blocknos=<output name> ]
 [ -d <seconds>     | --range-delta=<seconds> ]
 [ -D <dev;...>     | --devices=<dev;...> ]
 [ -e <exe,...>     | --exes=<exe,...>  ]
@@ -616,12 +633,39 @@ Usage: \texttt{btt} 0.99.1
 [ -v               | --verbose ]
 \end{verbatim}
 
+\subsection{\label{sec:o-a}\texttt{--seek-absolute}/\texttt{-a}}
+
+  When specified on the command line, this directs btt to calculate
+  seek distances based solely upon the ending block address of one IO,
+  and the start of the next.  By default \texttt{btt} uses the concept
+  of the closeness to either the beginning or end of the previous IO. See
+  section~\ref{sec:seek} for more details about seek distances.
+
 \subsection{\label{sec:o-A}\texttt{--all-data}/\texttt{-A}}
 
   Normally \texttt{btt} will not print out verbose information
   concerning per-process and per-device data (as outlined in
   section~\ref{sec:detailed-data}). If you desire that level of 
   detail you can specify this option.
+
+\subsection{\label{sec:o-B}\texttt{--dump-blocknos}/\texttt{-B}}
+
+  This option will output absolute block numbers to three files prefixed
+  by the specified output name:
+
+  \begin{description}
+    \item[\emph{prefix}\_\emph{device}\_r.dat] All read block numbers are
+    output, first column is time (seconds), second is the block number,
+    and the third column is the ending block number.
+
+    \item[\emph{prefix}\_\emph{device}\_w.dat] All write block numbers are
+    output, first column is time (seconds), second is the block number,
+    and the third column is the ending block number.
+
+    \item[\emph{prefix}\_\emph{device}\_c.dat] All block numbers (read
+    and write) are output, first column is time (seconds), second is
+    the block number, and the third column is the ending block number.
+  \end{description}
 
 \subsection{\label{sec:o-d}\texttt{--range-delta}/\texttt{-d}}
 

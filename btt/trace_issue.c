@@ -78,6 +78,7 @@ void trace_issue(struct io *d_iop)
 {
 	if (io_setup(d_iop, IOP_D)) {
 		seeki_add(d_iop->dip->seek_handle, d_iop);
+		bno_dump_add(d_iop->dip->bno_dump_handle, d_iop);
 		iostat_issue(d_iop);
 		d_iop->dip->n_ds++;
 		if (!remapper_dev(d_iop->t.device))

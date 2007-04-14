@@ -33,6 +33,24 @@ struct pn_info {
 
 struct rb_root root_pid, root_name;
 
+static void __destroy(struct rb_node *n, int free_name, int free_pip)
+{
+	if (n) {
+		struct pn_info *pnp = rb_entry(n, struct pn_info, rb_node);
+
+		__destroy(n->rb_left, free_name, free_pip);
+		__destroy(n->rb_right, free_name, free_pip);
+
+		if (free_name) free(pnp->u.name);
+		if (free_pip) {
+			free(pnp->pip->name);
+			region_exit(&pnp->pip->regions);
+			free(pnp->pip);
+		}
+		free(pnp);
+	}
+}
+
 struct p_info * __find_process_pid(__u32 pid)
 {
 	struct pn_info *this;
@@ -151,13 +169,11 @@ void add_process(__u32 pid, char *name)
 	struct p_info *pip = find_process(pid, name);
 
 	if (pip == NULL) {
-		size_t len = sizeof(struct p_info) + strlen(name) + 1;
-
-		pip = memset(malloc(len), 0, len);
+		pip = memset(malloc(sizeof(*pip)), 0, sizeof(*pip));
 		pip->pid = pid;
-		init_region(&pip->regions);
+		region_init(&pip->regions);
 		pip->last_q = (__u64)-1;
-		strcpy(pip->name, name);
+		pip->name = strdup(name);
 
 		insert(pip);
 	}
@@ -203,4 +219,10 @@ void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg)
 				f(pip, arg);
 		}
 	}
+}
+
+void pip_exit(void)
+{
+	__destroy(root_pid.rb_node, 0, 0);
+	__destroy(root_name.rb_node, 1, 1);
 }

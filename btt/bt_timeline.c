@@ -27,10 +27,10 @@
 
 char bt_timeline_version[] = "0.99.1";
 
-char *devices, *exes, *input_name, *output_name, *seek_name;
+char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name;
 FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
-int verbose, done, time_bounded, output_all_data;
+int verbose, done, time_bounded, output_all_data, seek_absolute;
 double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;
@@ -39,6 +39,7 @@ time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
 LIST_HEAD(free_ios);
+LIST_HEAD(free_bilinks);
 LIST_HEAD(rmhd);
 LIST_HEAD(retries);
 __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
@@ -50,8 +51,6 @@ __u64 next_retry_check = 0;
 struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
 	.cranges = LIST_HEAD_INIT(all_regions.cranges),
-	.qr_cur = NULL,
-	.cr_cur = NULL
 };
 
 #if defined(DEBUG)
@@ -74,6 +73,31 @@ int main(int argc, char *argv[])
 	if (process() || output_avgs(avgs_ofp) || output_ranges(ranges_ofp))
 		return 1;
 
+	if (iostat_ofp) {
+		fprintf(iostat_ofp, "\n");
+		iostat_dump_stats(iostat_last_stamp, 1);
+	}
+
+	if (ranges_ofp != stdout) 
+		fclose(ranges_ofp);
+	if (avgs_ofp != stdout) 
+		fclose(avgs_ofp);
+
+	seek_clean();
+	latency_clean();
+	bno_dump_clean();
+	dev_map_exit();
+	dip_exit();
+	pip_exit();
+	io_free_all();
+	bilink_free_all();
+	region_exit(&all_regions);
+
+	free(input_name);
+	if (output_name) free(output_name);
+
+	clean_bufs();
+
 	return 0;
 }
 
@@ -86,7 +110,7 @@ int process(void)
 {
 	int ret = 0;
 	struct io *iop = io_alloc();
-	struct timeval tvs, tvi, tve;
+	struct timeval tvs, tve;
 
 	genesis = last_vtrace = time(NULL);
 	gettimeofday(&tvs, NULL);
@@ -97,26 +121,17 @@ int process(void)
 
 	io_release(iop);
 	do_retries(0);
-
-	gettimeofday(&tvi, NULL);
-
-	if (iostat_ofp) {
-		fprintf(iostat_ofp, "\n");
-		iostat_dump_stats(iostat_last_stamp, 1);
-	}
-
-	seek_clean();
-	latency_clean();
 	gettimeofday(&tve, NULL);
 
 	if (verbose) {
-		double tps, dt_input = tv2dbl(&tvi) - tv2dbl(&tvs);
+		double tps, dt_input = tv2dbl(&tve) - tv2dbl(&tvs);
 		
 		tps = (double)n_traces / dt_input;
-		printf("%10lu traces @ %.1lf Ktps\t%.6lf+%.6lf=%.6lf\n", 
+		printf("\r                                        "
+		       "                                        \r");
+		printf("%10lu traces @ %.1lf Ktps in %.6lf seconds\n",
 			n_traces, tps/1000.0,
-			dt_input, tv2dbl(&tve) - tv2dbl(&tvi),
-			tv2dbl(&tve) - tv2dbl(&tvs));
+			dt_input);
 
 #		if defined(DEBUG)
 			printf("\ttree = |%d|\n", rb_tree_size);

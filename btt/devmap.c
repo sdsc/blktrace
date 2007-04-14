@@ -23,6 +23,16 @@
 
 struct devmap *all_devmaps = NULL;
 
+void dev_map_exit(void)
+{
+	struct devmap *dmp;
+
+	while ((dmp = all_devmaps) != NULL) {
+		all_devmaps = dmp->next;
+		free(dmp);
+	}
+}
+
 void dev_map_add(struct devmap *dmp)
 {
 	struct devmap *this = malloc(sizeof(struct devmap));

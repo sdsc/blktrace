@@ -53,15 +53,12 @@ int in_devices(struct blk_io_trace *t)
 
 void add_file(struct file_info **fipp, FILE *fp, char *oname)
 {
-	struct file_info *fip;
-	
-	fip = malloc(sizeof(struct file_info) + strlen(oname) + 1);
-
-	fip->next = *fipp;
-	*fipp = fip;
+	struct file_info *fip = malloc(sizeof(*fip));
 
 	fip->ofp = fp;
-	strcpy(fip->oname, oname);
+	fip->oname = oname;
+	fip->next = *fipp;
+	*fipp = fip;
 }
 
 void clean_files(struct file_info **fipp)
@@ -75,8 +72,34 @@ void clean_files(struct file_info **fipp)
 		fclose(fip->ofp);
 		if (!stat(fip->oname, &buf) && (buf.st_size == 0))
 			unlink(fip->oname);
+
+		free(fip->oname);
 		free(fip);
 	}
 }
 
+struct buf_info {
+	struct buf_info *next;
+	void *buf;
+} *all_bufs;
+void add_buf(void *buf)
+{
+	struct buf_info *bip = malloc(sizeof(*bip));
+
+	bip->buf = buf;
+	bip->next = all_bufs;
+	all_bufs = bip;
+}
+
+void clean_bufs(void)
+{
+	struct buf_info *bip;
+
+	while ((bip = all_bufs) != NULL) {
+		all_bufs = bip->next;
+		free(bip->buf);
+		free(bip);
+	}
+}
+	
 void dbg_ping(void) {}

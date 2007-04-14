@@ -84,7 +84,7 @@ enum iop_type {
 struct file_info {
 	struct file_info *next;
 	FILE *ofp;
-	char oname[1];
+	char *oname;
 };
 
 struct mode {
@@ -124,7 +124,6 @@ struct range_info {
 struct region_info {
 	struct list_head qranges;
 	struct list_head cranges;
-	struct range_info *qr_cur, *cr_cur;
 };
 
 struct p_info {
@@ -132,7 +131,7 @@ struct p_info {
 	struct avgs_info avgs;
 	__u64 last_q;
 	__u32 pid;
-	char name[1];
+	char *name;
 };
 
 struct devmap {
@@ -159,7 +158,7 @@ struct d_info {
 	void *heads;
 	struct region_info regions;
 	struct devmap *map;
-	void *seek_handle;
+	void *seek_handle, *bno_dump_handle;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -191,21 +190,23 @@ struct bilink {
 	struct list_head down_head, up_head;
 	struct io *diop, *uiop;
 };
+#define bilink_free_head	down_head
 
 /* bt_timeline.c */
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
+extern char *bno_dump_name;
 extern double range_delta;
-extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;;
-extern int verbose, done, time_bounded, output_all_data;
+extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;
+extern int verbose, done, time_bounded, output_all_data, seek_absolute;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
 extern struct list_head all_devs, all_procs, retries, rmhd;
 extern struct avgs_info all_avgs;
 extern __u64 last_q, next_retry_check;
 extern struct region_info all_regions;
-extern struct list_head free_ios;
+extern struct list_head free_ios, free_bilinks;
 extern __u64 iostat_interval, iostat_last_stamp;
 extern time_t genesis, last_vtrace;
 extern double t_astart, t_aend;
@@ -221,9 +222,10 @@ extern struct list_head cios;
 /* args.c */
 void handle_args(int argc, char *argv[]);
 
-/* dev_map.c */
+/* devmap.c */
 int dev_map_read(char *fname);
 struct devmap *dev_map_find(__u32 device);
+void dev_map_exit(void);
 
 /* devs.c */
 #if defined(DEBUG)
@@ -240,6 +242,7 @@ struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
 void dip_plug(__u32 dev, double cur_time);
 void dip_unplug(__u32 dev, double cur_time, int is_timer);
+void dip_exit(void);
 
 /* dip_rb.c */
 int rb_insert(struct rb_root *root, struct io *iop);
@@ -268,6 +271,8 @@ void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
 int in_devices(struct blk_io_trace *t);
 void add_file(struct file_info **fipp, FILE *fp, char *oname);
 void clean_files(struct file_info **fipp);
+void add_buf(void *buf);
+void clean_bufs(void);
 void dbg_ping(void);
 
 /* mmap.c */
@@ -285,9 +290,17 @@ void add_process(__u32 pid, char *name);
 struct p_info *find_process(__u32 pid, char *name);
 void pip_update_q(struct io *iop);
 void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg);
+void pip_exit(void);
+
+/* bno_dump.c */
+void *bno_dump_init(__u32 device);
+void bno_dump_exit(void *param);
+void bno_dump_add(void *handle, struct io *iop);
+void bno_dump_clean(void);
 
 /* seek.c */
 void *seeki_init(__u32 device);
+void seeki_exit(void *param);
 void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
 double seeki_mean(void *handle);

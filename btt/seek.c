@@ -29,7 +29,7 @@ struct seek_bkt {
 };
 
 struct seeki {
-	FILE *rfp, *wfp;
+	FILE *rfp, *wfp, *cfp;
 	struct rb_root root;
 	long long tot_seeks;
 	double total_sectors;
@@ -84,6 +84,17 @@ static void __insert(struct rb_root *root, long long sectors)
 	rb_insert_color(&sbp->rb_node, root);
 }
 
+static void __destroy(struct rb_node *n)
+{
+	if (n) {
+		struct seek_bkt *sbp = rb_entry(n, struct seek_bkt, rb_node);
+
+		__destroy(n->rb_left);
+		__destroy(n->rb_right);
+		free(sbp);
+	}
+}
+
 void seek_clean(void)
 {
 	clean_files(&seek_files);
@@ -94,14 +105,19 @@ long long seek_dist(struct seeki *sip, struct io *iop)
 	long long dist;
 	long long start = BIT_START(iop), end = BIT_END(iop);
 
-	/* Some overlap means no seek */
-	if (((sip->last_start <= start) && (start <= sip->last_end)) ||
-	    ((sip->last_start <= end) && (end <= sip->last_end)))
-		dist = 0;
-	else if (start > sip->last_end)
+	if (seek_absolute)
 		dist = start - sip->last_end;
-	else
-		dist = start - sip->last_start;
+	else {
+		/* Some overlap means no seek */
+		if (((sip->last_start <= start) && (start <= sip->last_end)) ||
+		    ((sip->last_start <= end) && (end <= sip->last_end)))
+			dist = 0;
+		else if (start > sip->last_end)
+			dist = start - sip->last_end;
+		else
+			dist = start - sip->last_start;
+
+	}
 
 	sip->last_start = start;
 	sip->last_end = end;
@@ -114,6 +130,7 @@ void *seeki_init(__u32 device)
 
 	sip->rfp = seek_open(device, 'r');
 	sip->wfp = seek_open(device, 'w');
+	sip->cfp = seek_open(device, 'c');
 	sip->tot_seeks = 0;
 	sip->total_sectors = 0.0;
 	sip->last_start = sip->last_end = 0;
@@ -122,14 +139,29 @@ void *seeki_init(__u32 device)
 	return sip;
 }
 
+void seeki_exit(void *param)
+{
+	struct seeki *sip = param;
+
+	/*
+	 * Associated files are cleaned up by seek_clean
+	 */
+	__destroy(sip->root.rb_node);
+	free(sip);
+}
+
 void seeki_add(void *handle, struct io *iop)
 {
 	struct seeki *sip = handle;
+	char rw = IOP_READ(iop) ? 'r' : 'w';
 	long long dist = seek_dist(sip, iop);
+	double tstamp = BIT_TIME(iop->t.time);
 	FILE *fp = IOP_READ(iop) ? sip->rfp : sip->wfp;
 
 	if (fp)
-		fprintf(fp, "%15.9lf %13lld\n", BIT_TIME(iop->t.time), dist);
+		fprintf(fp, "%15.9lf %13lld %c\n", tstamp, dist, rw);
+	if (sip->cfp)
+		fprintf(sip->cfp, "%15.9lf %13lld %c\n", tstamp, dist, rw);
 
 	dist = llabs(dist);
 	sip->tot_seeks++;

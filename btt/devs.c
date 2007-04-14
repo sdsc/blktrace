@@ -25,6 +25,33 @@
 #define DEV_HASH(dev)	((MAJOR(dev) ^ MINOR(dev)) & (N_DEV_HASH - 1))
 struct list_head	dev_heads[N_DEV_HASH];
 
+static inline void *dip_rb_mkhds(void)
+{
+	size_t len = N_IOP_TYPES * sizeof(struct rb_root);
+	return memset(malloc(len), 0, len);
+}
+
+static void __destroy(struct rb_node *n)
+{
+	if (n) {
+		struct io *iop = rb_entry(n, struct io, rb_node);
+
+		__destroy(n->rb_left);
+		__destroy(n->rb_right);
+		io_release(iop);
+	}
+}
+
+static void __destroy_heads(struct rb_root *roots)
+{
+	int i;
+
+	for (i = 0; i < N_IOP_TYPES; i++)
+		__destroy(roots[i].rb_node);
+
+	free(roots);
+}
+
 #if defined(DEBUG)
 void __dump_rb_node(struct rb_node *n)
 {
@@ -95,6 +122,22 @@ struct d_info *__dip_find(__u32 device)
 	return NULL;
 }
 
+void dip_exit(void)
+{
+	struct d_info *dip;
+	struct list_head *p, *q;
+
+	list_for_each_safe(p, q, &all_devs) {
+		dip = list_entry(p, struct d_info, all_head);
+
+		__destroy_heads(dip->heads);
+		region_exit(&dip->regions);
+		seeki_exit(dip->seek_handle);
+		bno_dump_exit(dip->bno_dump_handle);
+		free(dip);
+	}
+}
+
 struct d_info *dip_add(__u32 device, struct io *iop)
 {
 	struct d_info *dip = __dip_find(device);
@@ -103,11 +146,12 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip = malloc(sizeof(struct d_info));
 		memset(dip, 0, sizeof(*dip));
 		dip->heads = dip_rb_mkhds();
-		init_region(&dip->regions);
+		region_init(&dip->regions);
 		dip->device = device;
 		dip->last_q = (__u64)-1;
 		dip->map = dev_map_find(device);
 		dip->seek_handle = seeki_init(device);
+		dip->bno_dump_handle = bno_dump_init(device);
 		latency_init(dip);
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);

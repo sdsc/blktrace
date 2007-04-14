@@ -19,46 +19,58 @@
  *
  */
 
-static inline struct range_info *new_cur(__u64 time)
-{
-	struct range_info *cur = malloc(sizeof(struct range_info));
-
-	INIT_LIST_HEAD(&cur->head);
-	cur->start = time;
-	return cur;
-}
-
-static inline void update_range(struct list_head *head_p,
-				struct range_info **cur_p, __u64 time)
-{
-	if (*cur_p == NULL)
-		*cur_p = new_cur(time);
-	else {
-		__u64 my_delta = (time > (*cur_p)->end) ? time - (*cur_p)->end : 1;
-		if (BIT_TIME(my_delta) >= range_delta) {
-			list_add_tail(&(*cur_p)->head, head_p);
-			*cur_p = new_cur(time);
-		}
-	}
-
-	(*cur_p)->end = time;
-}
-
-static inline void init_region(struct region_info *reg)
+static inline void region_init(struct region_info *reg)
 {
 	INIT_LIST_HEAD(&reg->qranges);
 	INIT_LIST_HEAD(&reg->cranges);
-	reg->qr_cur = reg->cr_cur = NULL;
+}
+
+static inline void __region_exit(struct list_head *range_head)
+{
+	struct list_head *p, *q;
+	struct range_info *rip;
+
+	list_for_each_safe(p, q, range_head) {
+		rip = list_entry(p, struct range_info, head);
+		free(rip);
+	}
+}
+
+static inline void region_exit(struct region_info *reg)
+{
+	__region_exit(&reg->qranges);
+	__region_exit(&reg->cranges);
+}
+
+static inline void update_range(struct list_head *head_p, __u64 time)
+{
+	struct range_info *rip;
+
+	if (!list_empty(head_p)) {
+		rip = list_entry(head_p->prev, struct range_info, head);
+
+		if (time < rip->end)
+			return;
+
+		if (BIT_TIME(time - rip->end) < range_delta) {
+			rip->end = time;
+			return;
+		}
+	}
+
+	rip = malloc(sizeof(*rip));
+	rip->start = rip->end = time;
+	list_add_tail(&rip->head, head_p);
 }
 
 static inline void update_qregion(struct region_info *reg, __u64 time)
 {
-	update_range(&reg->qranges, &reg->qr_cur, time);
+	update_range(&reg->qranges, time);
 }
 
 static inline void update_cregion(struct region_info *reg, __u64 time)
 {
-	update_range(&reg->cranges, &reg->cr_cur, time);
+	update_range(&reg->cranges, time);
 }
 
 static inline void avg_update(struct avg_info *ap, __u64 t)
@@ -115,7 +127,7 @@ static inline struct io *io_alloc(void)
 	struct io *iop;
 
 	if (!list_empty(&free_ios)) {
-		iop = list_entry(free_ios.next, struct io, f_head);
+		iop = list_entry(free_ios.prev, struct io, f_head);
 		LIST_DEL(&iop->f_head);
 
 #		if defined(COUNT_IOS)
@@ -159,6 +171,17 @@ static inline void io_free(struct io *iop)
 #	endif
 
 	list_add_tail(&iop->f_head, &free_ios);
+}
+
+static inline void io_free_all(void)
+{
+	struct io *iop;
+	struct list_head *p, *q;
+
+	list_for_each_safe(p, q, &free_ios) {
+		iop = list_entry(p, struct io, f_head);
+		free(iop);
+	}
 }
 
 static inline int io_setup(struct io *iop, enum iop_type type)
@@ -282,12 +305,6 @@ static inline struct rb_root *__get_root(struct d_info *dip, enum iop_type type)
 	return &roots[type];
 }
 
-static inline void *dip_rb_mkhds(void)
-{
-	size_t len = N_IOP_TYPES * sizeof(struct rb_root);
-	return memset(malloc(len), 0, len);
-}
-
 static inline int dip_rb_ins(struct d_info *dip, struct io *iop)
 {
 	return rb_insert(__get_root(dip, iop->type), iop);
@@ -389,12 +406,31 @@ static inline int type2c(enum iop_type type)
 
 static inline void bilink_free(struct bilink *blp)
 {
-	free(blp);
+	list_add_tail(&blp->bilink_free_head, &free_bilinks);
+}
+
+static inline void bilink_free_all(void)
+{
+	struct bilink *blp;
+	struct list_head *p, *q;
+
+	list_for_each_safe(p, q, &free_bilinks) {
+		blp = list_entry(p, struct bilink, bilink_free_head);
+		free(blp);
+	}
 }
 
 static inline struct bilink *bilink_alloc(struct io *diop, struct io *uiop)
 {
-	struct bilink *blp = malloc(sizeof(*blp));
+	struct bilink *blp;
+
+	if (!list_empty(&free_bilinks)) {
+		blp = list_entry(free_bilinks.prev, struct bilink, 
+							bilink_free_head);
+		LIST_DEL(&blp->bilink_free_head);
+	}
+	else
+		blp = malloc(sizeof(*blp));
 
 	blp->diop = diop;
 	blp->uiop = uiop;

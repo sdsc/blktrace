@@ -321,6 +321,7 @@ void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 		free(p);
 	}
 }
+
 void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
 {
 	int i;
@@ -342,6 +343,8 @@ void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
 			sip->head = new;
 			new->mode = lp[i];
 			new->nseeks = mp->most_seeks;
+
+			add_buf(new);
 		}
 	}
 }
@@ -373,6 +376,7 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 		seek_info.mean += (nseeks * mean);
 		seek_info.median += (nseeks * median);
 		add_seek_mode_info(&seek_info, &m);
+		free(m.modes);
 	}
 }
 
@@ -466,8 +470,8 @@ void __dip_output_plug_all(FILE *ofp, struct plug_info *p)
 {
 	fprintf(ofp, "---------- | ---------- ----------  | ----------------\n");
 	fprintf(ofp, "%10s | %10s %10s  | %s\n", 
-	        "DEV", "# Plugs", "# Timer Us", "% Time Q Plugged");
-	fprintf(ofp, "%10s | %10ld(%10ld) | %13.9lf%%\n", "OVERALL",
+	        "Overall", "# Plugs", "# Timer Us", "% Time Q Plugged");
+	fprintf(ofp, "%10s | %10ld(%10ld) | %13.9lf%%\n", "Average",
 	        p->n_plugs / n_plugs, p->n_timer_unplugs / n_plugs, 
 		p->t_percent / n_plugs);
 
@@ -598,11 +602,6 @@ void __output_ranges(FILE *ofp, struct list_head *head_p, float base)
 int output_regions(FILE *ofp, char *header, struct region_info *reg, 
 			  float base)
 {
-	if (reg->qr_cur != NULL)
-		list_add_tail(&reg->qr_cur->head, &reg->qranges);
-	if (reg->cr_cur != NULL)
-		list_add_tail(&reg->cr_cur->head, &reg->cranges);
-
 	if (list_len(&reg->qranges) == 0 && list_len(&reg->cranges) == 0)
 		return 0;
 
