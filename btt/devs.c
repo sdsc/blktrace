@@ -134,6 +134,7 @@ void dip_exit(void)
 		region_exit(&dip->regions);
 		seeki_exit(dip->seek_handle);
 		bno_dump_exit(dip->bno_dump_handle);
+		unplug_hist_exit(dip->unplug_hist_handle);
 		free(dip);
 	}
 }
@@ -152,6 +153,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip->map = dev_map_find(device);
 		dip->seek_handle = seeki_init(device);
 		dip->bno_dump_handle = bno_dump_init(device);
+		dip->unplug_hist_handle = unplug_hist_init(device);
 		latency_init(dip);
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);

@@ -22,6 +22,7 @@
 
 static inline void trace_unplug(struct io *u_iop, int is_timer)
 {
+	unplug_hist_add(u_iop);
 	dip_unplug(u_iop->t.device, BIT_TIME(u_iop->t.time), is_timer);
 	io_release(u_iop);
 }

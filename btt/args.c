@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:Vv"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:u:Vv"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -140,6 +140,12 @@ static struct option l_opts[] = {
 		.val = 'T'
 	},
 	{
+		.name = "unplug-hist",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'u'
+	},
+	{
 		.name = "version",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -175,6 +181,7 @@ static char usage_str[] = \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -t <sec>         | --time-start=<sec> ]\n" \
 	"[ -T <sec>         | --time-end=<sec> ]\n" \
+	"[ -u <output name> | --unplug-hist=<output name> ] \n" \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n\n";
 
@@ -279,6 +286,9 @@ void handle_args(int argc, char *argv[])
 		case 'T':
 			sscanf(optarg, "%lf", &t_aend);
 			time_bounded = 1;
+			break;
+		case 'u':
+			unplug_hist_name = strdup(optarg);
 			break;
 		case 'v':
 			verbose = 1;

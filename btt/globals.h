@@ -158,7 +158,7 @@ struct d_info {
 	void *heads;
 	struct region_info regions;
 	struct devmap *map;
-	void *seek_handle, *bno_dump_handle;
+	void *seek_handle, *bno_dump_handle, *unplug_hist_handle;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -196,7 +196,7 @@ struct bilink {
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
-extern char *bno_dump_name;
+extern char *bno_dump_name, *unplug_hist_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
@@ -349,5 +349,10 @@ void trace_remap(struct io *a_iop);
 
 /* trace_requeue.c */
 void trace_requeue(struct io *r_iop);
+
+/* unplug_hist.c */
+void *unplug_hist_init(__u32 device);
+void unplug_hist_exit(void *arg);
+void unplug_hist_add(struct io *u_iop);
 
 #include "inlines.h"

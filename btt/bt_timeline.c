@@ -28,7 +28,7 @@
 char bt_timeline_version[] = "0.99.1";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
-char *d2c_name, *q2c_name, *per_io_name;
+char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
 FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
 double t_astart, t_aend;

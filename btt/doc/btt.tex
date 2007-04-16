@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{10 April 2007}
+\date{16 April 2007}
 
 \begin{document}
 \maketitle
@@ -346,6 +346,10 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
     \item[seek details] A data file containing all IO-to-IO
     sector differences can be output, with details found in
     section~\ref{sec:seek}.
+
+    \item[unplug histogram details] A data file per device containing
+    histogram output for the amount of IOs released at unplug time.
+    Section~\ref{sec:o-u} has more details.
   \end{description}
 
 \newpage\section{\label{sec:activity}Activity Data File}
@@ -629,6 +633,7 @@ Usage: \texttt{btt} 0.99.1
 [ -S <interval>    | --iostat-interval=<interval> ]
 [ -t <sec>         | --time-start=<sec> ]
 [ -T <sec>         | --time-end=<sec> ]
+[ -u <output name> | --unplug-hist=<output name> ] 
 [ -V               | --version ]
 [ -v               | --verbose ]
 \end{verbatim}
@@ -737,7 +742,7 @@ Usage: \texttt{btt} 0.99.1
 
 \subsection{\label{sec:o-s}\texttt{--seeks}/\texttt{-s}}
 
-  This option instruct \texttt{btt} to generate the seek data file
+  This option instructs \texttt{btt} to generate the seek data file
   discussed in section~\ref{sec:seek}.
 
 \subsection{\label{sec:o-S}\texttt{--iostat-interval}/\texttt{-S}}
@@ -760,6 +765,31 @@ Usage: \texttt{btt} 0.99.1
   parsing of trace data in terms of seconds since the start of the run. The
   trace chosen will be between the start time (or 0.0 if not
   specified) and end time (or the end of the run) specified. 
+
+\subsection{\label{sec:o-u}\texttt{--unplug-hist}/\texttt{-u}}
+
+  This option instructs \texttt{btt} to generate a data file containing
+  histogram information for \emph{unplug} traces on a per device
+  basis. It shows how many times an unplug was hit with a specified
+  number of IOs released. There are 21 output values into the file, as
+  follows:
+
+  \medskip
+  \begin{tabular}{ll}
+\textbf{X value} & \textbf{Representing Counts} \\\hline
+0 & 0\dots\/4 \\
+1 & 5\dots\/9 \\
+2 & 10\dots\/14 \\
+\dots & \dots\dots\\
+19 & 95\dots\/99 \\
+20 & 100+ \\
+  \end{tabular}
+
+  \medskip
+  The file name(s) generated use the text string passed as an argument for
+  the prefix, followed by the device identifier in \texttt{major,minor}
+  form, with a \texttt{.dat} extension (as an example, with \texttt{-u
+  up\_hist} specified on the command line: \texttt{up\_hist\_008,032.dat}.
 
 \subsection{\label{sec:o-V}\texttt{--version}/\texttt{-V}}
 
@@ -788,7 +818,7 @@ Sending stats data to bttX.avg
 16.379036+0.000005=16.379041
 \end{verbatim}
 
-\newpage\section{\label{sec:appendix}Appendix: Sample \texttt{btt}
+\newpage\section*{\label{sec:appendix}Appendix: Sample \texttt{btt}
 Output}
   
   Here is a complete output file from a btt run, illustrating a lot of the
