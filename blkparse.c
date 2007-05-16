@@ -2612,7 +2612,7 @@ int main(int argc, char *argv[])
 	while (optind < argc) {
 		if (is_pipe(argv[optind]) && !pipeline) {
 			pipeline = 1;
-			pipename = strdup(optarg);
+			pipename = strdup(argv[optind]);
 		} else if (resize_devices(argv[optind]) != 0)
 			return 1;
 		optind++;
