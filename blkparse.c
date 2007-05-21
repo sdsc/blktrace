@@ -1144,27 +1144,23 @@ static void check_time(struct per_dev_info *pdi, struct blk_io_trace *bit)
 	pdi->last_reported_time = this;
 }
 
-static inline void __account_m(struct io_stats *ios, struct blk_io_trace *t,
-			       int rw)
+static inline void __account_m(struct io_stats *ios, int rw)
 {
-	if (rw) {
+	if (rw)
 		ios->mwrites++;
-		ios->qwrite_kb += t_kb(t);
-	} else {
+	else
 		ios->mreads++;
-		ios->qread_kb += t_kb(t);
-	}
 }
 
 static inline void account_m(struct blk_io_trace *t, struct per_cpu_info *pci,
 			     int rw)
 {
-	__account_m(&pci->io_stats, t, rw);
+	__account_m(&pci->io_stats, rw);
 
 	if (per_process_stats) {
 		struct io_stats *ios = find_process_io_stats(t->pid);
 
-		__account_m(ios, t, rw);
+		__account_m(ios, rw);
 	}
 }
 
