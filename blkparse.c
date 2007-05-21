@@ -1144,23 +1144,27 @@ static void check_time(struct per_dev_info *pdi, struct blk_io_trace *bit)
 	pdi->last_reported_time = this;
 }
 
-static inline void __account_m(struct io_stats *ios, int rw)
+static inline void __account_m(struct io_stats *ios, struct blk_io_trace *t,
+			       int rw)
 {
-	if (rw)
+	if (rw) {
 		ios->mwrites++;
-	else
+		ios->mwrite_kb += t_kb(t);
+	} else {
 		ios->mreads++;
+		ios->mread_kb += t_kb(t);
+	}
 }
 
 static inline void account_m(struct blk_io_trace *t, struct per_cpu_info *pci,
 			     int rw)
 {
-	__account_m(&pci->io_stats, rw);
+	__account_m(&pci->io_stats, t, rw);
 
 	if (per_process_stats) {
 		struct io_stats *ios = find_process_io_stats(t->pid);
 
-		__account_m(ios, rw);
+		__account_m(ios, t, rw);
 	}
 }
 
@@ -1502,15 +1506,14 @@ static void dump_io_stats(struct per_dev_info *pdi, struct io_stats *ios,
 
 	fprintf(ofp, " Reads Queued:    %s, %siB\t", size_cnv(x, ios->qreads, 0), size_cnv(y, ios->qread_kb, 1));
 	fprintf(ofp, " Writes Queued:    %s, %siB\n", size_cnv(x, ios->qwrites, 0), size_cnv(y, ios->qwrite_kb, 1));
-
 	fprintf(ofp, " Read Dispatches: %s, %siB\t", size_cnv(x, ios->ireads, 0), size_cnv(y, ios->iread_kb, 1));
 	fprintf(ofp, " Write Dispatches: %s, %siB\n", size_cnv(x, ios->iwrites, 0), size_cnv(y, ios->iwrite_kb, 1));
 	fprintf(ofp, " Reads Requeued:  %s\t\t", size_cnv(x, ios->rrqueue, 0));
 	fprintf(ofp, " Writes Requeued:  %s\n", size_cnv(x, ios->wrqueue, 0));
 	fprintf(ofp, " Reads Completed: %s, %siB\t", size_cnv(x, ios->creads, 0), size_cnv(y, ios->cread_kb, 1));
 	fprintf(ofp, " Writes Completed: %s, %siB\n", size_cnv(x, ios->cwrites, 0), size_cnv(y, ios->cwrite_kb, 1));
-	fprintf(ofp, " Read Merges:     %'8lu%8c\t", ios->mreads, ' ');
-	fprintf(ofp, " Write Merges:     %'8lu\n", ios->mwrites);
+	fprintf(ofp, " Read Merges:     %s, %siB\t", size_cnv(x, ios->mreads, 0), size_cnv(y, ios->mread_kb, 1));
+	fprintf(ofp, " Write Merges:     %s, %siB\n", size_cnv(x, ios->mwrites, 0), size_cnv(y, ios->mwrite_kb, 1));
 	if (pdi) {
 		fprintf(ofp, " Read depth:      %'8u%8c\t", pdi->max_depth[0], ' ');
 		fprintf(ofp, " Write depth:      %'8u\n", pdi->max_depth[1]);
@@ -1642,6 +1645,8 @@ static void show_device_and_cpu_stats(void)
 			total.cwrite_kb += ios->cwrite_kb;
 			total.iread_kb += ios->iread_kb;
 			total.iwrite_kb += ios->iwrite_kb;
+			total.mread_kb += ios->mread_kb;
+			total.mwrite_kb += ios->mwrite_kb;
 			total.timer_unplugs += ios->timer_unplugs;
 			total.io_unplugs += ios->io_unplugs;
 
