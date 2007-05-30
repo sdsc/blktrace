@@ -65,8 +65,10 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 
 	if (w)
 		rwbs[i++] = 'W';
-	else
+	else if (t->bytes)
 		rwbs[i++] = 'R';
+	else
+		rwbs[i++] = 'N';
 	if (a)
 		rwbs[i++] = 'A';
 	if (b)
@@ -314,13 +316,23 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			fprintf(ofp, "[%d]\n", t->error);
 		} else {
 			if (elapsed != -1ULL) {
-				fprintf(ofp, "%llu + %u (%8llu) [%d]\n",
-					(unsigned long long) t->sector,
-					t_sec(t), elapsed, t->error);
+				if (t_sec(t))
+					fprintf(ofp, "%llu + %u (%8llu) [%d]\n",
+						(unsigned long long) t->sector,
+						t_sec(t), elapsed, t->error);
+				else
+					fprintf(ofp, "%llu (%8llu) [%d]\n",
+						(unsigned long long) t->sector,
+						elapsed, t->error);
 			} else {
-				fprintf(ofp, "%llu + %u [%d]\n",
-					(unsigned long long) t->sector,
-					t_sec(t), t->error);
+				if (t_sec(t))
+					fprintf(ofp, "%llu + %u [%d]\n",
+						(unsigned long long) t->sector,
+						t_sec(t), t->error);
+				else
+					fprintf(ofp, "%llu [%d]\n",
+						(unsigned long long) t->sector,
+						t->error);
 			}
 		}
 		break;
@@ -338,13 +350,20 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			fprintf(ofp, "[%s]\n", name);
 		} else {
 			if (elapsed != -1ULL) {
-				fprintf(ofp, "%llu + %u (%8llu) [%s]\n",
-					(unsigned long long) t->sector,
-					t_sec(t), elapsed, name);
+				if (t_sec(t))
+					fprintf(ofp, "%llu + %u (%8llu) [%s]\n",
+						(unsigned long long) t->sector,
+						t_sec(t), elapsed, name);
+				else
+					fprintf(ofp, "(%8llu) [%s]\n", elapsed,
+						name);
 			} else {
-				fprintf(ofp, "%llu + %u [%s]\n",
-					(unsigned long long) t->sector,
-					t_sec(t), name);
+				if (t_sec(t))
+					fprintf(ofp, "%llu + %u [%s]\n",
+						(unsigned long long) t->sector,
+						t_sec(t), name);
+				else
+					fprintf(ofp, "[%s]\n", name);
 			}
 		}
 		break;
@@ -353,8 +372,11 @@ static void process_default(char *act, struct per_cpu_info *pci,
 	case 'F':	/* Front merge */
 	case 'G':	/* Get request */
 	case 'S':	/* Sleep request */
-		fprintf(ofp, "%llu + %u [%s]\n", (unsigned long long) t->sector,
-			t_sec(t), name);
+		if (t_sec(t))
+			fprintf(ofp, "%llu + %u [%s]\n",
+				(unsigned long long) t->sector, t_sec(t), name);
+		else
+			fprintf(ofp, "[%s]\n", name);
 		break;
 
 	case 'P':	/* Plug */
