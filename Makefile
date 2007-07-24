@@ -39,6 +39,7 @@ depend:
 INSTALL = install
 prefix = /usr/local
 bindir = $(prefix)/bin
+mandir = $(prefix)/man
 RPMBUILD = rpmbuild
 TAR = tar
 
@@ -63,6 +64,8 @@ install: $(PROGS) $(SCRIPTS)
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
 	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
 	$(INSTALL) btt/btt $(DESTDIR)$(bindir)
+	$(INSTALL) doc/*.1 $(DESTDIR)$(mandir)/man1
+	$(INSTALL) doc/*.8 $(DESTDIR)$(mandir)/man8
 
 ifneq ($(wildcard .depend),)
 include .depend
