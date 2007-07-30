@@ -5,7 +5,11 @@ PROGS	= blkparse blktrace verify_blkparse blkrawverify
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
-all: $(PROGS) $(SCRIPTS)
+ALL = $(PROGS) $(SCRIPTS) btt/btt
+
+all: $(ALL)
+
+btt/btt:
 	$(MAKE) -C btt
 
 %.o: %.c
@@ -60,10 +64,11 @@ clean: docsclean
 	-rm -f *.o $(PROGS) .depend btrace-1.0.tar.bz2
 	$(MAKE) -C btt clean
 
-install: $(PROGS) $(SCRIPTS)
+install: all
 	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
-	$(INSTALL) $(PROGS) $(SCRIPTS) $(DESTDIR)$(bindir)
-	$(INSTALL) btt/btt $(DESTDIR)$(bindir)
+	$(INSTALL) -m755 -d $(DESTDIR)$(mandir)/man1
+	$(INSTALL) -m755 -d $(DESTDIR)$(mandir)/man8
+	$(INSTALL) $(ALL) $(DESTDIR)$(bindir)
 	$(INSTALL) doc/*.1 $(DESTDIR)$(mandir)/man1
 	$(INSTALL) doc/*.8 $(DESTDIR)$(mandir)/man8
 
