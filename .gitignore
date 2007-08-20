@@ -6,3 +6,5 @@ blkrawverify
 doc/.depend
 verify_blkparse
 btt/btt
+btt/doc/btt.pdf
+doc/blktrace.pdf
