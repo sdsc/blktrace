@@ -65,12 +65,12 @@ clean: docsclean
 	$(MAKE) -C btt clean
 
 install: all
-	$(INSTALL) -m755 -d $(DESTDIR)$(bindir)
-	$(INSTALL) -m755 -d $(DESTDIR)$(mandir)/man1
-	$(INSTALL) -m755 -d $(DESTDIR)$(mandir)/man8
-	$(INSTALL) $(ALL) $(DESTDIR)$(bindir)
-	$(INSTALL) doc/*.1 $(DESTDIR)$(mandir)/man1
-	$(INSTALL) doc/*.8 $(DESTDIR)$(mandir)/man8
+	$(INSTALL) -m 755 -d $(DESTDIR)$(bindir)
+	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)/man1
+	$(INSTALL) -m 755 -d $(DESTDIR)$(mandir)/man8
+	$(INSTALL) -m 755 $(ALL) $(DESTDIR)$(bindir)
+	$(INSTALL) -m 644 doc/*.1 $(DESTDIR)$(mandir)/man1
+	$(INSTALL) -m 644 doc/*.8 $(DESTDIR)$(mandir)/man8
 
 ifneq ($(wildcard .depend),)
 include .depend
