@@ -36,7 +36,7 @@
 #include "rbtree.h"
 #include "jhash.h"
 
-static char blkparse_version[] = "0.99.2";
+static char blkparse_version[] = "0.99.3";
 
 struct skip_info {
 	unsigned long start, end;
