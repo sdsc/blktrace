@@ -101,7 +101,8 @@ Add \fImask\fR to current filter (see below for masks)
 .br
 \-\-buffer\-size=\fIsize\fR   
 .RS
-Specifies buffer size for event extraction (scaled by 1024)
+Specifies buffer size for event extraction (scaled by 1024). The default
+buffer size is 512KiB.
 .RE
 
 \-d \fIdev\fR
@@ -129,7 +130,7 @@ Kill on-going trace
 .br
 \-\-num\-sub=\fInum-sub\fR    
 .RS
-Specifies number of buffers to use  
+Specifies number of buffers to use. blktrace defaults to 4 sub buffers.
 .RE
 
 \-o \fIfile\fR 
