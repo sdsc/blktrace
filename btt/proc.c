@@ -89,20 +89,7 @@ struct p_info *__find_process_name(char *name)
 	return NULL;
 }
 
-struct p_info *find_process(__u32 pid, char *name)
-{
-	struct p_info *pip;
-
-	if (pid != ((__u32)-1) && ((pip = __find_process_pid(pid)) != NULL))
-		return pip;
-
-	if (name)
-		return __find_process_name(name);
-
-	return NULL;
-}
-
-static void insert_pid(struct p_info *that)
+static void insert_pid(struct p_info *that, __u32 pid)
 {
 	struct pn_info *this;
 	struct rb_node *parent = NULL;
@@ -112,9 +99,9 @@ static void insert_pid(struct p_info *that)
 		parent = *p;
 		this = rb_entry(parent, struct pn_info, rb_node);
 
-		if (that->pid < this->u.pid)
+		if (pid < this->u.pid)
 			p = &(*p)->rb_left;
-		else if (that->pid > this->u.pid)
+		else if (pid > this->u.pid)
 			p = &(*p)->rb_right;
 		else {
 			ASSERT(strcmp(that->name, this->pip->name) == 0);
@@ -123,7 +110,7 @@ static void insert_pid(struct p_info *that)
 	}
 
 	this = malloc(sizeof(struct pn_info));
-	this->u.pid = that->pid;
+	this->u.pid = pid;
 	this->pip = that;
 
 	rb_link_node(&this->rb_node, parent, p);
@@ -160,8 +147,53 @@ static void insert_name(struct p_info *that)
 
 static void insert(struct p_info *pip)
 {
-	insert_pid(pip);
+	insert_pid(pip, pip->pid);
 	insert_name(pip);
+}
+
+static inline struct p_info *pip_alloc(void)
+{
+	return memset(malloc(sizeof(struct p_info)), 0, sizeof(struct p_info));
+}
+
+struct p_info *find_process(__u32 pid, char *name)
+{
+	struct p_info *pip;
+
+	if (pid != ((__u32)-1)) {
+		if ((pip = __find_process_pid(pid)) != NULL)
+			return pip;
+		else if (name) {
+			pip = __find_process_name(name);
+
+			if (pip && pid != pip->pid) {
+				/*
+				 * This is a process with the same name
+				 * as another, but a different PID.
+				 *
+				 * We'll store a reference in the PID
+				 * tree...
+				 */
+				insert_pid(pip, pid);
+			}
+			return pip;
+		}
+
+		/*
+		 * We're here because we have a pid, and no name, but
+		 * we didn't find a process ... 
+		 *
+		 * We'll craft one using the pid...
+		 */
+
+		name = alloca(256);
+		sprintf(name, "pid%09u", pid);
+		add_process(pid, name);
+		return __find_process_pid(pid);
+	}
+
+	assert(name != NULL);
+	return __find_process_name(name);
 }
 
 void add_process(__u32 pid, char *name)
@@ -169,13 +201,13 @@ void add_process(__u32 pid, char *name)
 	struct p_info *pip = find_process(pid, name);
 
 	if (pip == NULL) {
-		pip = memset(malloc(sizeof(*pip)), 0, sizeof(*pip));
+		pip = pip_alloc();
 		pip->pid = pid;
 		region_init(&pip->regions);
 		pip->last_q = (__u64)-1;
 		pip->name = strdup(name);
 
-		insert(pip);
+	 	insert(pip);
 	}
 }
 

@@ -62,7 +62,7 @@ void dump_hdr(void)
 
 void im2d2c_func(struct io *c_iop, struct io *im_iop)
 {
-	ADD_STAT(c_iop->dip, wait, tdelta(im_iop, c_iop));
+	ADD_STAT(c_iop->dip, wait, tdelta(im_iop->t.time, c_iop->t.time));
 }
 
 void iostat_init(void)
@@ -247,7 +247,7 @@ void iostat_check_time(__u64 stamp)
 	}
 }
 
-void iostat_insert(struct io *iop)
+void iostat_getrq(struct io *iop)
 {
 	update_tot_qusz(iop->dip, TO_SEC(iop->t.time));
 	INC_STAT(iop->dip, cur_qusz);
@@ -295,5 +295,5 @@ void iostat_complete(struct io *d_iop, struct io *c_iop)
 	update_idle_time(dip, now, 0);
 	DEC_STAT(dip, cur_dev);
 
-	ADD_STAT(dip, svctm, tdelta(d_iop, c_iop));
+	ADD_STAT(dip, svctm, tdelta(d_iop->t.time, c_iop->t.time));
 }

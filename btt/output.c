@@ -257,7 +257,6 @@ void output_dip_prep_ohead(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
-int n_seeks;
 struct seek_mode_info {
 	struct seek_mode_info *next;
 	long long mode;
@@ -267,12 +266,9 @@ struct o_seek_info {
 	long long nseeks, median;
 	double mean;
 	struct seek_mode_info *head;
-} seek_info = {
-	.nseeks = 0L,
-	.median = 0L,
-	.mean = 0.0,
-	.head = NULL
-};
+} seek_info;
+int n_seeks;
+
 void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 {
 	struct seek_mode_info *p, *this, *new_list = NULL;
@@ -280,46 +276,30 @@ void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 	ASSERT(sip->head != NULL);
 	while ((this = sip->head) != NULL) {
 		sip->head = this->next;
-		if (new_list == NULL) {
-			this->next = NULL;
+		this->next = NULL;
+
+		if (new_list == NULL || this->nseeks > new_list->nseeks)
 			new_list = this;
-			continue;
-		}
-		if (this->nseeks < new_list->nseeks) {
-			free(this);
-			continue;
-		}
-		if (this->nseeks > new_list->nseeks) {
-			while ((p = new_list) != NULL) {
-				new_list = p->next;
-				free(p);
-			}
-			this->next = NULL;
-			new_list = this;
-			continue;
-		}
-		for (p = new_list; p; p++) 
-			if (p->mode == this->mode) {
+		else if (this->nseeks == new_list->nseeks) {
+			assert(this->nseeks == new_list->nseeks);
+			for (p = new_list; p != NULL; p = p->next)
+				if (p->mode == this->mode)
+					break;
+
+			if (p)
 				this->nseeks += p->nseeks;
-				free(p);
-				break;
-			}
-		if (p)
-			p->next = new_list;
+			else
+				this->next = new_list;
+			new_list = this;
+		}
 	}
 
 	fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
 	        "Average", sip->nseeks, sip->mean / sip->nseeks, 
 		sip->median / sip->nseeks, new_list->mode, new_list->nseeks);
 
-	p = new_list;
-	new_list = p->next;
-	free(p);
-	while((p = new_list) != NULL) {
-		fprintf(ofp, " %lld", p->mode);
-		new_list = p->next;
-		free(p);
-	}
+	for (p = new_list->next; p != NULL; p = p->next)
+		fprintf(ofp, " %lld(%d)", p->mode, p->nseeks);
 }
 
 void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
@@ -329,9 +309,9 @@ void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
 	struct seek_mode_info *smip;
 
 	n_seeks++;
-	for (i = 0; i < mp->nmds; i++) {
+	for (i = 0; i < mp->nmds; i++, lp++) {
 		for (smip = sip->head; smip; smip = smip->next) {
-			if (smip->mode == lp[i]) {
+			if (smip->mode == *lp) {
 				smip->nseeks += mp->most_seeks;
 				break;
 			}
@@ -341,7 +321,7 @@ void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
 
 			new->next = sip->head; 
 			sip->head = new;
-			new->mode = lp[i];
+			new->mode = *lp;
 			new->nseeks = mp->most_seeks;
 
 			add_buf(new);
@@ -349,7 +329,7 @@ void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
 	}
 }
 
-void __output_dip_seek_info(struct d_info *dip, void *arg)
+static void do_output_dip_seek_info(struct d_info *dip, FILE *ofp, int is_q2q)
 {
 	double mean;
 	int i, nmodes;
@@ -357,13 +337,13 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 	char dev_info[15];
 	long long median;
 	struct mode m;
-	FILE *ofp = arg;
+	void *handle = is_q2q ? dip->q2q_handle : dip->seek_handle;
 
-	nseeks = seeki_nseeks(dip->seek_handle);
+	nseeks = seeki_nseeks(handle);
 	if (nseeks > 0) {
-		mean = seeki_mean(dip->seek_handle);
-		median = seeki_median(dip->seek_handle);
-		nmodes = seeki_mode(dip->seek_handle, &m);
+		mean = seeki_mean(handle);
+		median = seeki_median(handle);
+		nmodes = seeki_mode(handle, &m);
 
 		fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
 			make_dev_hdr(dev_info, 15, dip), nseeks, mean, median, 
@@ -380,12 +360,44 @@ void __output_dip_seek_info(struct d_info *dip, void *arg)
 	}
 }
 
+void __output_dip_seek_info(struct d_info *dip, void *arg)
+{
+	do_output_dip_seek_info(dip, (FILE *)arg, 0);
+}
+
+void __output_dip_q2q_seek_info(struct d_info *dip, void *arg)
+{
+	do_output_dip_seek_info(dip, (FILE *)arg, 1);
+}
+
 void output_dip_seek_info(FILE *ofp)
 {
+	n_seeks = 1;
+	memset(&seek_info, 0, sizeof(seek_info));
+
 	fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", "DEV", "NSEEKS", 
 			"MEAN", "MEDIAN", "MODE");
 	fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
 	dip_foreach_out(__output_dip_seek_info, ofp);
+	if (n_seeks > 1) {
+		fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
+		fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", 
+		        "Overall", "NSEEKS", "MEAN", "MEDIAN", "MODE");
+		output_seek_mode_info(ofp, &seek_info);
+		fprintf(ofp, "\n");
+	}
+	fprintf(ofp, "\n");
+}
+
+void output_dip_q2q_seek_info(FILE *ofp)
+{
+	n_seeks = 1;
+	memset(&seek_info, 0, sizeof(seek_info));
+
+	fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", "DEV", "NSEEKS", 
+			"MEAN", "MEDIAN", "MODE");
+	fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
+	dip_foreach_out(__output_dip_q2q_seek_info, ofp);
 	if (n_seeks > 1) {
 		fprintf(ofp, "---------- | --------------- --------------- --------------- | ---------------\n");
 		fprintf(ofp, "%10s | %15s %15s %15s | %-15s\n", 
@@ -573,7 +585,10 @@ int output_avgs(FILE *ofp)
 	output_section_hdr(ofp, "Device Merge Information");
 	output_dip_merge_ratio(ofp);
 
-	output_section_hdr(ofp, "Device Seek Information");
+	output_section_hdr(ofp, "Device Q2Q Seek Information");
+	output_dip_q2q_seek_info(ofp);
+
+	output_section_hdr(ofp, "Device D2D Seek Information");
 	output_dip_seek_info(ofp);
 
 	output_section_hdr(ofp, "Plug Information");

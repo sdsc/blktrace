@@ -36,19 +36,15 @@ struct seeki {
 	long long last_start, last_end;
 };
 
-static FILE *seek_open(__u32 device, char rw)
+static FILE *seek_open(char *str, char rw)
 {
 	FILE *fp;
 	char *oname;
-	int mjr, mnr;
 
 	if (seek_name == NULL) return NULL;
 
-	mjr = device >> MINORBITS;
-	mnr = device & ((1 << MINORBITS) - 1);
-
-	oname = malloc(strlen(seek_name)+32);
-	sprintf(oname, "%s_%03d,%03d_%c.dat", seek_name, mjr, mnr, rw);
+	oname = malloc(strlen(seek_name) + strlen(str) + 32);
+	sprintf(oname, "%s_%s_%c.dat", seek_name, str, rw);
 	if ((fp = fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
@@ -124,13 +120,13 @@ long long seek_dist(struct seeki *sip, struct io *iop)
 	return dist;
 }
 
-void *seeki_init(__u32 device)
+void *seeki_init(char *str)
 {
 	struct seeki *sip = malloc(sizeof(struct seeki));
 
-	sip->rfp = seek_open(device, 'r');
-	sip->wfp = seek_open(device, 'w');
-	sip->cfp = seek_open(device, 'c');
+	sip->rfp = seek_open(str, 'r');
+	sip->wfp = seek_open(str, 'w');
+	sip->cfp = seek_open(str, 'c');
 	sip->tot_seeks = 0;
 	sip->total_sectors = 0.0;
 	sip->last_start = sip->last_end = 0;

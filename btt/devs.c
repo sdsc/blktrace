@@ -58,10 +58,7 @@ void __dump_rb_node(struct rb_node *n)
 	struct io *iop = rb_entry(n, struct io, rb_node);
 
 	dbg_ping();
-	if (iop->type == IOP_A)
-		__dump_iop2(stdout, iop, bilink_first_down(iop, NULL));
-	else
-		__dump_iop(stdout, iop, 0);
+	__dump_iop(stdout, iop, 0);
 	if (n->rb_left)
 		__dump_rb_node(n->rb_left);
 	if (n->rb_right)
@@ -92,10 +89,8 @@ void dump_rb_trees(void)
 			dip = list_entry(p, struct d_info, hash_head);
 			printf("Trees for %3d,%-3d\n", MAJOR(dip->device),
 			       MINOR(dip->device));
-			for (type = IOP_Q; type < N_IOP_TYPES; type++) {
-				if (type != IOP_L)
-					__dump_rb_tree(dip, type);
-			}
+			for (type = IOP_Q; type < N_IOP_TYPES; type++)
+				__dump_rb_tree(dip, type);
 		}
 	}
 }
@@ -133,10 +128,20 @@ void dip_exit(void)
 		__destroy_heads(dip->heads);
 		region_exit(&dip->regions);
 		seeki_exit(dip->seek_handle);
+		seeki_exit(dip->q2q_handle);
 		bno_dump_exit(dip->bno_dump_handle);
 		unplug_hist_exit(dip->unplug_hist_handle);
 		free(dip);
 	}
+}
+
+static inline char *mkhandle(char *str, __u32 device, char *post)
+{
+	int mjr = device >> MINORBITS;
+	int mnr = device & ((1 << MINORBITS) - 1);
+
+	sprintf(str, "%03d,%03d%s", mjr, mnr, post);
+	return str;
 }
 
 struct d_info *dip_add(__u32 device, struct io *iop)
@@ -144,6 +149,8 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 	struct d_info *dip = __dip_find(device);
 
 	if (dip == NULL) {
+		char str[256];
+
 		dip = malloc(sizeof(struct d_info));
 		memset(dip, 0, sizeof(*dip));
 		dip->heads = dip_rb_mkhds();
@@ -151,9 +158,10 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip->device = device;
 		dip->last_q = (__u64)-1;
 		dip->map = dev_map_find(device);
-		dip->seek_handle = seeki_init(device);
 		dip->bno_dump_handle = bno_dump_init(device);
 		dip->unplug_hist_handle = unplug_hist_init(device);
+		dip->seek_handle = seeki_init(mkhandle(str, device, "_d2d"));
+		dip->q2q_handle = seeki_init(mkhandle(str, device, "_q2q"));
 		latency_init(dip);
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);

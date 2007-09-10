@@ -20,60 +20,24 @@
  */
 #include "globals.h"
 
-static inline void __update_q2c(struct io *q_iop, struct io *c_iop)
+static void handle_queue(struct io *q_iop)
 {
-	__u64 q2c = tdelta(q_iop, c_iop);
+	seeki_add(q_iop->dip->q2q_handle, q_iop);
+	update_lq(&last_q, &all_avgs.q2q, q_iop->t.time);
+	update_qregion(&all_regions, q_iop->t.time);
+	dip_update_q(q_iop->dip, q_iop);
+	pip_update_q(q_iop);
+	if (!remapper_dev(q_iop->t.device))
+		update_q_histo(q_iop->t.bytes);
 
-	update_q2c(q_iop, q2c);
-	latency_q2c(q_iop->dip, q_iop->t.time, q2c);
-}
-
-void run_queue(struct io *q_iop, __attribute__((__unused__))struct io *u_iop,
-	       struct io *c_iop)
-{
-	struct bilink *blp;
-	struct io *a_iop = bilink_first_down(q_iop, &blp);
-
-	if (a_iop) {
-		run_remap(a_iop, q_iop, c_iop);
-		biunlink(blp);
-	}
-
-	__update_q2c(q_iop, c_iop);
-	dump_iop(q_iop, 0);
-	add_rmhd(q_iop);
-}
-
-int ready_queue(struct io *q_iop, struct io *c_iop)
-{
-	struct io *a_iop;
-
-	if (!list_empty(&q_iop->down_list))
-		return 1;
-
-	a_iop = dip_find_sec(q_iop->dip, IOP_A, BIT_START(q_iop));
-	if (!a_iop)
-		return 1;
-
-	if (!ready_remap(a_iop, c_iop))
-		return 0;
-
-	ASSERT(q_iop->t.bytes == a_iop->t.bytes);
-	bilink(a_iop, q_iop);
-	dip_rem(a_iop);
-	return 1;
+	q_iop->i_time = q_iop->gm_time = q_iop->d_time = (__u64)-1;
+	q_iop->is_getrq = -1;
 }
 
 void trace_queue(struct io *q_iop)
 {
-	if (io_setup(q_iop, IOP_Q)) {
-		update_lq(&last_q, &all_avgs.q2q, q_iop->t.time);
-		update_qregion(&all_regions, q_iop->t.time);
-		dip_update_q(q_iop->dip, q_iop);
-		pip_update_q(q_iop);
-		if (!remapper_dev(q_iop->t.device))
-			update_q_histo(q_iop->t.bytes);
-	}
+	if (io_setup(q_iop, IOP_Q))
+		handle_queue(q_iop);
 	else
 		io_release(q_iop);
 }

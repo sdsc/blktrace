@@ -25,7 +25,7 @@
 #include <time.h>
 #include "globals.h"
 
-char bt_timeline_version[] = "0.99.1";
+char bt_timeline_version[] = "2.00";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
@@ -40,13 +40,10 @@ LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
 LIST_HEAD(free_ios);
 LIST_HEAD(free_bilinks);
-LIST_HEAD(rmhd);
-LIST_HEAD(retries);
 __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 
 double range_delta = 0.1;
 __u64 last_q = (__u64)-1;
-__u64 next_retry_check = 0;
 
 struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
@@ -90,7 +87,6 @@ int main(int argc, char *argv[])
 	dip_exit();
 	pip_exit();
 	io_free_all();
-	bilink_free_all();
 	region_exit(&all_regions);
 
 	free(input_name);
@@ -120,7 +116,6 @@ int process(void)
 	}
 
 	io_release(iop);
-	do_retries(0);
 	gettimeofday(&tve, NULL);
 
 	if (verbose) {

@@ -72,14 +72,14 @@ enum iop_type {
 	IOP_Q = 0,
 	IOP_X = 1,
 	IOP_A = 2,
-	IOP_I = 3,
+	IOP_G = 3,
 	IOP_M = 4,
 	IOP_D = 5,
 	IOP_C = 6,
 	IOP_R = 7,
-	IOP_L = 8, 	// IOP_A -> IOP_A + IOP_L
+	IOP_I = 8
 };
-#define N_IOP_TYPES	(IOP_L + 1)
+#define N_IOP_TYPES	(IOP_I + 1)
 
 struct file_info {
 	struct file_info *next;
@@ -158,7 +158,7 @@ struct d_info {
 	void *heads;
 	struct region_info regions;
 	struct devmap *map;
-	void *seek_handle, *bno_dump_handle, *unplug_hist_handle;
+	void *q2q_handle, *seek_handle, *bno_dump_handle, *unplug_hist_handle;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -172,25 +172,22 @@ struct d_info {
 
 struct io {
 	struct rb_node rb_node;
-	struct list_head f_head, c_pending, retry, rm_head;
-	struct list_head down_list, up_list;
+	struct list_head f_head;
 	struct d_info *dip;
 	struct p_info *pip;
 	void *pdu;
+	__u64 bytes_left, i_time, gm_time, d_time, c_time, d_sec, c_sec;
+	__u32 d_nsec, c_nsec;
+
 	struct blk_io_trace t;
-	__u64 bytes_left;
-	int linked, on_retry_list, down_len, up_len, on_rm_list;
+
+	int linked, is_getrq;
 	enum iop_type type;
+
 #if defined(COUNT_IOS)
 	struct list_head cio_head;
 #endif
 };
-
-struct bilink {
-	struct list_head down_head, up_head;
-	struct io *diop, *uiop;
-};
-#define bilink_free_head	down_head
 
 /* bt_timeline.c */
 
@@ -202,11 +199,11 @@ extern FILE *ranges_ofp, *avgs_ofp, *iostat_ofp, *per_io_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
-extern struct list_head all_devs, all_procs, retries, rmhd;
+extern struct list_head all_devs, all_procs;
 extern struct avgs_info all_avgs;
-extern __u64 last_q, next_retry_check;
+extern __u64 last_q;
 extern struct region_info all_regions;
-extern struct list_head free_ios, free_bilinks;
+extern struct list_head free_ios;
 extern __u64 iostat_interval, iostat_last_stamp;
 extern time_t genesis, last_vtrace;
 extern double t_astart, t_aend;
@@ -253,7 +250,7 @@ void rb_foreach(struct rb_node *n, struct io *iop,
 
 /* iostat.c */
 void iostat_init(void);
-void iostat_insert(struct io *iop);
+void iostat_getrq(struct io *iop);
 void iostat_merge(struct io *iop);
 void iostat_issue(struct io *iop);
 void iostat_unissue(struct io *iop);
@@ -299,7 +296,7 @@ void bno_dump_add(void *handle, struct io *iop);
 void bno_dump_clean(void);
 
 /* seek.c */
-void *seeki_init(__u32 device);
+void *seeki_init(char *str);
 void seeki_exit(void *param);
 void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
@@ -309,15 +306,10 @@ long long seeki_median(void *handle);
 int seeki_mode(void *handle, struct mode *mp);
 
 /* trace.c */
-void __dump_iop(FILE *ofp, struct io *iop, int extra_nl);
-void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop);
-void release_iops(void);
 void add_trace(struct io *iop);
-void do_retries(__u64 now);
 
 /* trace_complete.c */
 void trace_complete(struct io *c_iop);
-void retry_complete(struct io *c_iop, __u64 now);
 
 /* trace_im.c */
 void run_im(struct io *im_iop, struct io *d_iop, struct io *c_iop);
@@ -325,6 +317,7 @@ void run_unim(struct io *im_iop, struct io *d_iop, struct io *c_iop);
 int ready_im(struct io *im_iop, struct io *c_iop);
 void trace_insert(struct io *i_iop);
 void trace_merge(struct io *m_iop);
+void trace_getrq(struct io *g_iop);
 
 /* trace_issue.c */
 void run_issue(struct io *d_iop, struct io *u_iop, struct io *c_iop);

@@ -22,24 +22,5 @@
 
 void trace_requeue(struct io *r_iop)
 {
-	struct io *d_iop;
-
-	if ((io_setup(r_iop, IOP_R) == 0) ||
-	    (d_iop = dip_find_sec(r_iop->dip, IOP_D, 
-	    					BIT_START(r_iop))) == NULL) {
-		io_release(r_iop);
-		return;
-	}
-	dip_rem(d_iop);
-
-#	if defined(DEBUG)
-		ASSERT(ready_issue(d_iop, r_iop) != 0);
-#	else
-		(void)ready_issue(d_iop, r_iop);
-#	endif
-
-	run_unissue(d_iop, r_iop, r_iop);
-	add_rmhd(r_iop);
-
-	release_iops();
+	io_release(r_iop);
 }

@@ -143,13 +143,9 @@ static inline struct io *io_alloc(void)
 	}
 
 	memset(iop, 0, sizeof(struct io));
-	INIT_LIST_HEAD(&iop->down_list);
-	INIT_LIST_HEAD(&iop->up_list);
 
 #	if defined(DEBUG)
 		iop->f_head.next = LIST_POISON1;
-		iop->c_pending.next = LIST_POISON1;
-		iop->retry.next = LIST_POISON1;
 #	endif
 
 #	if defined(COUNT_IOS)
@@ -199,10 +195,6 @@ static inline int io_setup(struct io *iop, enum iop_type type)
 static inline void io_release(struct io *iop)
 {
 	ASSERT(iop->f_head.next == LIST_POISON1);
-	ASSERT(iop->c_pending.next == LIST_POISON1);
-	ASSERT(iop->retry.next == LIST_POISON1);
-	ASSERT(list_empty(&iop->up_list));
-	ASSERT(list_empty(&iop->down_list));
 
 	if (iop->linked)
 		dip_rem(iop);
@@ -278,15 +270,14 @@ static inline void unupdate_i2d(struct io *iop, __u64 d_time)
 	UNUPDATE_AVGS(i2d, iop, iop->pip, d_time);
 }
 
-static inline void update_d2c(struct io *iop, int n, __u64 c_time)
+static inline void update_d2c(struct io *iop, __u64 c_time)
 {
 #	if defined(DEBUG)
 		if (per_io_ofp) 
-			fprintf(per_io_ofp, "d2c %13.9f\n", 
-							n*BIT_TIME(c_time));
+			fprintf(per_io_ofp, "d2c %13.9f\n", BIT_TIME(c_time));
 #	endif
 
-	UPDATE_AVGS_N(d2c, iop, iop->pip, c_time, n);
+	UPDATE_AVGS(d2c, iop, iop->pip, c_time);
 }
 
 static inline void update_blks(struct io *iop)
@@ -333,55 +324,15 @@ static inline struct io *dip_rb_find_sec(struct d_info *dip,
 	return rb_find_sec(__get_root(dip, type), sec);
 }
 
-static inline void bump_retry(__u64 now)
+static inline __u64 tdelta(__u64 from, __u64 to)
 {
-	if (!list_empty(&retries))
-		next_retry_check = now + (100 * 1000); // 100 usec
-	else 
-		next_retry_check = 0;
-}
-
-static inline void add_retry(struct io *iop)
-{
-	bump_retry(iop->t.time);
-	if (!iop->on_retry_list) {
-		list_add_tail(&iop->retry, &retries);
-		iop->on_retry_list = 1;
-	}
-}
-
-static inline void del_retry(struct io *iop)
-{
-	if (iop->on_retry_list) {
-		LIST_DEL(&iop->retry);
-		iop->on_retry_list = 0;
-	}
-	bump_retry(iop->t.time);
-}
-
-static inline __u64 tdelta(struct io *iop1, struct io *iop2)
-{
-	__u64 t1 = iop1->t.time;
-	__u64 t2 = iop2->t.time;
-	return (t1 < t2) ? (t2 - t1) : 1;
+	return (from < to) ? (to - from) : 1;
 }
 
 static inline int remapper_dev(__u32 dev)
 {
 	int mjr = MAJOR(dev);
 	return mjr == 9 || mjr == 253 || mjr == 254;
-}
-
-static inline void dump_iop(struct io *iop, int extra_nl)
-{
-	if (per_io_ofp) 
-		__dump_iop(per_io_ofp, iop, extra_nl);
-}
-
-static inline void dump_iop2(struct io *a_iop, struct io *l_iop)
-{
-	if (per_io_ofp) 
-		__dump_iop2(per_io_ofp, a_iop, l_iop);
 }
 
 static inline int type2c(enum iop_type type)
@@ -397,108 +348,11 @@ static inline int type2c(enum iop_type type)
 	case IOP_D: c = 'D'; break;
 	case IOP_C: c = 'C'; break;
 	case IOP_R: c = 'R'; break;
-	case IOP_L: c = 'L'; break;
+	case IOP_G: c = 'G'; break;
 	default   : c = '?'; break;
 	}
 
 	return c;
-}
-
-static inline void bilink_free(struct bilink *blp)
-{
-	list_add_tail(&blp->bilink_free_head, &free_bilinks);
-}
-
-static inline void bilink_free_all(void)
-{
-	struct bilink *blp;
-	struct list_head *p, *q;
-
-	list_for_each_safe(p, q, &free_bilinks) {
-		blp = list_entry(p, struct bilink, bilink_free_head);
-		free(blp);
-	}
-}
-
-static inline struct bilink *bilink_alloc(struct io *diop, struct io *uiop)
-{
-	struct bilink *blp;
-
-	if (!list_empty(&free_bilinks)) {
-		blp = list_entry(free_bilinks.prev, struct bilink, 
-							bilink_free_head);
-		LIST_DEL(&blp->bilink_free_head);
-	}
-	else
-		blp = malloc(sizeof(*blp));
-
-	blp->diop = diop;
-	blp->uiop = uiop;
-
-	return blp;
-}
-
-static inline void bilink(struct io *diop, struct io *uiop)
-{
-	struct bilink *blp = bilink_alloc(diop, uiop);
-
-	list_add_tail(&blp->down_head, &diop->up_list);
-	list_add_tail(&blp->up_head, &uiop->down_list);
-
-	diop->up_len++;
-	uiop->down_len++;
-}
-
-static inline void biunlink(struct bilink *blp)
-{
-	LIST_DEL(&blp->down_head);
-	LIST_DEL(&blp->up_head);
-	blp->diop->up_len--;
-	blp->uiop->down_len--;
-	bilink_free(blp);
-}
-
-static inline struct io *bilink_first_down(struct io *iop, 
- 							struct bilink **blp_p)
-{
-	struct bilink *blp;
-
-	if (list_empty(&iop->down_list))
-		return NULL;
-	blp = list_entry(iop->down_list.next, struct bilink, up_head);
-
-	if (blp_p != NULL) 
-		*blp_p = blp;
-	return blp->diop;
-}
-
-static inline struct io *bilink_first_up(struct io *iop, struct bilink **blp_p)
-{
-	struct bilink *blp;
-
-	if (list_empty(&iop->up_list))
-		return NULL;
-	blp = list_entry(iop->up_list.next, struct bilink, down_head);
-
-	if (blp_p != NULL) 
-		*blp_p = blp;
-	return blp->uiop;
-}
-
-typedef void (*bilink_func)(struct io *diop, struct io *uiop, 
-							struct io *c_iop);
-static inline void bilink_for_each_down(bilink_func func, struct io *uiop,
-				        struct io *c_iop, int ul)
-{
-	struct bilink *blp;
-	struct list_head *p, *q;
-
-	list_for_each_safe(p, q, &uiop->down_list) {
-		blp = list_entry(p, struct bilink, up_head);
-		func(blp->diop, uiop, c_iop);
-		if (ul)
-			biunlink(blp);
-	}
 }
 
 static inline int histo_idx(__u64 nbytes)
@@ -517,10 +371,31 @@ static inline void update_d_histo(__u64 nbytes)
 	d_histo[histo_idx(nbytes)]++;
 }
 
-static inline void add_rmhd(struct io *iop)
+static inline struct io *io_first_list(struct list_head *head)
 {
-	if (!iop->on_rm_list) {
-		list_add_tail(&iop->rm_head, &rmhd);
-		iop->on_rm_list = 1;
-	}
+	if (list_empty(head))
+		return NULL;
+
+	return list_entry(head->next, struct io, f_head);
+}
+
+static inline void __dump_iop(FILE *ofp, struct io *iop, int extra_nl)
+{
+	fprintf(ofp, "%5d.%09lu %3d,%-3d %c %10llu+%-4u\n",
+		(int)SECONDS(iop->t.time),
+		(unsigned long)NANO_SECONDS(iop->t.time),
+		MAJOR(iop->t.device), MINOR(iop->t.device), type2c(iop->type),
+		(unsigned long long)iop->t.sector, t_sec(&iop->t));
+	if (extra_nl) fprintf(ofp, "\n");
+}
+
+static inline void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop)
+{
+	fprintf(ofp, "%5d.%09lu %3d,%-3d %c %10llu+%-4u <- (%3d,%-3d) %10llu\n",
+		(int)SECONDS(a_iop->t.time),
+		(unsigned long)NANO_SECONDS(a_iop->t.time),
+		MAJOR(a_iop->t.device), MINOR(a_iop->t.device), 
+		type2c(a_iop->type), (unsigned long long)a_iop->t.sector, 
+		t_sec(&a_iop->t), MAJOR(l_iop->t.device), 
+		MINOR(l_iop->t.device), (unsigned long long)l_iop->t.sector);
 }

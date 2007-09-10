@@ -199,12 +199,19 @@ Q2C    0.000207665   0.125405263   1.830917198     2262311
   \item[Device Seek Information]
 
   Another useful measure is the variability in the sector distances
-  between consecutive IOs. The next session provides some rudimentary
+  between consecutively \emph{recieved -- queued} and \emph{submitted
+  -- issued} IOs. The next two sections provides some rudimentary
   statistics to gauge the general nature of the sector differences
   between IOs. Values provided include the number of seeks (number of IOs
   submitted to lower level drivers), the \emph{mean} distance between
   IOs, the \emph{median} value for all seeks, and the \emph{mode} -
   the value(s) and the counts are provided for the latter.
+
+  The first of the two sections displays values for Q2Q seek distances --
+  providing a set of indicators showing how close incoming IO requests
+  are to each other. The second section shows D2D seek distances --
+  providing a set of indicators showing how close the IO requests are
+  that are handled by underlying drivers.
 
 \begin{verbatim}
       DEV | NSEEKS    MEAN MEDIAN | MODE
@@ -218,7 +225,6 @@ Q2C    0.000207665   0.125405263   1.830917198     2262311
   number of seeks is indicative as to how many IOs are coming out of
   the block IO layer in adjacent sectors. (Obviously, the higher this
   percentage, the better the underlying subsystems can handle them.)
-
 
   \item[Request Queue Plug Information]
 
@@ -247,6 +253,7 @@ Q2C    0.000207665   0.125405263   1.830917198     2262311
   ones due to timer unplugs.
 \end{description}
 
+\newpage
 \subsection{\label{sec:detailed-data}Detailed Data}
 
   In addition to the default sections output, if one supplies the
@@ -298,9 +305,6 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 ( 65,160) 0.000139915 0.001175554 0.073512063 133973
 ( 65,176) 0.000141254 0.001104870 0.073231310 145764
 ( 65,192) 0.000141453 0.001234460 0.167622507 140618
-( 65,208) 0.000143901 0.001126610 0.144651899 178548
-( 65,224) 0.000145020 0.001226478 0.124902029 206241
-( 65,240) 0.000144315 0.001199571 0.102415459 129154
 ...
 \end{verbatim}
 
@@ -343,7 +347,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
     on a per-IO basis can be generated. These are described in
     sections~\ref{sec:lat-q2c} and~\ref{sec:lat-d2c}.
 
-    \item[seek details] A data file containing all IO-to-IO
+    \item[seek details] A set of data files containing all IO-to-IO
     sector differences can be output, with details found in
     section~\ref{sec:seek}.
 
@@ -513,36 +517,45 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 
   The \emph{--per-io-dump} or \emph{-p} option triggers this behavior,
   and will produce a file containing streams of IOs (separated by blank
-  spaces), here is an example:
+  spaces). As an example, here is a snippet of 4 IOs that were merged
+  together, you will note there are 3 merged IOs, and 1 inserted in the
+  stream. The issue and completion traces are replicated per IO.
 
 \begin{verbatim}
-   20.002179731   8,32  Q         34+8
-   20.002181199   8,32  I         34+8
-   20.098329567   8,32  D         34+16
-   20.002182760   8,32  Q         42+8
-   20.002183613   8,32  M         42+8
-   20.098329567   8,32  D         34+16
-   20.692643206   8,32  C         34+16
+ 66,0  :     0.763283556 Q       6208+8   
+             0.763300157 I       6208+8   
+             0.763296365 G       6208+8   
+             0.763338848 D       6208+32  
+             0.763705760 C       6208+32  
+
+ 66,0  :     0.763314550 Q       6224+8   
+             0.763315341 M       6224+8   
+             0.763338848 D       6208+32  
+             0.763705760 C       6208+32  
+
+ 66,0  :     0.763321010 Q       6232+8   
+             0.763321775 M       6232+8   
+             0.763338848 D       6208+32  
+             0.763705760 C       6208+32  
+
+ 65,240:     0.763244173 Q       6216+8   
+             0.763244974 M       6216+8   
+             0.763374288 D       6208+32  
+             0.763826610 C       6208+32  
 \end{verbatim}
 
   The columns provide the following information:
 
   \begin{enumerate}
-    \item Time of the trace (seconds from the start of the run)
-
     \item Device major/minor.
+
+    \item Time of the trace (seconds from the start of the run)
 
     \item Trace type 
 
     \item start block + number of blocks
   \end{enumerate}
   
-  For this pair of initial IOs (Q traces at 20.002179731 and
-  20.002182760), we can follow the insert and merge traces (20.002181199
-  and 20.002183613 respectively), and the issue (duplicate entries for
-  20.098329567), and the completion at 20.692643206. Every Q has its
-  corresponding issue trace bounding any insert or merge operations.
-
 \newpage\section{\label{sec:lat}\label{sec:lat-q2c}\label{sec:lat-d2c}Latency Data Files}
 
   The latency data files which can be optionally produced by \texttt{btt}
@@ -555,7 +568,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 
 \newpage\section{\label{sec:seek}Seek Data File}
 
-  \texttt{btt} can also produce a data file containing all IO-to-IO sector
+  \texttt{btt} can also produce two data files containing all IO-to-IO sector
   deltas, providing seek information which can then be plotted. The
   produced data file contains 3 sets of data:
 
@@ -566,6 +579,25 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 
      \item Write data -- just seek deltas for writes
   \end{enumerate}
+
+  The format of the output file names is to have the name generated by 
+  the following fields separated by underscores (\texttt{\_}):
+  
+  \begin{itemize}
+    \item The prefix provided as the argument to the \texttt{-s} option.
+    \item The major and minor numbers of the device separated by a comma.
+    \item The string \texttt{q2q} or \texttt{d2d}, indicating the Q2Q or 
+          D2D seeks, respectively.
+    \item One of the following characters:
+    	\begin{description}
+	  \item[r] For read (device to system) IOs
+	  \item[w] For write (system to device) IOs
+	  \item[c] Combined -- both read and write IOs
+	\end{description}
+  \end{itemize}
+
+  An example name would be after specifying \texttt{-s seek} would be:
+  \texttt{seek\_065,048\_q2q\_w.dat}.
 
   The format of the data is to have the runtime values (seconds since
   the start of the run) in column 1 (X values); and the difference in
@@ -823,248 +855,5 @@ Output}
   
   Here is a complete output file from a btt run, illustrating a lot of the
   capabilities of btt.
-
-\begin{verbatim}
-==================== All Devices ====================
-
-            ALL           MIN           AVG           MAX           N
---------------- ------------- ------------- ------------- -----------
-Q2Q               0.000000001   0.000015439   0.067431982     4485897
-Q2I               0.000000277   0.000005085  12.844603081     4485736
-I2D               0.000000869   0.000721745  12.845117057     4485736
-D2C               0.000151807   0.005254051   0.097569048     4485736
-Q2C               0.000156268   0.005980882  12.864868116     4485736
-
-\end{verbatim}
-\newpage\begin{verbatim}
-
-==================== Device Overhead ====================
-
-       DEV |    Q2I    I2D    D2C
----------- | ------ ------ ------
- (  8,160) |   0.0%   1.6%  98.4%
- (  8,176) |   0.1%  20.0%  79.9%
- (  8,208) |   1.2%  69.2%  29.5%
- ( 65, 32) |   0.0%   1.1%  98.8%
- ( 65, 64) |   0.0%   3.6%  96.4%
- ( 65,176) |   0.0%   2.5%  97.4%
- ( 65, 96) |   0.0%  15.3%  84.6%
- (  8,224) |   0.0%   1.7%  98.3%
- ( 65,112) |   0.0%   2.4%  97.6%
- (  8,240) |   0.0%   2.3%  97.7%
- ( 65,192) |   0.0%  19.4%  80.6%
- ( 65,240) |   0.0%   1.3%  98.7%
- ( 65, 48) |   0.0%   2.3%  97.7%
- (  8, 32) |   0.0%   7.0%  93.0%
- ( 66, 80) |   0.1%   9.9%  90.0%
- ( 66, 32) |   0.0%   0.7%  99.3%
- ( 65,224) |   0.0%  18.1%  81.9%
- ( 65,144) |   0.1%  39.5%  60.5%
- (  8,144) |   0.0%   0.7%  99.3%
- ( 66,144) |   0.0%   1.5%  98.5%
- ( 66,128) |   0.0%   3.0%  97.0%
- ( 66,176) |   0.0%  12.5%  87.4%
- ( 66,224) |   0.0%  10.2%  89.8%
- ( 66,192) |   0.0%   2.1%  97.9%
- ( 66,160) |   0.0%   9.4%  90.5%
- ( 66,240) |   0.0%   9.8%  90.2%
- ( 66,112) |   0.1%  24.2%  75.7%
- (  8, 64) |   0.0%   9.6%  90.4%
- ( 65,160) |   0.2%  26.2%  73.7%
- ( 65,208) |   0.0%   2.0%  98.0%
- ( 66, 16) |   0.0%   4.5%  95.5%
- ( 65,  0) |   0.0%   2.2%  97.8%
- ( 65, 16) |   0.0%   1.8%  98.1%
- ( 66,208) |   0.0%   2.7%  97.3%
- (  8,128) |   0.2%  23.7%  76.1%
- ( 65, 80) |   0.0%  20.0%  80.0%
- (  8,112) |   0.0%   1.2%  98.7%
- ( 65,128) |   0.0%   1.9%  98.1%
- ( 66, 64) |   0.0%  12.1%  87.9%
- ( 66,  0) |   0.0%   7.2%  92.8%
- ( 66, 48) |   0.0%   2.6%  97.4%
- (  8,192) |   0.0%   2.3%  97.7%
- ( 67, 16) |   0.0%   0.8%  99.2%
- ( 66, 96) |   0.0%  12.3%  87.7%
- (  8, 96) |   0.0%  10.3%  89.7%
- (  8, 80) |   0.0%   1.7%  98.3%
- (  8, 48) |   0.0%   0.7%  99.2%
- ( 67,  0) |   0.0%   2.6%  97.4%
-
-\end{verbatim}
-\newpage\begin{verbatim}
-
-==================== Device Merge Information ====================
-
-       DEV |       #Q       #D   Ratio |   BLKmin   BLKavg   BLKmax    Total
----------- | -------- -------- ------- | -------- -------- -------- --------
- (  8,160) |    75145    47890     1.6 |        8       12     1024   601160
- (  8,176) |    91374    55492     1.6 |        8       13     1024   730992
- (  8,208) |   101039    63944     1.6 |        8       12     1024   809256
- ( 65, 32) |    67919    44494     1.5 |        8       12     1024   543352
- ( 65, 64) |   114614    77396     1.5 |        8       11     1024   916968
- ( 65,176) |    93808    62746     1.5 |        8       11     1024   750464
- ( 65, 96) |    95537    51705     1.8 |        8       14     1024   764296
- (  8,224) |    95435    49753     1.9 |        8       15     1024   765560
- ( 65,112) |   100020    63530     1.6 |        8       12     1024   800160
- (  8,240) |    72282    44700     1.6 |        8       12     1024   578256
- ( 65,192) |    95175    59010     1.6 |        8       12     1024   761400
- ( 65,240) |    86334    53548     1.6 |        8       12     1024   690984
- ( 65, 48) |    69623    44652     1.6 |        8       12     1024   556984
- (  8, 32) |    97816    63116     1.5 |        8       12     1024   782528
- ( 66, 80) |   110873    71526     1.6 |        8       12     1024   886984
- ( 66, 32) |    79242    53134     1.5 |        8       11     1024   633936
- ( 65,224) |   122788    66180     1.9 |        8       14     1024   982304
- ( 65,144) |   116636    70205     1.7 |        8       13     1024   933416
- (  8,144) |    72014    49047     1.5 |        8       11     1024   576112
- ( 66,144) |   109244    70613     1.5 |        8       12     1024   873952
- ( 66,128) |   104688    65381     1.6 |        8       12     1024   837504
- ( 66,176) |    79627    47894     1.7 |        8       13     1024   637016
- ( 66,224) |    88754    58159     1.5 |        8       12     1024   710032
- ( 66,192) |    88919    55417     1.6 |        8       12     1024   711464
- ( 66,160) |   102908    71156     1.4 |        8       11     1024   823264
- ( 66,240) |    94190    66472     1.4 |        8       11     1024   753520
- ( 66,112) |   138799    82027     1.7 |        8       13     1024  1110392
- (  8, 64) |   105011    63892     1.6 |        8       13     1024   840112
- ( 65,160) |    93383    55579     1.7 |        8       13     1024   747064
- ( 65,208) |   109771    67987     1.6 |        8       12     1024   878168
- ( 66, 16) |    96703    56613     1.7 |        8       13     1024   773624
- ( 65,  0) |    83752    51532     1.6 |        8       13     1024   670032
- ( 65, 16) |    64538    35982     1.8 |        8       14     1024   516320
- ( 66,208) |    90636    54306     1.7 |        8       13     1024   725088
- (  8,128) |    96202    59653     1.6 |        8       13     1024   776192
- ( 65, 80) |   107945    65672     1.6 |        8       13     1024   863704
- (  8,112) |    78235    52847     1.5 |        8       11     1024   625880
- ( 65,128) |   104631    63106     1.7 |        8       13     1024   837048
- ( 66, 64) |    86365    50956     1.7 |        8       13     1024   690920
- ( 66,  0) |    90413    46722     1.9 |        8       15     1024   723304
- ( 66, 48) |   106631    65219     1.6 |        8       13     1024   853048
- (  8,192) |    80591    47154     1.7 |        8       13     1024   644728
- ( 67, 16) |    72314    48487     1.5 |        8       11     1024   578512
- ( 66, 96) |    90990    54454     1.7 |        8       13     1024   727920
- (  8, 96) |   110805    73522     1.5 |        8       12     1024   886440
- (  8, 80) |    85032    56643     1.5 |        8       12     1024   680400
- (  8, 48) |    87374    57544     1.5 |        8       12     1024   698992
- ( 67,  0) |    79611    53515     1.5 |        8       11     1024   636888
----------- | -------- -------- ------- | -------- -------- -------- --------
-       DEV |       #Q       #D   Ratio |   BLKmin   BLKavg   BLKmax    Total
-     TOTAL |  4485736  2790572     1.6 |        8       12     1024 35896640
-
-\end{verbatim}
-\newpage\begin{verbatim}
-
-==================== Device Seek Information ====================
-
-       DEV |          NSEEKS            MEAN          MEDIAN | MODE           
----------- | --------------- --------------- --------------- | ---------------
- (  8,160) |           47890        203945.5               0 | 0(2496)
- (  8,176) |           55492        252948.8               0 | 0(2360)
- (  8,208) |           63944        167845.3               0 | 0(4327)
- ( 65, 32) |           44494        224708.3               0 | 0(2683)
- ( 65, 64) |           77396        197838.0               0 | 0(2532)
- ( 65,176) |           62746        168400.5               0 | 0(2675)
- ( 65, 96) |           51705        162500.2               0 | 0(2778)
- (  8,224) |           49753        206665.7               0 | 0(2753)
- ( 65,112) |           63530        146289.8               0 | 0(2598)
- (  8,240) |           44700        167258.3               0 | 0(2735)
- ( 65,192) |           59010        217004.7               0 | 0(2724)
- ( 65,240) |           53548        278194.8               0 | 0(2415)
- ( 65, 48) |           44652        180710.3               0 | 0(2660)
- (  8, 32) |           63116        234049.5               0 | 0(2473)
- ( 66, 80) |           71526        184981.9               0 | 0(2455)
- ( 66, 32) |           53134        198369.5               0 | 0(2415)
- ( 65,224) |           66180        157948.5               0 | 0(2859)
- ( 65,144) |           70205        195689.7               0 | 0(2734)
- (  8,144) |           49047        169282.7               0 | 0(2574)
- ( 66,144) |           70613        149265.7               0 | 0(2717)
- ( 66,128) |           65381        165931.1               0 | 0(2687)
- ( 66,176) |           47894        199744.8               0 | 0(3096)
- ( 66,224) |           58159        161603.9               0 | 0(2738)
- ( 66,192) |           55417        153055.3               0 | 0(2828)
- ( 66,160) |           71156        126479.4               0 | 0(2739)
- ( 66,240) |           66472        142014.0               0 | 0(2933)
- ( 66,112) |           82027        115471.3               0 | 0(2961)
- (  8, 64) |           63892        136632.0               0 | 0(2655)
- ( 65,160) |           55579        154668.3               0 | 0(3377)
- ( 65,208) |           67987        152829.1               0 | 0(2523)
- ( 66, 16) |           56613        150652.8               0 | 0(2886)
- ( 65,  0) |           51532        186889.7               0 | 0(2765)
- ( 65, 16) |           35982        327187.6               0 | 0(2756)
- ( 66,208) |           54306        243784.1               0 | 0(3076)
- (  8,128) |           59653        170797.2               0 | 0(2800)
- ( 65, 80) |           65672        224501.4               0 | 0(2452)
- (  8,112) |           52847        213100.3               0 | 0(2417)
- ( 65,128) |           63106        207821.8               0 | 0(2686)
- ( 66, 64) |           50956        198045.0               0 | 0(2896)
- ( 66,  0) |           46722        205476.3               0 | 0(3159)
- ( 66, 48) |           65219        142716.6               0 | 0(2869)
- (  8,192) |           47154        248778.6               0 | 0(2584)
- ( 67, 16) |           48487        193335.5               0 | 0(2879)
- ( 66, 96) |           54454        185100.7               0 | 0(2158)
- (  8, 96) |           73522        216187.1               0 | 0(2476)
- (  8, 80) |           56643        172561.8               0 | 0(2612)
- (  8, 48) |           57544        219104.1               0 | 0(2472)
- ( 67,  0) |           53515        161613.8               0 | 0(2990)
----------- | --------------- --------------- --------------- | ---------------
-   Overall |          NSEEKS            MEAN          MEDIAN | MODE           
-   Average |         2790572        185170.0               0 | 0(131433)
-
-\end{verbatim}
-\newpage\begin{verbatim}
-==================== Plug Information ====================
-
-       DEV |    # Plugs # Timer Us  | % Time Q Plugged
----------- | ---------- ----------  | ----------------
- (  8,160) |      45092(         0) |   0.003021834%
- (  8,176) |      49430(         0) |   0.003724997%
- (  8,208) |      58950(         0) |   0.004506453%
- ( 65, 32) |      41617(         0) |   0.002710008%
- ( 65, 64) |      74294(         0) |   0.004971739%
- ( 65,176) |      59764(         0) |   0.003827258%
- ( 65, 96) |      47495(         0) |   0.004012641%
- (  8,224) |      46806(         0) |   0.003724031%
- ( 65,112) |      60539(         0) |   0.004272802%
- (  8,240) |      41797(         0) |   0.002832794%
- ( 65,192) |      54754(         0) |   0.004049758%
- ( 65,240) |      50757(         0) |   0.003466684%
- ( 65, 48) |      41749(         0) |   0.002783118%
- (  8, 32) |      59486(         0) |   0.004102902%
- ( 66, 80) |      67519(         0) |   0.004698104%
- ( 66, 32) |      50441(         0) |   0.003229586%
- ( 65,224) |      60219(         0) |   0.005114778%
- ( 65,144) |      64699(         0) |   0.005185315%
- (  8,144) |      46237(         0) |   0.002824578%
- ( 66,144) |      67605(         0) |   0.004459997%
- ( 66,128) |      62418(         0) |   0.004598612%
- ( 66,176) |      43007(         0) |   0.003277143%
- ( 66,224) |      54724(         0) |   0.003682546%
- ( 66,192) |      52395(         0) |   0.003611178%
- ( 66,160) |      67775(         0) |   0.004347445%
- ( 66,240) |      62892(         0) |   0.003906526%
- ( 66,112) |      72351(         0) |   0.005906198%
- (  8, 64) |      59642(         0) |   0.004275726%
- ( 65,160) |      50303(         0) |   0.003841735%
- ( 65,208) |      64750(         0) |   0.004655374%
- ( 66, 16) |      53443(         0) |   0.003936557%
- ( 65,  0) |      48450(         0) |   0.003301599%
- ( 65, 16) |      33047(         0) |   0.002447028%
- ( 66,208) |      51060(         0) |   0.003674090%
- (  8,128) |      52664(         0) |   0.004009472%
- ( 65, 80) |      61974(         0) |   0.004623080%
- (  8,112) |      50106(         0) |   0.003284028%
- ( 65,128) |      60047(         0) |   0.004267589%
- ( 66, 64) |      47590(         0) |   0.003646022%
- ( 66,  0) |      43413(         0) |   0.003600655%
- ( 66, 48) |      61984(         0) |   0.004440717%
- (  8,192) |      44294(         0) |   0.003120507%
- ( 67, 16) |      45482(         0) |   0.002852274%
- ( 66, 96) |      50099(         0) |   0.003970858%
- (  8, 96) |      70266(         0) |   0.004743310%
- (  8, 80) |      53676(         0) |   0.003530690%
- (  8, 48) |      54672(         0) |   0.003527266%
- ( 67,  0) |      50418(         0) |   0.003217817%
----------- | ---------- ----------  | ----------------
-       DEV |    # Plugs # Timer Us  | % Time Q Plugged
-   OVERALL |      54420(         0) |   0.003871155%
-\end{verbatim}
+\input{sample-btt-output.tex}
 \end{document}

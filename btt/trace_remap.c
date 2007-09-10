@@ -20,95 +20,23 @@
  */
 #include "globals.h"
 
-void run_remap(struct io *a_iop, __attribute__((__unused__)) struct io *u_iop,
-				 struct io *c_iop)
+static void handle_remap(struct io *a_iop)
 {
-	struct bilink *blp = blp, *blp2;
-	struct io *q_iop, *l_iop = bilink_first_down(a_iop, &blp);
-
-	ASSERT(l_iop);
-	q_iop = bilink_first_down(l_iop, &blp2);
-	if (q_iop) {
-		run_queue(q_iop, a_iop, c_iop);
-		biunlink(blp2);
-	}
-
-	dump_iop2(a_iop, l_iop);
-	biunlink(blp);
-
-	add_rmhd(l_iop);
-	add_rmhd(a_iop);
-}
-
-int ready_dev_remap(struct io *l_iop, struct io *c_iop)
-{
+	struct blk_io_trace_remap *rp = a_iop->pdu;
 	struct io *q_iop;
 
-	if (!list_empty(&l_iop->down_list)) 
-		return 1;
-
-	q_iop = dip_find_sec(l_iop->dip, IOP_Q, l_iop->t.sector);
-	if (!q_iop || !ready_queue(q_iop, c_iop))
-		return 0;
-
-	ASSERT(l_iop->t.bytes <= q_iop->t.bytes);
-	update_q2a(q_iop, tdelta(q_iop, l_iop));
-	bilink(q_iop, l_iop);
-
-	q_iop->bytes_left -= l_iop->t.bytes;
-	if (q_iop->bytes_left == 0)
-		dip_rem(q_iop);
-	return 1;
-}
-
-int ready_self_remap(struct io *l_iop)
-{
-	struct io *a_iop = dip_find_sec(l_iop->dip, IOP_A, l_iop->t.sector);
-
-	if (a_iop) {
-		update_q2a(a_iop, tdelta(a_iop, l_iop));
-		dip_rem(a_iop);
-	}
-
-	return 1;
-}
-
-int ready_remap(struct io *a_iop, struct io *c_iop)
-{
-	struct io *l_iop = bilink_first_down(a_iop, NULL);
-
-	ASSERT(l_iop);
-	if (remapper_dev(l_iop->t.device))
-		return ready_dev_remap(l_iop, c_iop);
-	else
-		return ready_self_remap(l_iop);
+	q_iop = dip_find_sec(a_iop->dip, IOP_Q, be64_to_cpu(rp->sector));
+	if (q_iop) 
+		update_q2a(q_iop, tdelta(q_iop->t.time, a_iop->t.time));
 }
 
 void trace_remap(struct io *a_iop)
 {
-	struct io *l_iop;
 	struct blk_io_trace_remap *rp = a_iop->pdu;
 
 	a_iop->t.device = be32_to_cpu(rp->device_from);
-	if (!io_setup(a_iop, IOP_A)) {
-		io_release(a_iop);
-		return;
-	}
+	if (io_setup(a_iop, IOP_A))
+		handle_remap(a_iop);
 
-	l_iop = io_alloc();
-	memcpy(&l_iop->t, &a_iop->t, sizeof(a_iop->t));
-	if (l_iop->t.pdu_len) {
-		l_iop->pdu = malloc(l_iop->t.pdu_len);
-		memcpy(l_iop->pdu, a_iop->pdu, l_iop->t.pdu_len);
-	}
-
-	l_iop->t.device = be32_to_cpu(rp->device);
-	l_iop->t.sector = be64_to_cpu(rp->sector);
-	if (!io_setup(l_iop, IOP_L)) {
-		io_release(l_iop);
-		io_release(a_iop);
-		return;
-	}
-
-	bilink(l_iop, a_iop);
+	io_release(a_iop);
 }
