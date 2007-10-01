@@ -17,7 +17,7 @@
   #define store_barrier()         asm volatile("":::"memory")
 #elif defined(__sparc__)
   #define store_barrier()         asm volatile("":::"memory")
-#elif defined(__m68000__)
+#elif defined(__m68000__) || defined(__m68k__) || defined(mc68000) || defined(_M_M68K)
   #define store_barrier()         asm volatile("":::"memory")
 #elif defined(__mips__)  /* also mipsel */
   #define store_barrier()         do { } while(0)
