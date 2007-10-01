@@ -1,4 +1,4 @@
-.TH BTT 1 "March 06, 2007" "blktrace git\-20070306202522" ""
+.TH BTT 1 "September 29, 2007" "blktrace git\-20070910192508" ""
 
 
 .SH NAME
@@ -6,65 +6,130 @@ btt \- analyse block i/o traces produces by blktrace
 
 
 .SH SYNOPSIS
-.B btt [options] \-i <\fIinput file\fR>
+.B btt 
+[ \-a               | \-\-seek\-absolute ]
+.RS 4
+[ \-A               | \-\-all\-data ]
 .br
-.B btt \-h | \-\-help
+[ \-B <\fIoutput name\fR> | \-\-dump\-blocknos=<\fIoutput name\fR> ]
 .br
-.B btt \-V | \-\-version
+[ \-d <\fIseconds\fR>     | \-\-range\-delta=<\fIseconds\fR> ]
 .br
+[ \-D <\fIdev;...\fR>     | \-\-devices=<\fIdev;...\fR> ]
+.br
+[ \-e <\fIexe,...\fR>     | \-\-exes=<\fIexe,...\fR>  ]
+.br
+[ \-h               | \-\-help ]
+.br
+[ \-i <\fIinput name\fR>  | \-\-input\-file=<\fIinput name\fR> ]
+.br
+[ \-I <\fIoutput name\fR> | \-\-iostat=<\fIoutput name\fR> ]
+.br
+[ \-l <\fIoutput name\fR> | \-\-d2c\-latencies=<\fIoutput name\fR> ]
+.br
+[ \-M <\fIdev map\fR>     | \-\-dev\-maps=<\fIdev map\fR>
+.br
+[ \-o <\fIoutput name\fR> | \-\-output\-file=<\fIoutput name\fR> ]
+.br
+[ \-p <\fIoutput name\fR> | \-\-per\-io\-dump=<\fIoutput name\fR> ]
+.br
+[ \-q <\fIoutput name\fR> | \-\-q2c\-latencies=<\fIoutput name\fR> ]
+.br
+[ \-s <\fIoutput name\fR> | \-\-seeks=<\fIoutput name\fR> ]
+.br
+[ \-S <\fIinterval\fR>    | \-\-iostat\-interval=<\fIinterval\fR> ]
+.br
+[ \-t <\fIsec\fR>         | \-\-time\-start=<\fIsec\fR> ]
+.br
+[ \-T <\fIsec\fR>         | \-\-time\-end=<\fIsec\fR> ]
+.br
+[ \-u <\fIoutput name\fR> | \-\-unplug\-hist=<\fIoutput name\fR> ]
+.br
+[ \-v               | \-\-verbose ]
+.br
+[ \-V               | \-\-version ]
 
 
 .SH DESCRIPTION
 
+btt is a post\-processing tool for the block layer IO tracing tool called
+blktrace(8).  As noted in its documentation, blktrace 
+is a block layer IO tracing mechanism which provides detailed
+information about request queue operations up to user space.
+
 btt will take in binary dump data from blkparse, and analyse the events,
 producing a series of output from the analysis. It will also build .dat
-files containing "range data" -- showing things like Q activity (periods
+files containing "range data" \-\- showing things like Q activity (periods
 of time while Q events are being produced), C activity (likewise for
 command completions), and etc.
 
 
 .SH OPTIONS
 
-.B \-h
+.B \-a
 .br
-.B \-\-help
+.B \-\-seek\-absolute
 .RS 4
-Shows a short summary of possible command line option
+When specified on the command line, this directs btt to calculate
+seek distances based solely upon the ending block address of one IO,
+and the start of the next.  By default \fBbtt\fR uses the concept
+of the closeness to either the beginning or end of the previous IO. See
+the Users Manual for more details about seek distances.
 .RE
 
-.B \-V
+.B \-A
 .br
-.B \-\-version
+.B \-\-all\-data
 .RS 4
-Shows the version of btt.
+Normally \fBbtt\fR will not print out verbose information concerning
+per-process and per-device data.  If you desire that level of detail you can
+specify this option.
 .RE
 
-.B \-i
+.B \-B <\fIoutput name\fR>
 .br
+.B \-\-dump\-blocknos=<\fIoutput name\fR>
 .RS 4
-Specifies the input file to analyse.  This should be a trace file as produces
-by \fIblktrace\fR (8).
+This option will output absolute block numbers to three files prefixed
+by the specified output name:
+.HP
+.I prefix_device_r.dat
+.br
+All read block numbers are output, first column is time (seconds), second is
+the block number, and the third column is the ending block number.
+.HP
+.I prefix_device_w.dat
+.br
+All write block numbers are output, first column is time (seconds), second is
+the block number, and the third column is the ending block number.
+.HP
+.I prefix_device_c.dat
+.br
+All block numbers (read and write) are output, first column is time (seconds),
+second is the block number, and the third column is the ending block number.
 .RE
 
 .B \-d <\fIseconds\fR>
 .br
 .B \-\-range\-delta=<\fIseconds\fR>
 .RS 4
-The \-d option allows you to specify the granularity which determines
-"activity" with regard to the .dat files \-\- this specific the time
-(in seconds) that must elapse without a particular event occurring to
-signify inactivity. The larger the number, the fewer ranges output \-\-
-the default is 0.1 seconds.
+\fBbtt\fR outputs a file containing Q and C activity, the notion of active
+traces simply means that there are Q or C traces occurring within a certain
+period of each other. The default values is 0.1 seconds; with this option
+allowing one to change that granularity. The smaller the value, the more data
+points provided.
 .RE
 
 .B \-D <\fIdev;...\fR>
 .br
 .B \-\-devices=<\fIdev;...\fR>
 .RS 4
-The \-D option supplies the devices which should be looked at when
-analysing the input. This is a ":" separated list of devices, devices are
-specified by a mjr,mnr tuple (e.g.: \-D "8,0:8,8" specifies two devices
-with major 8 and minor 0 and 8 respectively).
+Normally, \fBbtt\fR will produce data for all devices detected in the
+traces parsed. With this option, one can reduce the analysis to one or more
+devices provided in the string passed to this option. The device identifiers
+are the major and minor number of each device, and each device identifier is
+separated by a colon (:). A valid specifier for devices 8,0 and 8,8 would then
+be: \fI8,0:8,8\fR.
 .RE
 
 .B \-e <\fIexe,...\fR>
@@ -73,6 +138,21 @@ with major 8 and minor 0 and 8 respectively).
 .RS 4
 The \-e option supplies the list of executables that will have I/Os
 analysed.
+.RE
+
+.B \-h
+.br
+.B \-\-help
+.RS 4
+Shows a short summary of possible command line option
+.RE
+
+.B \-i <\fIinput name\fR>
+.br
+.B \-\-input\-file <\fIinput file\fR>
+.RS 4
+Specifies the input file to analyse.  This should be a trace file produced
+by \fIblktrace\fR (8).
 .RE
 
 .B \-I <\fIoutput name\fR>
@@ -157,6 +237,41 @@ analysis will occur for all traces after the time specified. Similarly,
 if only \-T is specified, analysis stops after \-T's seconds.)
 .RE
 
+.B \-u <\fIoutput name\fR>
+.br
+.B \-\-unplug\-hist=<\fIoutput name\fR>
+.RS 4
+This option instructs \fBbtt\fR to generate a data file containing histogram
+information for unplug traces on a per device basis. It shows how many
+times an unplug was hit with a specified number of IOs released. There are 21
+output values into the file, as follows:
+
+.RS 4
+a value of 0 represents 0..4 counts
+.br
+a value of 1 represents 5..9 counts
+.br
+a value of 2 represents 10..14 counts
+.br
+etc, until
+.br
+a value of 20 represents 100+ counts
+.br
+.RE
+
+The file name(s) generated use the text string passed as an argument for
+the prefix, followed by the device identifier in \fImajor,minor\fR
+form, with a \fI.dat\fR extension.  For example, with \fI\-u
+up_hist\fR specified on the command line: \fIup_hist_008,032.dat\fR.
+.RE
+
+.B \-V
+.br
+.B \-\-version
+.RS 4
+Shows the version of btt.
+.RE
+
 .B \-v
 .br
 .B \-\-verbose
@@ -188,5 +303,7 @@ On Debian systems, the text of the GNU General Public License can be found in
 /usr/share/common\-licenses/GPL\-2.
 
 .SH "SEE ALSO"
+The btt Users Guide, which can be found in /usr/share/doc/blktrace/btt.pdf
+.br
 blktrace (8), blkparse (1), verify_blkparse (1), blkrawverify (1), btt (1)
 
