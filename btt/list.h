@@ -1,6 +1,28 @@
 #ifndef _LINUX_LIST_H
 #define _LINUX_LIST_H
 
+#include <stdio.h>
+
+#ifndef offsetof
+/**
+ * Get offset of a member
+ */
+#define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
+#endif
+
+#ifndef container_of
+/**
+ * Casts a member of a structure out to the containing structure
+ * @param ptr        the pointer to the member.
+ * @param type       the type of the container struct this is embedded in.
+ * @param member     the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({                      \
+        const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	        (type *)( (char *)__mptr - offsetof(type,member) );})
+#endif
+
 /*
  * These are non-NULL pointers that will result in page faults
  * under normal circumstances, used to verify that nobody uses
@@ -164,6 +186,31 @@ static inline void list_move_tail(struct list_head *list,
 {
         __list_del(list->prev, list->next);
         list_add_tail(list, head);
+}
+
+static inline void __list_splice(struct list_head *list,
+                                 struct list_head *head)
+{
+        struct list_head *first = list->next;
+        struct list_head *last = list->prev;
+        struct list_head *at = head->next;
+
+        first->prev = head;
+        head->next = first;
+
+        last->next = at;
+        at->prev = last;
+}
+
+/**
+ *  * list_splice - join two lists
+ *   * @list: the new list to add.
+ *    * @head: the place to add it in the first list.
+ *     */
+static inline void list_splice(struct list_head *list, struct list_head *head)
+{
+        if (!list_empty(list))
+                __list_splice(list, head);
 }
 
 #endif
