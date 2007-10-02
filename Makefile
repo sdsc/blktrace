@@ -5,12 +5,18 @@ PROGS	= blkparse blktrace verify_blkparse blkrawverify
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
-ALL = $(PROGS) $(SCRIPTS) btt/btt
+ALL = $(PROGS) $(SCRIPTS) btt/btt btreplay/btrecord btreplay/btreplay
 
 all: $(ALL)
 
 btt/btt:
 	$(MAKE) -C btt
+
+btreplay/btrecord:
+	$(MAKE) -C btreplay
+
+btreplay/btreplay:
+	$(MAKE) -C btreplay
 
 %.o: %.c
 	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
@@ -32,10 +38,12 @@ $(PROGS): | depend
 docs:
 	$(MAKE) -C doc all
 	$(MAKE) -C btt docs
+	$(MAKE) -C btreplay docs
 
 docsclean:
 	$(MAKE) -C doc clean
 	$(MAKE) -C btt clean
+	$(MAKE) -C btreplay clean
 
 depend:
 	@$(CC) -MM $(ALL_CFLAGS) *.c 1> .depend
@@ -63,6 +71,7 @@ rpm: dist
 clean: docsclean
 	-rm -f *.o $(PROGS) .depend btrace-1.0.tar.bz2
 	$(MAKE) -C btt clean
+	$(MAKE) -C btreplay clean
 
 install: all
 	$(INSTALL) -m 755 -d $(DESTDIR)$(bindir)
