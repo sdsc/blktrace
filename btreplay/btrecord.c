@@ -30,6 +30,7 @@ static char build_date[] = __DATE__ " at "__TIME__;
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <stdarg.h>
 
 #if !defined(_GNU_SOURCE)
 #	define _GNU_SOURCE
@@ -181,13 +182,21 @@ static struct option l_opts[] = {
 
 #define ERR_ARGS			1
 #define ERR_SYSCALL			2
-#define fatal(errstring, exitval, arg...)				\
-	do {								\
-		if (errstring) perror(errstring);			\
-		fprintf(stderr, ##arg);					\
-		exit(exitval);						\
-		/*NOTREACHED*/						\
-	} while (0)
+static inline void fatal(const char *errstring, const int exitval,
+			 const char *fmt, ...)
+{
+	va_list ap;
+
+	if (errstring)
+		perror(errstring);
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	exit(exitval);
+	/*NOTREACHED*/
+}
 
 /**
  * match - Return true if this trace is a proper QUEUE transaction
