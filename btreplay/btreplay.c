@@ -1327,7 +1327,7 @@ static void *replay_sub(void *arg)
 	set_replay_ready();
 	while (!is_send_done(tip) && tip->iterations--) {
 		wait_iter_start();
-		if (verbose)
+		if (verbose > 1)
 			fprintf(tip->vfp, "\n=== %d ===\n", tip->iterations);
 		while (!is_send_done(tip) && next_bunch(tip, &bunch))
 			process_bunch(tip, &bunch);
