@@ -1318,7 +1318,7 @@ static void *replay_sub(void *arg)
 	pin_to_cpu(tip);
 
 	sprintf(path, "/dev/%s", map_dev(tip->devnm));
-	tip->ofd = open(path, O_RDWR | O_DIRECT);
+	tip->ofd = open(path, O_RDWR | O_DIRECT | O_NOATIME);
 	if (tip->ofd < 0) {
 		fatal(path, ERR_SYSCALL, "Failed device open\n");
 		/*NOTREACHED*/
