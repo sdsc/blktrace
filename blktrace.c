@@ -1220,6 +1220,7 @@ static int start_devices(void)
 
 	size = ncpus * sizeof(struct thread_information);
 	thread_information = malloc(size * ndevs);
+	memset(thread_information, 0, size*ndevs);
 	if (!thread_information) {
 		fprintf(stderr, "Out of memory, threads (%d)\n", size * ndevs);
 		return 1;
