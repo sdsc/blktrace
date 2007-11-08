@@ -162,7 +162,7 @@ struct d_info {
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
-	__u64 last_q, n_ds;
+	__u64 last_q, n_qs, n_ds;
 	__u32 device;
 
 	int pre_culling;

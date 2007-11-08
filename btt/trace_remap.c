@@ -20,23 +20,37 @@
  */
 #include "globals.h"
 
-static void handle_remap(struct io *a_iop)
+static inline void cvt_pdu_remap(struct blk_io_trace_remap *rp)
 {
-	struct blk_io_trace_remap *rp = a_iop->pdu;
-	struct io *q_iop;
-
-	q_iop = dip_find_sec(a_iop->dip, IOP_Q, be64_to_cpu(rp->sector));
-	if (q_iop) 
-		update_q2a(q_iop, tdelta(q_iop->t.time, a_iop->t.time));
+	rp->device = be32_to_cpu(rp->device);
+	rp->device_from = be32_to_cpu(rp->device_from);
+	rp->sector = be64_to_cpu(rp->sector);
 }
 
+/*
+ * q_iop == volume device
+ * a_iop == underlying device
+ */
 void trace_remap(struct io *a_iop)
 {
+	struct io *q_iop;
+	struct d_info *q_dip;
 	struct blk_io_trace_remap *rp = a_iop->pdu;
 
-	a_iop->t.device = be32_to_cpu(rp->device_from);
-	if (io_setup(a_iop, IOP_A))
-		handle_remap(a_iop);
+	cvt_pdu_remap(rp);
 
+	a_iop->t.device = rp->device_from;
+	if (!io_setup(a_iop, IOP_A))
+		goto out;
+
+	q_dip = __dip_find(rp->device);
+	if (!q_dip)
+		goto out;
+
+	q_iop = dip_find_sec(q_dip, IOP_Q, rp->sector);
+	if (q_iop)
+		update_q2a(q_iop, tdelta(q_iop->t.time, a_iop->t.time));
+
+out:
 	io_release(a_iop);
 }

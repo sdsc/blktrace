@@ -141,15 +141,25 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 {
 	double blks_avg;
 	char scratch[15];
-	double ratio, q2c_n = dip->avgs.q2c.n, d2c_n = dip->n_ds;
+	double ratio, q2c_n, d2c_n;
 
+	if (dip->n_qs == 0 || dip->n_ds == 0)
+		return;
+	else if (dip->n_qs < dip->n_ds)
+		dip->n_qs = dip->n_ds;
+
+	q2c_n = dip->n_qs;
+	d2c_n = dip->n_ds;
 	if (q2c_n > 0.0 && d2c_n > 0.0) {
-		ratio = q2c_n / d2c_n;
+		if (q2c_n < d2c_n)
+			ratio = 1.0;
+		else
+			ratio = q2c_n / d2c_n;
 		blks_avg = (double)dip->avgs.blks.total / d2c_n;
 		fprintf((FILE *)arg, 
 			"%10s | %8llu %8llu %7.1lf | %8llu %8llu %8llu %8llu\n",
 			make_dev_hdr(scratch, 15, dip),
-			(unsigned long long)dip->avgs.q2c.n,
+			(unsigned long long)dip->n_qs,
 			(unsigned long long)dip->n_ds,
 			ratio,
 			(unsigned long long)dip->avgs.blks.min,
@@ -162,7 +172,7 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 			merge_data.blkmax = dip->avgs.blks.max;
 		}
 
-		merge_data.nq += dip->avgs.q2c.n;
+		merge_data.nq += dip->n_qs;
 		merge_data.nd += dip->n_ds;
 		merge_data.total += dip->avgs.blks.total;
 		if (dip->avgs.blks.min < merge_data.blkmin)
