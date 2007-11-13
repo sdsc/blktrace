@@ -163,6 +163,7 @@ struct d_info {
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
 	__u64 last_q, n_qs, n_ds;
+	__u64 n_act_q, t_act_q;	/* # currently active when Q comes in */
 	__u32 device;
 
 	int pre_culling;

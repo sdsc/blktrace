@@ -510,6 +510,45 @@ void output_plug_info(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+int n_actQs;
+struct actQ_info {
+	__u64 t_qs;
+	__u64 t_act_qs;
+} actQ_info;
+
+void __dip_output_actQ(struct d_info *dip, void *arg)
+{
+	if (dip->n_qs > 0 && !remapper_dev(dip->device)) {
+		char dev_info[15];
+		double a_actQs = (double)dip->t_act_q / (double)dip->n_qs;
+
+		fprintf((FILE *)arg, "%10s | %13.1lf\n", 
+			make_dev_hdr(dev_info, 15, dip), a_actQs);
+			
+		n_actQs++;
+		actQ_info.t_qs += dip->n_qs;
+		actQ_info.t_act_qs += dip->t_act_q;
+	}
+}
+
+void __dip_output_actQ_all(FILE *ofp, struct actQ_info *p)
+{
+	fprintf(ofp, "---------- | -------------\n");
+	fprintf(ofp, "%10s | %13s\n", "Overall", "Avgs Reqs @ Q");
+	fprintf(ofp, "%10s | %13.1lf\n", "Average", 
+		(double)p->t_act_qs / (double)p->t_qs);
+}
+
+void output_actQ_info(FILE *ofp)
+{
+	fprintf(ofp, "%10s | %13s\n", "DEV", "Avg Reqs @ Q");
+	fprintf(ofp, "---------- | -------------\n");
+	dip_foreach_out(__dip_output_actQ, ofp);
+	if (n_actQs > 1)
+		__dip_output_actQ_all(ofp, &actQ_info);
+	fprintf(ofp, "\n");
+}
+
 void output_histos(void)
 {
 	int i;
@@ -603,6 +642,9 @@ int output_avgs(FILE *ofp)
 
 	output_section_hdr(ofp, "Plug Information");
 	output_plug_info(ofp);
+
+	output_section_hdr(ofp, "Active Requests At Q Information");
+	output_actQ_info(ofp);
 
 	output_histos();
 

@@ -25,6 +25,9 @@ static void handle_issue(struct io *d_iop)
 	LIST_HEAD(head);
 	struct list_head *p, *q;
 
+	if (d_iop->dip->n_act_q != 0)
+		d_iop->dip->n_act_q--;
+
 	seeki_add(d_iop->dip->seek_handle, d_iop);
 	bno_dump_add(d_iop->dip->bno_dump_handle, d_iop);
 	iostat_issue(d_iop);

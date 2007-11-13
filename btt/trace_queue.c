@@ -33,6 +33,9 @@ static void handle_queue(struct io *q_iop)
 	q_iop->i_time = q_iop->gm_time = q_iop->d_time = (__u64)-1;
 	q_iop->is_getrq = -1;
 	q_iop->dip->n_qs++;
+
+	q_iop->dip->t_act_q += q_iop->dip->n_act_q;
+	q_iop->dip->n_act_q++;
 }
 
 void trace_queue(struct io *q_iop)
