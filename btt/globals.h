@@ -159,6 +159,7 @@ struct d_info {
 	struct region_info regions;
 	struct devmap *map;
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *unplug_hist_handle;
+	void *q2d_priv;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -295,6 +296,16 @@ void *bno_dump_init(__u32 device);
 void bno_dump_exit(void *param);
 void bno_dump_add(void *handle, struct io *iop);
 void bno_dump_clean(void);
+
+/* q2d.c */
+void q2d_histo_add(void *priv, __u64 q2d);
+void *q2d_init(void);
+void q2d_release(void *priv);
+void q2d_display_header(FILE *fp);
+void q2d_display_dashes(FILE *fp);
+void q2d_display(FILE *fp, void *priv);
+int q2d_ok(void *priv);
+void q2d_acc(void *a1, void *a2);
 
 /* seek.c */
 void *seeki_init(char *str);

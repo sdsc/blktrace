@@ -336,6 +336,27 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 
   \item[Per Device Averages] The average columns from the above charts,
   are also presented in their own chart.
+
+  \item[Q2D Histogram] A display of histogram buckets for the Q to D times
+  -- basically, from where an IO enters the block IO layer for a given
+  device, and when it is dispatched. The buckets are arranged via the
+  time in seconds, as in:
+
+\begin{verbatim}
+==================== Q2D Histogram ====================
+
+       DEV | <.005 <.010 <.025 <.050 <.075 <.100 <.250 <.500 < 1.0 >=1.0
+ --------- | ===== ===== ===== ===== ===== ===== ===== ===== ===== =====
+ ( 66, 80) |  61.2   7.9  12.1   7.9   3.0   1.4   1.5   0.2   0.0   4.6
+ ( 65,192) |  42.3   5.0   8.7  30.0   8.9   3.0   1.8   0.1   0.0   0.1
+ ( 65,128) |  34.3   5.3   8.9  32.0   9.7   3.7   5.3   0.6   0.0   0.1
+...
+ ( 65, 64) |  59.9   4.2   6.0  24.6   4.2   0.8   0.1   0.0   0.0   0.1
+ ( 66, 64) |  62.6   8.1  12.7   7.9   2.4   0.6   0.1   0.0   0.0   5.4
+========== | ===== ===== ===== ===== ===== ===== ===== ===== ===== =====
+       AVG |  52.9   6.2  10.0  20.1   5.3   1.7   1.4   0.2   0.0   2.1
+\end{verbatim}
+
 \end{description}
 
 \newpage\section{\label{sec:data-files}Data Files Output}

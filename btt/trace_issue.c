@@ -46,6 +46,10 @@ static void handle_issue(struct io *d_iop)
 		q_iop->d_time = d_iop->t.time;
 		q_iop->d_sec = d_iop->t.sector;
 		q_iop->d_nsec = t_sec(&d_iop->t);
+
+		if (output_all_data)
+			q2d_histo_add(q_iop->dip->q2d_priv, 
+						d_iop->t.time - q_iop->t.time);
 	}
 
 	assert(d_iop->bytes_left == 0);

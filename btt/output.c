@@ -133,6 +133,49 @@ void output_dip_avg(FILE *ofp, char *hdr, ai_dip_t (*func)(struct d_info *))
 	fprintf(ofp, "\n");
 }
 
+struct __q2d {
+	FILE *ofp;
+	void *q2d_all;
+	int n;
+};
+void __output_q2d_histo(struct d_info *dip, void *arg)
+{
+	struct __q2d *q2dp = arg;
+
+	if (q2d_ok(dip->q2d_priv)) {
+		char scratch[15];
+		FILE *ofp = q2dp->ofp;
+
+		fprintf(q2dp->ofp, "%10s | ", make_dev_hdr(scratch, 15, dip));
+		q2d_display(ofp, dip->q2d_priv);
+		q2d_acc(q2dp->q2d_all, dip->q2d_priv);
+		q2dp->n++;
+	}
+}
+
+void output_q2d_histo(FILE *ofp)
+{
+	struct __q2d __q2d = {
+		.ofp = ofp,
+		.q2d_all = q2d_init(),
+		.n = 0
+	};
+
+	fprintf(ofp, "%10s | ", "DEV");
+	q2d_display_header(ofp);
+	fprintf(ofp, "--------- | ");
+	q2d_display_dashes(ofp);
+	dip_foreach_out(__output_q2d_histo, &__q2d);
+
+	if (__q2d.n) {
+		fprintf(ofp, "========== | ");
+		q2d_display_dashes(ofp);
+		fprintf(ofp, "%10s | ", "AVG");
+		q2d_display(ofp, __q2d.q2d_all);
+		fprintf(ofp, "\n");
+	}
+}
+
 int n_merges = 0;
 struct {
 	unsigned long long nq, nd, blkmin, blkmax, total;
@@ -647,6 +690,11 @@ int output_avgs(FILE *ofp)
 	output_actQ_info(ofp);
 
 	output_histos();
+
+	if (output_all_data) {
+		output_section_hdr(ofp, "Q2D Histogram");
+		output_q2d_histo(ofp);
+	}
 
 	return 0;
 }

@@ -131,6 +131,8 @@ void dip_exit(void)
 		seeki_exit(dip->q2q_handle);
 		bno_dump_exit(dip->bno_dump_handle);
 		unplug_hist_exit(dip->unplug_hist_handle);
+		if (output_all_data)
+			q2d_release(dip->q2d_priv);
 		free(dip);
 	}
 }
@@ -167,6 +169,8 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		list_add_tail(&dip->all_head, &all_devs);
 		dip->start_time = BIT_TIME(iop->t.time);
 		dip->pre_culling = 1;
+		if (output_all_data)
+			dip->q2d_priv = q2d_init();
 		n_devs++;
 	}
 
