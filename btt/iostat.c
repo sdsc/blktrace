@@ -60,11 +60,6 @@ void dump_hdr(void)
 			    "avgrq-sz avgqu-sz   await   svctm  %%util   Stamp\n");
 }
 
-void im2d2c_func(struct io *c_iop, struct io *im_iop)
-{
-	ADD_STAT(c_iop->dip, wait, tdelta(im_iop->t.time, c_iop->t.time));
-}
-
 void iostat_init(void)
 {
 	last_start = (__u64)-1;
@@ -281,13 +276,15 @@ void iostat_unissue(struct io *iop)
 	DEC_STAT(dip, cur_dev);
 }
 
-void iostat_complete(struct io *d_iop, struct io *c_iop)
+void iostat_complete(struct io *q_iop, struct io *c_iop)
 {
 	double now = TO_SEC(c_iop->t.time);
-	struct d_info *dip = d_iop->dip;
+	struct d_info *dip = q_iop->dip;
 
-	dip_foreach(d_iop, IOP_I, im2d2c_func, 0);
-	dip_foreach(d_iop, IOP_M, im2d2c_func, 0);
+	if (q_iop->i_time != (__u64)-1)
+		ADD_STAT(c_iop->dip, wait, tdelta(q_iop->i_time,c_iop->t.time));
+	else if (q_iop->m_time != (__u64)-1)
+		ADD_STAT(c_iop->dip, wait, tdelta(q_iop->m_time,c_iop->t.time));
 
 	update_tot_qusz(dip, now);
 	DEC_STAT(dip, cur_qusz);
@@ -295,5 +292,5 @@ void iostat_complete(struct io *d_iop, struct io *c_iop)
 	update_idle_time(dip, now, 0);
 	DEC_STAT(dip, cur_dev);
 
-	ADD_STAT(dip, svctm, tdelta(d_iop->t.time, c_iop->t.time));
+	ADD_STAT(dip, svctm, tdelta(q_iop->t.time, c_iop->t.time));
 }

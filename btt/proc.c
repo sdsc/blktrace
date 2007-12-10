@@ -214,7 +214,12 @@ void add_process(__u32 pid, char *name)
 void pip_update_q(struct io *iop)
 {
 	if (iop->pip) {
-		update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q, iop->t.time);
+		if (remapper_dev(iop->dip->device))
+			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q_dm, 
+								iop->t.time);
+		else
+			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q, 
+								iop->t.time);
 		update_qregion(&iop->pip->regions, iop->t.time);
 	}
 }

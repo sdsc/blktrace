@@ -36,9 +36,14 @@ static void display_io_track(FILE *ofp, struct io *iop)
 {
 	fprintf(ofp, "%3d,%-3d: ", MAJOR(iop->t.device), MINOR(iop->t.device));
 	__out(ofp, iop->t.time, IOP_Q, iop->t.sector, t_sec(&iop->t), 0);
-	__out(ofp, iop->i_time, IOP_I, iop->t.sector, t_sec(&iop->t), 1);
-	__out(ofp, iop->gm_time, iop->is_getrq ? IOP_G : IOP_M, 
-					iop->t.sector, t_sec(&iop->t), 1);
+
+	if (iop->g_time != (__u64)-1)
+		__out(ofp, iop->g_time, IOP_G, iop->t.sector, t_sec(&iop->t),1);
+	if (iop->i_time != (__u64)-1)
+		__out(ofp, iop->i_time, IOP_I, iop->t.sector, t_sec(&iop->t),1);
+	if (iop->m_time != (__u64)-1)
+		__out(ofp, iop->i_time, IOP_M, iop->t.sector, t_sec(&iop->t),1);
+
 	__out(ofp, iop->d_time, IOP_D, iop->d_sec, iop->d_nsec, 1);
 	__out(ofp, iop->c_time, IOP_C, iop->c_sec, iop->c_nsec, 1);
 	fprintf(ofp, "\n");
@@ -59,16 +64,19 @@ static void handle_complete(struct io *c_iop)
 	list_for_each_safe(p, q, &head) {
 		struct io *q_iop = list_entry(p, struct io, f_head);
 		__u64 q2c = tdelta(q_iop->t.time, c_iop->t.time);
-		__u64 d2c = tdelta(q_iop->d_time, c_iop->t.time);
 
 		c_iop->bytes_left -= q_iop->t.bytes;
 
 		update_q2c(q_iop, q2c);
 		latency_q2c(q_iop->dip, q_iop->t.time, q2c);
 
-		update_d2c(q_iop, d2c);
-		latency_d2c(q_iop->dip, c_iop->t.time, d2c);
-		iostat_complete(q_iop, c_iop);
+		if (q_iop->d_time != (__u64)-1) {
+			__u64 d2c = tdelta(q_iop->d_time, c_iop->t.time);
+
+			update_d2c(q_iop, d2c);
+			latency_d2c(q_iop->dip, c_iop->t.time, d2c);
+			iostat_complete(q_iop, c_iop);
+		}
 
 		if (per_io_ofp) {
 			q_iop->c_time = c_iop->t.time;

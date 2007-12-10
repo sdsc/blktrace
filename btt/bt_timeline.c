@@ -25,7 +25,7 @@
 #include <time.h>
 #include "globals.h"
 
-char bt_timeline_version[] = "2.00";
+char bt_timeline_version[] = "2.01";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;

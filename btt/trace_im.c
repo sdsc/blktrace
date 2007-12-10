@@ -20,51 +20,59 @@
  */
 #include "globals.h"
 
-static void handle_igm(struct io *igm_iop)
+static void handle_g(struct io *g_iop)
 {
-	LIST_HEAD(head);
-	struct io *q_iop = dip_find_sec(igm_iop->dip, IOP_Q, igm_iop->t.sector);
+	struct io *q_iop = dip_find_sec(g_iop->dip, IOP_Q, g_iop->t.sector);
 
-	if (igm_iop->type == IOP_I) {
-		if (q_iop)
-			q_iop->i_time = igm_iop->t.time;
-		return;
-	}
-
-	if (igm_iop->type == IOP_G) 
-		iostat_getrq(igm_iop);
-	else {
-		assert(igm_iop->type == IOP_M);
-		iostat_merge(igm_iop);
-	}
-
+	iostat_getrq(g_iop);
 	if (q_iop) {
-		update_q2i(q_iop, tdelta(q_iop->t.time, igm_iop->t.time));
-		q_iop->gm_time = igm_iop->t.time;
-		q_iop->is_getrq = (igm_iop->type == IOP_G);
+		q_iop->g_time = g_iop->t.time;
+		update_q2g(q_iop, tdelta(q_iop->t.time, g_iop->t.time));
 	}
 }
 
-void trace_insert(struct io *i_iop)
+static void handle_i(struct io *i_iop)
 {
-	if (io_setup(i_iop, IOP_I))
-		handle_igm(i_iop);
+	struct io *q_iop = dip_find_sec(i_iop->dip, IOP_Q, i_iop->t.sector);
 
-	io_release(i_iop);
+	if (q_iop) {
+		q_iop->i_time = i_iop->t.time;
+		if (q_iop->g_time != (__u64)-1)
+			update_g2i(q_iop, tdelta(q_iop->g_time, i_iop->t.time));
+	}
+}
+
+static void handle_m(struct io *m_iop)
+{
+	struct io *q_iop = dip_find_sec(m_iop->dip, IOP_Q, m_iop->t.sector);
+
+	iostat_merge(m_iop);
+	if (q_iop) {
+		q_iop->m_time = m_iop->t.time;
+		update_q2m(q_iop, tdelta(q_iop->t.time, m_iop->t.time));
+	}
 }
 
 void trace_getrq(struct io *g_iop)
 {
 	if (io_setup(g_iop, IOP_G))
-		handle_igm(g_iop);
+		handle_g(g_iop);
 
 	io_release(g_iop);
+}
+
+void trace_insert(struct io *i_iop)
+{
+	if (io_setup(i_iop, IOP_I))
+		handle_i(i_iop);
+
+	io_release(i_iop);
 }
 
 void trace_merge(struct io *m_iop)
 {
 	if (io_setup(m_iop, IOP_M))
-		handle_igm(m_iop);
+		handle_m(m_iop);
 
 	io_release(m_iop);
 }

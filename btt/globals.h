@@ -106,12 +106,19 @@ struct avg_info {
 };
 
 struct avgs_info {
+        struct avg_info q2q_dm;
+        struct avg_info q2a_dm;
+        struct avg_info q2c_dm;
+
         struct avg_info q2q;
-	struct avg_info q2c;
-	struct avg_info q2a;		/* Q to (A or X) */
-	struct avg_info q2i;		/* Q to (I or M) */
-	struct avg_info i2d;		/* (I or M) to D */
+	struct avg_info q2a;
+	struct avg_info q2g;
+	struct avg_info g2i;
+	struct avg_info q2m;
+	struct avg_info i2d;
+	struct avg_info m2d;
 	struct avg_info d2c;
+	struct avg_info q2c;
 
 	struct avg_info blks;		/* Blocks transferred */
 };
@@ -178,12 +185,12 @@ struct io {
 	struct d_info *dip;
 	struct p_info *pip;
 	void *pdu;
-	__u64 bytes_left, i_time, gm_time, d_time, c_time, d_sec, c_sec;
+	__u64 bytes_left, g_time, i_time, m_time, d_time, c_time, d_sec, c_sec;
 	__u32 d_nsec, c_nsec;
 
 	struct blk_io_trace t;
 
-	int linked, is_getrq;
+	int linked;
 	enum iop_type type;
 
 #if defined(COUNT_IOS)

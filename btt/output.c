@@ -22,18 +22,30 @@
 #include "globals.h"
 
 typedef struct avg_info *ai_dip_t;
+ai_dip_t dip_q2q_dm_avg(struct d_info *dip) { return &dip->avgs.q2q_dm; }
+ai_dip_t dip_q2a_dm_avg(struct d_info *dip) { return &dip->avgs.q2a_dm; }
+ai_dip_t dip_q2c_dm_avg(struct d_info *dip) { return &dip->avgs.q2c_dm; }
+
 ai_dip_t dip_q2q_avg(struct d_info *dip) { return &dip->avgs.q2q; }
 ai_dip_t dip_q2c_avg(struct d_info *dip) { return &dip->avgs.q2c; }
 ai_dip_t dip_q2a_avg(struct d_info *dip) { return &dip->avgs.q2a; }
-ai_dip_t dip_q2i_avg(struct d_info *dip) { return &dip->avgs.q2i; }
+ai_dip_t dip_q2g_avg(struct d_info *dip) { return &dip->avgs.q2g; }
+ai_dip_t dip_g2i_avg(struct d_info *dip) { return &dip->avgs.g2i; }
+ai_dip_t dip_q2m_avg(struct d_info *dip) { return &dip->avgs.q2m; }
 ai_dip_t dip_i2d_avg(struct d_info *dip) { return &dip->avgs.i2d; }
 ai_dip_t dip_d2c_avg(struct d_info *dip) { return &dip->avgs.d2c; }
 
 typedef struct avg_info *ai_pip_t;
+ai_pip_t pip_q2q_dm_avg(struct p_info *pip) { return &pip->avgs.q2q_dm; }
+ai_pip_t pip_q2a_dm_avg(struct p_info *pip) { return &pip->avgs.q2a_dm; }
+ai_pip_t pip_q2c_dm_avg(struct p_info *pip) { return &pip->avgs.q2c_dm; }
+
 ai_pip_t pip_q2q_avg(struct p_info *pip) { return &pip->avgs.q2q; }
 ai_pip_t pip_q2c_avg(struct p_info *pip) { return &pip->avgs.q2c; }
 ai_pip_t pip_q2a_avg(struct p_info *pip) { return &pip->avgs.q2a; }
-ai_pip_t pip_q2i_avg(struct p_info *pip) { return &pip->avgs.q2i; }
+ai_pip_t pip_q2g_avg(struct p_info *pip) { return &pip->avgs.q2g; }
+ai_pip_t pip_g2i_avg(struct p_info *pip) { return &pip->avgs.g2i; }
+ai_pip_t pip_q2m_avg(struct p_info *pip) { return &pip->avgs.q2m; }
 ai_pip_t pip_i2d_avg(struct p_info *pip) { return &pip->avgs.i2d; }
 ai_pip_t pip_d2c_avg(struct p_info *pip) { return &pip->avgs.d2c; }
 
@@ -60,12 +72,6 @@ void __output_avg(FILE *ofp, char *hdr, struct avg_info *ap)
 	}
 }
 
-void output_hdr2(FILE *ofp, char*hdr)
-{
-	fprintf(ofp, "%15s %13s %13s %13s %13s %13s %13s\n", hdr, "Q2Q", "Q2A", "Q2I", "I2D", "D2C", "Q2C");
-	fprintf(ofp, "--------------- ------------- ------------- ------------- ------------- ------------- -------------\n");
-}
-
 static inline char *avg2string(struct avg_info *ap, char *string)
 {
 	if (ap->n > 0)
@@ -73,30 +79,6 @@ static inline char *avg2string(struct avg_info *ap, char *string)
 	else
 		sprintf(string, " ");
 	return string;
-}
-
-void __output_avg2(FILE *ofp, char *hdr, struct avgs_info *ap)
-{
-	char c1[16], c2[16], c3[16], c4[16], c5[16], c6[16];
-
-	if (ap->q2q.n > 0 || ap->q2a.n > 0 || ap->q2i.n > 0 ||
-			ap->i2d.n > 0 || ap->d2c.n > 0 || ap->q2c.n > 0) {
-		fprintf(ofp, "%-15s %13s %13s %13s %13s %13s %13s\n", hdr,
-			avg2string(&ap->q2q,c1), avg2string(&ap->q2a,c2),
-			avg2string(&ap->q2i,c3), avg2string(&ap->i2d,c4),
-			avg2string(&ap->d2c,c5), avg2string(&ap->q2c,c6));
-	}
-}
-
-void __pip_output_avg2(struct p_info *pip, void *arg)
-{
-	__output_avg2((FILE *)arg, pip->name, &pip->avgs);
-}
-
-void __dip_output_avg2(struct d_info *dip, void *arg)
-{
-	char dev_info[15];
-	__output_avg2((FILE *)arg, make_dev_hdr(dev_info, 15, dip), &dip->avgs);
 }
 
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip)
@@ -244,69 +226,110 @@ void output_dip_merge_ratio(FILE *ofp)
 	fprintf(ofp, "\n");
 }
 
+struct __ohead_data {
+	__u64 total;
+	int n;
+};
+
+struct ohead_data {
+	FILE *ofp;
+	struct __ohead_data q2g, g2i, q2m, i2d, d2c;
+};
+
 #define AVG(a,b) (100.0 * ((double)(a) / (double)(b)))
 #define CALC_AVG(ap) (ap)->avg = ((ap)->n == 0 ? 0.0 :			  \
                                                  (BIT_TIME((ap)->total) / \
 							(double)(ap)->n))
-char *q2i_v_q2C(struct d_info *dip, char *s)
-{
-	double q2c;
 
-	if (dip->avgs.q2i.n == 0) return " ";
-
-	q2c = dip->avgs.q2i.avg + dip->avgs.i2d.avg + dip->avgs.d2c.avg;
-	sprintf(s, "%5.1lf%%", AVG(dip->avgs.q2i.avg, q2c));
-
+#define x_v_q2C(fld, dip, s, odp)					\
+	double q2c;							\
+	if (dip->avgs. fld .n == 0) return " ";				\
+	q2c = dip->avgs.g2i.avg + dip->avgs.g2i.avg +			\
+				dip->avgs.i2d.avg + dip->avgs.d2c.avg;	\
+	sprintf(s, "%8.4lf%%", AVG(dip->avgs. fld .avg, q2c));		\
+	odp-> fld .n += dip->avgs. fld .n;				\
+	odp-> fld .total += dip->avgs. fld .total;			\
 	return s;
+
+char *q2g_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
+{
+	x_v_q2C(q2g, dip, s, odp);
 }
 
-char *i2d_v_q2C(struct d_info *dip, char *s)
+char *g2i_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
 {
-	double q2c;
-
-	if (dip->avgs.d2c.n == 0) return " ";
-
-	q2c = dip->avgs.q2i.avg + dip->avgs.i2d.avg + dip->avgs.d2c.avg;
-	sprintf(s, "%5.1lf%%", AVG(dip->avgs.i2d.avg, q2c));
-
-	return s;
+	x_v_q2C(g2i, dip, s, odp);
 }
 
-char *d2c_v_q2C(struct d_info *dip, char *s)
+char *q2m_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
 {
-	double q2c;
+	x_v_q2C(q2m, dip, s, odp);
+}
 
-	if (dip->avgs.d2c.n == 0) return " ";
+char *i2d_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
+{
+	x_v_q2C(i2d, dip, s, odp);
+}
 
-	q2c = dip->avgs.q2i.avg + dip->avgs.i2d.avg + dip->avgs.d2c.avg;
-	sprintf(s, "%5.1lf%%", AVG(dip->avgs.d2c.avg, q2c));
-
-	return s;
+char *d2c_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
+{
+	x_v_q2C(d2c, dip, s, odp);
 }
 
 void __output_dip_prep_ohead(struct d_info *dip, void *arg)
 {
 	char dev_info[15];
-	char s1[16], s2[16], s3[16];
+	char s1[16], s2[16], s3[16], s4[16], s5[16];
+	struct ohead_data *odp = arg;
 
-	if ((dip->avgs.q2i.n > 0 && dip->avgs.i2d.n > 0 &&
-						dip->avgs.d2c.n > 0)) {
-		CALC_AVG(&dip->avgs.q2i);
+	if (dip->avgs.q2g.n > 0 && dip->avgs.g2i.n > 0 && 
+				   dip->avgs.i2d.n > 0 && dip->avgs.d2c.n > 0) {
+		CALC_AVG(&dip->avgs.q2g);
+		CALC_AVG(&dip->avgs.g2i);
+		CALC_AVG(&dip->avgs.q2m);
 		CALC_AVG(&dip->avgs.i2d);
 		CALC_AVG(&dip->avgs.d2c);
 
-		fprintf((FILE *)arg, "%10s | %6s %6s %6s\n",
+		fprintf(odp->ofp, "%10s | %9s %9s %9s %9s %9s\n",
 			make_dev_hdr(dev_info, 15, dip),
-			q2i_v_q2C(dip, s1), i2d_v_q2C(dip, s2),
-			d2c_v_q2C(dip, s3));
+			q2g_v_q2C(dip, s1, odp), 
+			g2i_v_q2C(dip, s2, odp), 
+			q2m_v_q2C(dip, s3, odp),
+			i2d_v_q2C(dip, s4, odp),
+			d2c_v_q2C(dip, s5, odp));
 	}
 }
 
+#define OD_AVG(od, fld, q2c)						\
+	(od. fld .n == 0) ? (double)0.0 :				\
+		(100.0 * ((double)((od). fld . total) / q2c))
+
 void output_dip_prep_ohead(FILE *ofp)
 {
-	fprintf(ofp, "%10s | %6s %6s %6s\n", "DEV", "Q2I", "I2D", "D2C");
-	fprintf(ofp, "---------- | ------ ------ ------\n");
-	dip_foreach_out(__output_dip_prep_ohead, ofp);
+	double q2c;
+	struct ohead_data od;
+
+	memset(&od, 0, sizeof(od));
+	od.ofp = ofp;
+
+	fprintf(ofp, "%10s | %9s %9s %9s %9s %9s\n", 
+				"DEV", "Q2G", "G2I", "Q2M", "I2D", "D2C");
+	fprintf(ofp, "---------- | --------- --------- --------- --------- ---------\n");
+	dip_foreach_out(__output_dip_prep_ohead, &od);
+
+	if (od.q2g.n == 0 && od.g2i.n == 0 && od.q2m.n == 0 && 
+						od.i2d.n == 0 && od.d2c.n == 0)
+		goto out;
+
+	q2c = od.q2g.total + od.g2i.total + od.q2m.total + 	
+						od.i2d.total + od.d2c.total;
+	fprintf(ofp, "---------- | --------- --------- --------- --------- ---------\n");
+	fprintf(ofp, "%10s | %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%%\n", "Overall", 
+			OD_AVG(od, q2g, q2c), OD_AVG(od, g2i, q2c), 
+			OD_AVG(od, q2m, q2c), OD_AVG(od, i2d, q2c), 
+			OD_AVG(od, d2c, q2c));
+
+out:
 	fprintf(ofp, "\n");
 }
 
@@ -489,20 +512,6 @@ void output_pip_avg(FILE *ofp, char *hdr, ai_pip_t (*func)(struct p_info *))
 	fprintf(ofp, "\n");
 }
 
-void output_dip_avgs(FILE *ofp)
-{
-	output_hdr2(ofp,"Dev");
-	dip_foreach_out(__dip_output_avg2, ofp);
-	fprintf(ofp, "\n");
-}
-
-void output_pip_avgs(FILE *ofp)
-{
-	output_hdr2(ofp,"Exe");
-	pip_foreach_out(__pip_output_avg2, ofp);
-	fprintf(ofp, "\n");
-}
-
 int n_plugs;
 struct plug_info {
 	long n_plugs, n_timer_unplugs;
@@ -634,18 +643,32 @@ int output_avgs(FILE *ofp)
 	if (output_all_data) {
 		if (exes == NULL || *exes != '\0') {
 			output_section_hdr(ofp, "Per Process");
+			output_pip_avg(ofp, "Q2Qdm", pip_q2q_dm_avg);
+			output_pip_avg(ofp, "Q2Adm", pip_q2a_dm_avg);
+			output_pip_avg(ofp, "Q2Cdm", pip_q2c_dm_avg);
+			fprintf(ofp, "\n");
+
 			output_pip_avg(ofp, "Q2Q", pip_q2q_avg);
 			output_pip_avg(ofp, "Q2A", pip_q2a_avg);
-			output_pip_avg(ofp, "Q2I", pip_q2i_avg);
+			output_pip_avg(ofp, "Q2G", pip_q2g_avg);
+			output_pip_avg(ofp, "G2I", pip_g2i_avg);
+			output_pip_avg(ofp, "Q2M", pip_q2m_avg);
 			output_pip_avg(ofp, "I2D", pip_i2d_avg);
 			output_pip_avg(ofp, "D2C", pip_d2c_avg);
 			output_pip_avg(ofp, "Q2C", pip_q2c_avg);
 		}
 
 		output_section_hdr(ofp, "Per Device");
+		output_dip_avg(ofp, "Q2Qdm", dip_q2q_dm_avg);
+		output_dip_avg(ofp, "Q2Adm", dip_q2a_dm_avg);
+		output_dip_avg(ofp, "Q2Cdm", dip_q2c_dm_avg);
+		fprintf(ofp, "\n");
+
 		output_dip_avg(ofp, "Q2Q", dip_q2q_avg);
 		output_dip_avg(ofp, "Q2A", dip_q2a_avg);
-		output_dip_avg(ofp, "Q2I", dip_q2i_avg);
+		output_dip_avg(ofp, "Q2G", dip_q2g_avg);
+		output_dip_avg(ofp, "G2I", dip_g2i_avg);
+		output_dip_avg(ofp, "Q2M", dip_q2m_avg);
 		output_dip_avg(ofp, "I2D", dip_i2d_avg);
 		output_dip_avg(ofp, "D2C", dip_d2c_avg);
 		output_dip_avg(ofp, "Q2C", dip_q2c_avg);
@@ -653,26 +676,24 @@ int output_avgs(FILE *ofp)
 
 	output_section_hdr(ofp, "All Devices");
 	output_hdr(ofp, "ALL");
+	__output_avg(ofp, "Q2Qdm", &all_avgs.q2q_dm);
+	__output_avg(ofp, "Q2Adm", &all_avgs.q2a_dm);
+	__output_avg(ofp, "Q2Cdm", &all_avgs.q2c_dm);
+	fprintf(ofp, "\n");
+
 	__output_avg(ofp, "Q2Q", &all_avgs.q2q);
 	__output_avg(ofp, "Q2A", &all_avgs.q2a);
-	__output_avg(ofp, "Q2I", &all_avgs.q2i);
+	__output_avg(ofp, "Q2G", &all_avgs.q2g);
+	__output_avg(ofp, "G2I", &all_avgs.g2i);
+	__output_avg(ofp, "Q2M", &all_avgs.q2m);
 	__output_avg(ofp, "I2D", &all_avgs.i2d);
+	__output_avg(ofp, "M2D", &all_avgs.m2d);
 	__output_avg(ofp, "D2C", &all_avgs.d2c);
 	__output_avg(ofp, "Q2C", &all_avgs.q2c);
 	fprintf(ofp, "\n");
 
 	output_section_hdr(ofp, "Device Overhead");
 	output_dip_prep_ohead(ofp);
-
-	if (output_all_data) {
-		if (exes == NULL || *exes != '\0') {
-			output_section_hdr(ofp, "Per Process (avgs)");
-			output_pip_avgs(ofp);
-		}
-
-		output_section_hdr(ofp, "Per Device (avgs)");
-		output_dip_avgs(ofp);
-	}
 
 	output_section_hdr(ofp, "Device Merge Information");
 	output_dip_merge_ratio(ofp);

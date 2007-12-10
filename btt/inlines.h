@@ -19,6 +19,12 @@
  *
  */
 
+static inline int remapper_dev(__u32 dev)
+{
+	int mjr = MAJOR(dev);
+	return mjr == 9 || mjr == 253 || mjr == 254;
+}
+
 static inline void region_init(struct region_info *reg)
 {
 	INIT_LIST_HEAD(&reg->qranges);
@@ -118,7 +124,10 @@ static inline void update_lq(__u64 *last_q, struct avg_info *avg, __u64 time)
 
 static inline void dip_update_q(struct d_info *dip, struct io *iop)
 {
-	update_lq(&dip->last_q, &dip->avgs.q2q, iop->t.time);
+	if (remapper_dev(dip->device))
+		update_lq(&dip->last_q, &dip->avgs.q2q_dm, iop->t.time);
+	else
+		update_lq(&dip->last_q, &dip->avgs.q2q, iop->t.time);
 	update_qregion(&dip->regions, iop->t.time);
 }
 
@@ -228,7 +237,10 @@ static inline void update_q2c(struct io *iop, __u64 c_time)
 		if (per_io_ofp) 
 			fprintf(per_io_ofp, "q2c %13.9f\n", BIT_TIME(c_time));
 #	endif
-	UPDATE_AVGS(q2c, iop, iop->pip, c_time);
+	if (remapper_dev(iop->dip->device))
+		UPDATE_AVGS(q2c_dm, iop, iop->pip, c_time);
+	else
+		UPDATE_AVGS(q2c, iop, iop->pip, c_time);
 }
 
 static inline void update_q2a(struct io *iop, __u64 a_time)
@@ -237,22 +249,55 @@ static inline void update_q2a(struct io *iop, __u64 a_time)
 		if (per_io_ofp) 
 			fprintf(per_io_ofp, "q2a %13.9f\n", BIT_TIME(a_time));
 #	endif
-	UPDATE_AVGS(q2a, iop, iop->pip, a_time);
+	if (remapper_dev(iop->dip->device))
+		UPDATE_AVGS(q2a_dm, iop, iop->pip, a_time);
+	else
+		UPDATE_AVGS(q2a, iop, iop->pip, a_time);
 }
 
-static inline void update_q2i(struct io *iop, __u64 i_time)
+static inline void update_q2g(struct io *iop, __u64 g_time)
 {
 #	if defined(DEBUG)
 		if (per_io_ofp) 
-			fprintf(per_io_ofp, "q2i %13.9f\n", BIT_TIME(i_time));
+			fprintf(per_io_ofp, "q2g %13.9f\n", BIT_TIME(g_time));
 #	endif
 
-	UPDATE_AVGS(q2i, iop, iop->pip, i_time);
+	UPDATE_AVGS(q2g, iop, iop->pip, g_time);
 }
 
-static inline void unupdate_q2i(struct io *iop, __u64 i_time)
+static inline void unupdate_q2g(struct io *iop, __u64 g_time)
 {
-	UNUPDATE_AVGS(q2i, iop, iop->pip, i_time);
+	UNUPDATE_AVGS(q2g, iop, iop->pip, g_time);
+}
+
+static inline void update_g2i(struct io *iop, __u64 i_time)
+{
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "g2i %13.9f\n", BIT_TIME(i_time));
+#	endif
+
+	UPDATE_AVGS(g2i, iop, iop->pip, i_time);
+}
+
+static inline void unupdate_g2i(struct io *iop, __u64 i_time)
+{
+	UNUPDATE_AVGS(g2i, iop, iop->pip, i_time);
+}
+
+static inline void update_q2m(struct io *iop, __u64 m_time)
+{
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "q2m %13.9f\n", BIT_TIME(m_time));
+#	endif
+
+	UPDATE_AVGS(q2m, iop, iop->pip, m_time);
+}
+
+static inline void unupdate_q2m(struct io *iop, __u64 m_time)
+{
+	UNUPDATE_AVGS(q2m, iop, iop->pip, m_time);
 }
 
 static inline void update_i2d(struct io *iop, __u64 d_time)
@@ -268,6 +313,21 @@ static inline void update_i2d(struct io *iop, __u64 d_time)
 static inline void unupdate_i2d(struct io *iop, __u64 d_time)
 {
 	UNUPDATE_AVGS(i2d, iop, iop->pip, d_time);
+}
+
+static inline void update_m2d(struct io *iop, __u64 d_time)
+{
+#	if defined(DEBUG)
+		if (per_io_ofp) 
+			fprintf(per_io_ofp, "m2d %13.9f\n", BIT_TIME(d_time));
+#	endif
+
+	UPDATE_AVGS(m2d, iop, iop->pip, d_time);
+}
+
+static inline void unupdate_m2d(struct io *iop, __u64 d_time)
+{
+	UNUPDATE_AVGS(m2d, iop, iop->pip, d_time);
 }
 
 static inline void update_d2c(struct io *iop, __u64 c_time)
@@ -327,12 +387,6 @@ static inline struct io *dip_rb_find_sec(struct d_info *dip,
 static inline __u64 tdelta(__u64 from, __u64 to)
 {
 	return (from < to) ? (to - from) : 1;
-}
-
-static inline int remapper_dev(__u32 dev)
-{
-	int mjr = MAJOR(dev);
-	return mjr == 9 || mjr == 253 || mjr == 254;
 }
 
 static inline int type2c(enum iop_type type)

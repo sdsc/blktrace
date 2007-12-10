@@ -29,7 +29,9 @@
 %--------------
 \section{\label{sec:intro}Introduction}
 
-\texttt{btt} is a post-processing tool for the block layer IO tracing tool called blktrace. As noted in its Users Guide, blktrace 
+\texttt{btt} is a post-processing tool for the block layer IO tracing
+tool called blktrace. As noted in its Users Guide, blktrace
+
   \begin{quotation}
     is a block layer IO tracing mechanism which provides detailed
     information about request queue operations up to user space.
@@ -109,10 +111,23 @@ easier.
     \begin{enumerate}
       \item Time needed to insert or merge an incoming IO onto the request
       queue. This is the average time from when the IO enters the block
-      IO layer (queue trace) until it is inserted (insert trace) or merged
-      (back merge or front merge trace).
+      IO layer (queue trace) until it is inserted (insert trace).
 
       This is denoted as \emph{Q2I} time.
+
+      This is also broken down into two component times:
+
+        \begin{description}
+	  \item[Q2G] Time needed to \emph{get} a request (get request
+	  trace).
+
+	  \item[G2I] Time needed to put that request onto the request 
+	  queue (insert trace).
+        \end{description}
+
+      For \emph{merged} requests -- an incoming request that is merged
+      with a previously submitted request -- we calculate \emph{Q2M}, the
+      amount of time between the queue trace and the merge trace.
 
       \item Time spent on the request queue. The average time from when
       the IO is inserted or merged onto the request queue, until it is
@@ -163,16 +178,31 @@ D2C    0.000193721   0.030406554   1.634221408     2262311
 Q2C    0.000207665   0.125405263   1.830917198     2262311
 \end{verbatim}
 
+  When tracking \emph{device mapper} devices, we also break down the
+  \emph{Q2A} and \emph{Q2C} times for those IOs.
+
   \item[Device Overhead]
 
   Using the data from the previous chart, we can then provide some idea
   as to where IO spend most of the time on average. The following output
-  shows the percentage of time spent in each of the 3 phases of an IO:
+  shows the percentage of time spent in each of the phases of an
+IO\footnote{It should be noted that incoming requests either go through:
+
+\begin{enumerate}
+  \item Q2G + Q2I 
+
+  or
+
+  \item Q2M
+\end{enumerate}
+  before proceeding to I2D and D2C.}
 
 \begin{verbatim}
-       DEV |    Q2I    I2D    D2C
----------- | ------ ------ ------
- ( 68, 64) |   0.0%  75.7%  24.2%
+       DEV |       Q2G       G2I       Q2M       I2D       D2C
+---------- | --------- --------- --------- --------- ---------
+ (  8, 80) |   0.0013%   0.0004%   0.0006%  88.5005%  11.4988%
+---------- | --------- --------- --------- --------- ---------
+   Overall |   0.0003%   0.0001%   0.0041%  21.4998%  78.4958%
 \end{verbatim}
 
   \item[Device Merge Information]
@@ -693,7 +723,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.00 
+Usage: btt 2.01 
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]

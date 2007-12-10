@@ -39,7 +39,11 @@ static void handle_issue(struct io *d_iop)
 	list_for_each_safe(p, q, &head) {
 		struct io *q_iop = list_entry(p, struct io, f_head);
 		
-		update_i2d(q_iop, tdelta(q_iop->gm_time, d_iop->t.time));
+		if (q_iop->i_time != (__u64)-1)
+			update_i2d(q_iop, tdelta(q_iop->i_time, d_iop->t.time));
+		else if (q_iop->m_time != (__u64)-1)
+			update_m2d(q_iop, tdelta(q_iop->m_time, d_iop->t.time));
+
 		d_iop->bytes_left -= q_iop->t.bytes;
 		LIST_DEL(&q_iop->f_head);
 
