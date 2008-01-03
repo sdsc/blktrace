@@ -51,6 +51,9 @@ static void handle_m(struct io *m_iop)
 		q_iop->m_time = m_iop->t.time;
 		update_q2m(q_iop, tdelta(q_iop->t.time, m_iop->t.time));
 	}
+
+	if (m_iop->dip->n_act_q != 0)
+		m_iop->dip->n_act_q--;
 }
 
 void trace_getrq(struct io *g_iop)
