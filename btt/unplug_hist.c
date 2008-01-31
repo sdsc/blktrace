@@ -23,7 +23,7 @@
 #define BKT_WIDTH	5
 #define MAX_BKT		19
 #define EXCESS_BKT	20
-#define NBKTS		EXCESS_BKT
+#define NBKTS		(EXCESS_BKT + 1)
 
 struct hist_bkt {
 	__u32 dev;
@@ -56,7 +56,7 @@ void unplug_hist_add(struct io *u_iop)
 		struct hist_bkt *hbp = dip->unplug_hist_handle;
 
 		idx = (n_unplugs / BKT_WIDTH);
-		if (idx > MAX_BKT)
+		if (idx > EXCESS_BKT)
 			idx = EXCESS_BKT;
 
 		assert((0 <= idx) && (idx <= EXCESS_BKT));
