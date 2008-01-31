@@ -525,7 +525,7 @@ void __dip_output_plug(struct d_info *dip, void *arg)
 	double delta, pct;
 
 	if (dip->nplugs > 0) {
-		if (dip->is_plugged) dip_unplug(dip->device, dip->end_time, 0);
+		if (dip->is_plugged) dip_unplug(dip->device, dip->end_time);
 		delta = dip->end_time - dip->start_time;
 		pct = 100.0 * ((dip->plugged_time / delta) / delta);
 

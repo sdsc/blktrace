@@ -264,15 +264,21 @@ void dip_plug(__u32 dev, double cur_time)
 	dip->last_plug = cur_time;
 }
 
-void dip_unplug(__u32 dev, double cur_time, int is_timer)
+void dip_unplug(__u32 dev, double cur_time)
 {
 	struct d_info *dip = __dip_find(dev);
 
-	if (!dip || !dip->is_plugged) return;
+	if (dip && dip->is_plugged) {
+		dip->nplugs++;
+		dip->plugged_time += (cur_time - dip->last_plug);
+		dip->is_plugged = 0;
+	}
+}
 
-	dip->nplugs++;
-	if (is_timer) dip->n_timer_unplugs++;
+void dip_unplug_tm(__u32 dev)
+{
+	struct d_info *dip = __dip_find(dev);
 
-	dip->plugged_time += (cur_time - dip->last_plug);
-	dip->is_plugged = 0;
+	if (dip && dip->is_plugged)
+		dip->n_timer_unplugs++;
 }

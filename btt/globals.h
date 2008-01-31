@@ -247,7 +247,8 @@ void dip_foreach(struct io *iop, enum iop_type type,
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
 void dip_plug(__u32 dev, double cur_time);
-void dip_unplug(__u32 dev, double cur_time, int is_timer);
+void dip_unplug(__u32 dev, double cur_time);
+void dip_unplug_tm(__u32 dev);
 void dip_exit(void);
 
 /* dip_rb.c */

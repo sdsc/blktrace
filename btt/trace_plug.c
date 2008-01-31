@@ -20,21 +20,17 @@
  */
 #include "globals.h"
 
-static inline void trace_unplug(struct io *u_iop, int is_timer)
+void trace_unplug_io(struct io *u_iop)
 {
 	unplug_hist_add(u_iop);
-	dip_unplug(u_iop->t.device, BIT_TIME(u_iop->t.time), is_timer);
+	dip_unplug(u_iop->t.device, BIT_TIME(u_iop->t.time));
 	io_release(u_iop);
 }
 
-void trace_unplug_io(struct io *u_iop)
+void trace_unplug_timer(struct io *ut_iop)
 {
-	trace_unplug(u_iop, 0);
-}
-
-void trace_unplug_timer(struct io *u_iop)
-{
-	trace_unplug(u_iop, 1);
+	dip_unplug_tm(ut_iop->t.device);
+	io_release(ut_iop);
 }
 
 void trace_plug(struct io *p_iop)
