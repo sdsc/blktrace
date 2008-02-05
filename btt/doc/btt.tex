@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{13 November 2007}
+\date{5 February 2008}
 
 \begin{document}
 \maketitle
@@ -121,7 +121,7 @@ easier.
 	  \item[Q2G] Time needed to \emph{get} a request (get request
 	  trace).
 
-	  \item[G2I] Time needed to put that request onto the request 
+	  \item[G2I] Time needed to put that request onto the request
 	  queue (insert trace).
         \end{description}
 
@@ -189,7 +189,7 @@ Q2C    0.000207665   0.125405263   1.830917198     2262311
 IO\footnote{It should be noted that incoming requests either go through:
 
 \begin{enumerate}
-  \item Q2G + Q2I 
+  \item Q2G + Q2I
 
   or
 
@@ -276,11 +276,42 @@ IO\footnote{It should be noted that incoming requests either go through:
     \item Explicit unplug request from some subsystem in the kernel.
 
     \item Timed unplugs, due to a request queue exceeding some temporal
-    limit for being plugged. 
+    limit for being plugged.
   \end{enumerate}
 
   The total number of unplugs is equal to the number of plugs less the
   ones due to timer unplugs.
+
+  \item[IOs per Unplug \& Unplugs-due-to-timeout]
+
+  In this subsection one can see the average number of IOs on the request
+  queue at the time of an unplug or unplug due to a timeout. The following
+  sample shows a sample of both unplug sections:
+
+\begin{verbatim}
+==================== Plug Information ====================
+
+       DEV |    # Plugs # Timer Us  | % Time Q Plugged
+---------- | ---------- ----------  | ----------------
+ (  8,  0) |       1171(       123) |   0.280946640%
+ (  8, 32) |          4(         0) |   0.000325469%
+---------- | ---------- ----------  | ----------------
+   Overall |    # Plugs # Timer Us  | % Time Q Plugged
+   Average |        587(        61) |   0.140636055%
+
+       DEV |    IOs/Unp   IOs/Unp(to)
+---------- | ----------   ----------
+ (  8,  0) |        9.2          8.8
+ (  8, 32) |        2.5          0.0
+---------- | ----------   ----------
+       DEV |    IOs/Unp   IOs/Unp(to)
+   Overall |        9.2          8.8
+\end{verbatim}
+
+  This table and the preceding one have to be considered together --
+  in the sample output in the immediately preceding table one can see
+  how the larger number of data values for device (8,0) dominates in
+  the overall average.
 
   \item[Active Requests At Q Information]
 
@@ -566,7 +597,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
              rkB/s     wkB/s avgrq-sz avgqu-sz   await   svctm  %util   Stamp
 ...
-(  8, 16)       0.00     0.00    0.00 1005.30      0.00 152806.36      
+(  8, 16)       0.00     0.00    0.00 1005.30      0.00 152806.36     
               0.00  76403.18   152.00    31.00    0.00    0.00   0.00   71.79
 ...
 (  8, 16)       1.02     5.80    0.34    1.07      4.03     55.62
@@ -599,26 +630,26 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
   stream. The issue and completion traces are replicated per IO.
 
 \begin{verbatim}
- 66,0  :     0.763283556 Q       6208+8   
-             0.763300157 I       6208+8   
-             0.763296365 G       6208+8   
-             0.763338848 D       6208+32  
-             0.763705760 C       6208+32  
+ 66,0  :     0.763283556 Q       6208+8  
+             0.763300157 I       6208+8  
+             0.763296365 G       6208+8  
+             0.763338848 D       6208+32 
+             0.763705760 C       6208+32 
 
- 66,0  :     0.763314550 Q       6224+8   
-             0.763315341 M       6224+8   
-             0.763338848 D       6208+32  
-             0.763705760 C       6208+32  
+ 66,0  :     0.763314550 Q       6224+8  
+             0.763315341 M       6224+8  
+             0.763338848 D       6208+32 
+             0.763705760 C       6208+32 
 
- 66,0  :     0.763321010 Q       6232+8   
-             0.763321775 M       6232+8   
-             0.763338848 D       6208+32  
-             0.763705760 C       6208+32  
+ 66,0  :     0.763321010 Q       6232+8  
+             0.763321775 M       6232+8  
+             0.763338848 D       6208+32 
+             0.763705760 C       6208+32 
 
- 65,240:     0.763244173 Q       6216+8   
-             0.763244974 M       6216+8   
-             0.763374288 D       6208+32  
-             0.763826610 C       6208+32  
+ 65,240:     0.763244173 Q       6216+8  
+             0.763244974 M       6216+8  
+             0.763374288 D       6208+32 
+             0.763826610 C       6208+32 
 \end{verbatim}
 
   The columns provide the following information:
@@ -628,11 +659,11 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 
     \item Time of the trace (seconds from the start of the run)
 
-    \item Trace type 
+    \item Trace type
 
     \item start block + number of blocks
   \end{enumerate}
-  
+ 
 \newpage\section{\label{sec:lat}\label{sec:lat-q2c}\label{sec:lat-d2c}Latency Data Files}
 
   The latency data files which can be optionally produced by \texttt{btt}
@@ -657,13 +688,13 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
      \item Write data -- just seek deltas for writes
   \end{enumerate}
 
-  The format of the output file names is to have the name generated by 
+  The format of the output file names is to have the name generated by
   the following fields separated by underscores (\texttt{\_}):
-  
+ 
   \begin{itemize}
     \item The prefix provided as the argument to the \texttt{-s} option.
     \item The major and minor numbers of the device separated by a comma.
-    \item The string \texttt{q2q} or \texttt{d2d}, indicating the Q2Q or 
+    \item The string \texttt{q2q} or \texttt{d2d}, indicating the Q2Q or
           D2D seeks, respectively.
     \item One of the following characters:
     	\begin{description}
@@ -723,7 +754,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.01 
+Usage: btt 2.01
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -742,7 +773,7 @@ Usage: btt 2.01
 [ -S <interval>    | --iostat-interval=<interval> ]
 [ -t <sec>         | --time-start=<sec> ]
 [ -T <sec>         | --time-end=<sec> ]
-[ -u <output name> | --unplug-hist=<output name> ] 
+[ -u <output name> | --unplug-hist=<output name> ]
 [ -V               | --version ]
 [ -v               | --verbose ]
 \end{verbatim}
@@ -759,7 +790,7 @@ Usage: btt 2.01
 
   Normally \texttt{btt} will not print out verbose information
   concerning per-process and per-device data (as outlined in
-  section~\ref{sec:detailed-data}). If you desire that level of 
+  section~\ref{sec:detailed-data}). If you desire that level of
   detail you can specify this option.
 
 \subsection{\label{sec:o-B}\texttt{--dump-blocknos}/\texttt{-B}}
@@ -873,7 +904,7 @@ Usage: btt 2.01
   These options allow one to dictate to \texttt{btt} when to start and stop
   parsing of trace data in terms of seconds since the start of the run. The
   trace chosen will be between the start time (or 0.0 if not
-  specified) and end time (or the end of the run) specified. 
+  specified) and end time (or the end of the run) specified.
 
 \subsection{\label{sec:o-u}\texttt{--unplug-hist}/\texttt{-u}}
 
@@ -929,7 +960,7 @@ Sending stats data to bttX.avg
 
 \newpage\section*{\label{sec:appendix}Appendix: Sample \texttt{btt}
 Output}
-  
+ 
   Here is a complete output file from a btt run, illustrating a lot of the
   capabilities of btt.
 \input{sample-btt-output.tex}

@@ -175,7 +175,8 @@ struct d_info {
 	__u32 device;
 
 	int pre_culling;
-	int is_plugged, nplugs, n_timer_unplugs;
+	int is_plugged, nplugs, nplugs_t, n_timer_unplugs;
+	__u64 nios_up, nios_upt;
 	double start_time, last_plug, plugged_time, end_time;
 };
 
@@ -247,8 +248,8 @@ void dip_foreach(struct io *iop, enum iop_type type,
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
 void dip_plug(__u32 dev, double cur_time);
-void dip_unplug(__u32 dev, double cur_time);
-void dip_unplug_tm(__u32 dev);
+void dip_unplug(__u32 dev, double cur_time, __u64 nio_ups);
+void dip_unplug_tm(__u32 dev, __u64 nio_ups);
 void dip_exit(void);
 
 /* dip_rb.c */
@@ -346,6 +347,7 @@ int ready_issue(struct io *d_iop, struct io *c_iop);
 void trace_issue(struct io *d_iop);
 
 /* trace_plug.c */
+__u64 get_nio_up(struct io *u_iop);
 void trace_plug(struct io *p_iop);
 void trace_unplug_io(struct io *u_iop);
 void trace_unplug_timer(struct io *u_iop);
