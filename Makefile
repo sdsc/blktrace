@@ -5,7 +5,8 @@ PROGS	= blkparse blktrace verify_blkparse blkrawverify
 LIBS	= -lpthread
 SCRIPTS	= btrace
 
-ALL = $(PROGS) $(SCRIPTS) btt/btt btreplay/btrecord btreplay/btreplay
+ALL = $(PROGS) $(SCRIPTS) btt/btt btreplay/btrecord btreplay/btreplay \
+      btt/bno_plot.py
 
 all: $(ALL)
 
