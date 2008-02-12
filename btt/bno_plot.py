@@ -31,8 +31,8 @@ generated after btt was run with -B blknos (meaning: all files of the
 form blknos*[rw].dat).
 
 The -K option forces bno_plot.py to put the keys below the graph,
-typicall all keys for input files are put in the upper right corner of
-the graph. If the number of devices exceed 10, then bno_plot.py will
+typically all keys for input files are put in the upper right corner
+of the graph. If the number of devices exceed 10, then bno_plot.py will
 automatically push the keys under the graph.
 
 To exit the plotter, enter 'quit' or ^D at the 'gnuplot> ' prompt.

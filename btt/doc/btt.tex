@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{5 February 2008}
+\date{12 February 2008}
 
 \begin{document}
 \maketitle
@@ -229,7 +229,7 @@ IO\footnote{It should be noted that incoming requests either go through:
   \item[Device Seek Information]
 
   Another useful measure is the variability in the sector distances
-  between consecutively \emph{recieved -- queued} and \emph{submitted
+  between consecutively \emph{received -- queued} and \emph{submitted
   -- issued} IOs. The next two sections provides some rudimentary
   statistics to gauge the general nature of the sector differences
   between IOs. Values provided include the number of seeks (number of IOs
@@ -320,7 +320,7 @@ IO\footnote{It should be noted that incoming requests either go through:
   provided in this section details how many requests (on average) were
   being held by the IO scheduler when an incoming IO request was being
   handled. To determine this, \texttt{btt} keeps track of how many Q
-  requests came in, and subtacts requests that have been issued (D).
+  requests came in, and subtracts requests that have been issued (D).
 
   Here is a sample output of this sections:
 
@@ -341,7 +341,7 @@ IO\footnote{It should be noted that incoming requests either go through:
 \end{description}
 
 \newpage
-\subsection{\label{sec:detailed-data}Detailed Data}
+\subsection*{\label{sec:detailed-data}Detailed Data}
 
   In addition to the default sections output, if one supplies the
   \texttt{--all-data} or \texttt{-A} argument (see section~\ref{sec:o-A})
@@ -555,7 +555,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
   The first column (X values) is the various IO sizes, and the second
   column (Y values) represents the number of IOs of that size.
 
-\subsection{\label{sec:qhist}Q Histogram Data File}
+\subsection*{\label{sec:qhist}Q Histogram Data File}
 
   Figure~\ref{fig:qhist} is a sample graph generated from data used during
   some real-world analysis\footnote{Note the logarithmic nature of the
@@ -571,7 +571,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
   \caption{\label{fig:qhist}Q Histogram}
   \end{figure}
 
-\subsection{\label{sec:dhist}D Histogram Data File}
+\subsection*{\label{sec:dhist}D Histogram Data File}
 
   Figure~\ref{fig:dhist} is a sample graph generated from data used during
   some real-world analysis\footnote{Note the logarithmic nature of the
@@ -958,10 +958,64 @@ Sending stats data to bttX.avg
 16.379036+0.000005=16.379041
 \end{verbatim}
 
-\newpage\section*{\label{sec:appendix}Appendix: Sample \texttt{btt}
+\newpage\section{\label{sec:bno_plot}bno\_plot.py}
+
+Included with the distribution is a simple 3D plotting utility based
+upon the block numbers output when \texttt{-B} is specified (see
+section~\ref{sec:o-B} for more details about the \texttt{-B option}). The
+display will display \emph{each} IO generated, with the time (seconds)
+along the X-axis, the block number (start) along the Y-axis and the
+number of blocks transferred in the IO represented along the Z-axis.
+
+The script requires Python\footnote{\texttt{www.python.org}} and
+gnuplot\footnote{\texttt{www.gnuplot.info}}, and will enter interactive
+mode after the image is produced. In this interactive mode one can enter
+gnuplot commands at the \texttt{'gnuplot>'} prompt, and/or can change
+the viewpoint within the 3D image by \emph{left-click-hold} and moving
+the mouse. A sample screen shot can be seen in figure~\ref{fig:bno_plot} on
+page~\pageref{fig:bno_plot}.
+
+\subsection*{\texttt{bno\_plot.py} Command Line Options}
+
+\begin{quotation}
+\begin{verbatim}
+
+$ bno_plot.py --help
+
+bno_plot.py
+	[ -h | --help       ]
+	[ -K | --keys-below ]
+	[ -v | --verbose    ]
+	[ <file...>         ]
+
+Utilizes gnuplot to generate a 3D plot of the block number
+output from btt.  If no <files> are specified, it will
+utilize all files generated after btt was run with -B
+blknos (meaning: all files of the form blknos*[rw].dat).
+
+The -K option forces bno_plot.py to put the keys below the
+graph, typically all keys for input files are put in the
+upper right corner of the graph. If the number of devices
+exceed 10, then bno_plot.py will automatically push the
+keys under the graph.
+
+To exit the plotter, enter 'quit' or ^D at the 'gnuplot> '
+prompt.
+\end{verbatim}
+\end{quotation}
+
+\begin{figure}[b]
+\leavevmode\centering
+\epsfig{file=bno_plot.eps,width=5.5in}
+\caption{\label{fig:bno_plot}Sample \texttt{bno\_plot.py} Screen Shot}
+\end{figure}
+
+\clearpage
+\newpage\section{\label{sec:appendix}Sample \texttt{btt}
 Output}
- 
   Here is a complete output file from a btt run, illustrating a lot of the
   capabilities of btt.
 \input{sample-btt-output.tex}
+
 \end{document}
+\subsection{\label{sec:o-B}\texttt{--dump-blocknos}/\texttt{-B}}

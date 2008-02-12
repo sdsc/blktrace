@@ -1,4 +1,4 @@
-DOCTMP	= btt.log btt.aux btt.dvi btt.toc
+DOCTMP	= btt.log btt.aux btt.dvi btt.toc btt.tex.bak
 
 all: btt.pdf
 
