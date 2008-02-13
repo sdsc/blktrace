@@ -228,6 +228,7 @@ extern struct list_head cios;
 
 /* args.c */
 void handle_args(int argc, char *argv[]);
+void clean_args();
 
 /* devmap.c */
 int dev_map_read(char *fname);

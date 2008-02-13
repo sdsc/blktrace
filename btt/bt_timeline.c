@@ -92,6 +92,7 @@ int main(int argc, char *argv[])
 	free(input_name);
 	if (output_name) free(output_name);
 
+	clean_args();
 	clean_bufs();
 
 	return 0;
