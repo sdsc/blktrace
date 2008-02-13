@@ -38,6 +38,7 @@ unsigned int n_devs;
 time_t genesis, last_vtrace;
 LIST_HEAD(all_devs);
 LIST_HEAD(all_procs);
+LIST_HEAD(all_ios);
 LIST_HEAD(free_ios);
 LIST_HEAD(free_bilinks);
 __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
@@ -49,15 +50,6 @@ struct region_info all_regions = {
 	.qranges = LIST_HEAD_INIT(all_regions.qranges),
 	.cranges = LIST_HEAD_INIT(all_regions.cranges),
 };
-
-#if defined(DEBUG)
-	int rb_tree_size;
-#endif
-
-#if defined(COUNT_IOS)
-unsigned long nios_reused, nios_alloced, nios_freed;
-LIST_HEAD(cios);
-#endif
 
 int process(void);
 
@@ -75,9 +67,9 @@ int main(int argc, char *argv[])
 		iostat_dump_stats(iostat_last_stamp, 1);
 	}
 
-	if (ranges_ofp != stdout) 
+	if (ranges_ofp != stdout)
 		fclose(ranges_ofp);
-	if (avgs_ofp != stdout) 
+	if (avgs_ofp != stdout)
 		fclose(avgs_ofp);
 
 	seek_clean();
@@ -121,40 +113,13 @@ int process(void)
 
 	if (verbose) {
 		double tps, dt_input = tv2dbl(&tve) - tv2dbl(&tvs);
-		
+
 		tps = (double)n_traces / dt_input;
 		printf("\r                                        "
 		       "                                        \r");
 		printf("%10lu traces @ %.1lf Ktps in %.6lf seconds\n",
 			n_traces, tps/1000.0,
 			dt_input);
-
-#		if defined(DEBUG)
-			printf("\ttree = |%d|\n", rb_tree_size);
-			if (rb_tree_size > 0)
-				dump_rb_trees();
-#		endif
-
-#		if defined(COUNT_IOS)
-			{
-				struct io *_iop;
-				struct list_head *_p;
-				FILE *_ofp = fopen("cios.txt", "w");
-				printf("(%ld + %ld) = %ld - %ld = %ld\n", 
-					nios_alloced, nios_reused, 
-					nios_alloced + nios_reused, 
-					nios_freed, 
-					(nios_alloced + nios_reused) 
-								- nios_freed);
-
-				__list_for_each(_p, &cios) {
-					_iop = list_entry(_p, struct io, 
-								cio_head);
-					__dump_iop(_ofp, _iop, 0);
-				}
-				fclose(_ofp);
-			}
-#		endif
 	}
 
 	return ret;

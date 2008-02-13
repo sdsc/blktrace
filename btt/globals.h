@@ -18,7 +18,6 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
-#include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -46,27 +45,6 @@
 
 #define TO_SEC(nanosec)	((double)(nanosec) / 1.0e9)
 #define TO_MSEC(nanosec) (1000.0 * TO_SEC(nanosec))
-
-#if defined(DEBUG)
-#define DBG_PING()	dbg_ping()
-#define ASSERT(truth)   do {						\
-				if (!(truth)) {				\
-					DBG_PING();			\
-					assert(truth);			\
-				}					\
-			} while (0)
-
-
-#define LIST_DEL(hp)	list_del(hp)
-#else
-#define ASSERT(truth)
-#define DBG_PING()
-#define LIST_DEL(hp)	do {						\
-				ASSERT((hp)->next != NULL);		\
-				ASSERT(!list_empty(hp));		\
-				list_del(hp);				\
-			} while (0)
-#endif
 
 enum iop_type {
 	IOP_Q = 0,
@@ -182,7 +160,7 @@ struct d_info {
 
 struct io {
 	struct rb_node rb_node;
-	struct list_head f_head;
+	struct list_head f_head, a_head;
 	struct d_info *dip;
 	struct p_info *pip;
 	void *pdu;
@@ -193,10 +171,6 @@ struct io {
 
 	int linked;
 	enum iop_type type;
-
-#if defined(COUNT_IOS)
-	struct list_head cio_head;
-#endif
 };
 
 /* bt_timeline.c */
@@ -213,18 +187,11 @@ extern struct list_head all_devs, all_procs;
 extern struct avgs_info all_avgs;
 extern __u64 last_q;
 extern struct region_info all_regions;
-extern struct list_head free_ios;
+extern struct list_head all_ios, free_ios;
 extern __u64 iostat_interval, iostat_last_stamp;
 extern time_t genesis, last_vtrace;
 extern double t_astart, t_aend;
 extern __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
-#if defined(DEBUG)
-extern int rb_tree_size;
-#endif
-#if defined(COUNT_IOS)
-extern unsigned long nios_reused, nios_alloced, nios_freed;
-extern struct list_head cios;
-#endif
 
 /* args.c */
 void handle_args(int argc, char *argv[]);
@@ -236,15 +203,12 @@ struct devmap *dev_map_find(__u32 device);
 void dev_map_exit(void);
 
 /* devs.c */
-#if defined(DEBUG)
-void dump_rb_trees(void);
-#endif
 void init_dev_heads(void);
 struct d_info *dip_add(__u32 device, struct io *iop);
 void dip_rem(struct io *iop);
 struct d_info *__dip_find(__u32 device);
 void dip_foreach_list(struct io *iop, enum iop_type type, struct list_head *hd);
-void dip_foreach(struct io *iop, enum iop_type type, 
+void dip_foreach(struct io *iop, enum iop_type type,
 		 void (*fnc)(struct io *iop, struct io *this), int rm_after);
 struct io *dip_find_sec(struct d_info *dip, enum iop_type type, __u64 sec);
 void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg);
@@ -256,7 +220,7 @@ void dip_exit(void);
 /* dip_rb.c */
 int rb_insert(struct rb_root *root, struct io *iop);
 struct io *rb_find_sec(struct rb_root *root, __u64 sec);
-void rb_foreach(struct rb_node *n, struct io *iop, 
+void rb_foreach(struct rb_node *n, struct io *iop,
 		      void (*fnc)(struct io *iop, struct io *this),
 		      struct list_head *head);
 

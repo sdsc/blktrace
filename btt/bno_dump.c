@@ -69,7 +69,7 @@ void bno_dump_exit(void *param)
 static inline void bno_dump_write(FILE *fp, struct io *iop)
 {
 	fprintf(fp, "%15.9lf %lld %lld\n",
-	        BIT_TIME(iop->t.time), 
+	        BIT_TIME(iop->t.time),
 		(long long)BIT_START(iop), (long long)BIT_END(iop));
 }
 

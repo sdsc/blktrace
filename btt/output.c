@@ -349,7 +349,6 @@ void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 {
 	struct seek_mode_info *p, *this, *new_list = NULL;
 
-	ASSERT(sip->head != NULL);
 	while ((this = sip->head) != NULL) {
 		sip->head = this->next;
 		this->next = NULL;
@@ -357,7 +356,6 @@ void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 		if (new_list == NULL || this->nseeks > new_list->nseeks)
 			new_list = this;
 		else if (this->nseeks == new_list->nseeks) {
-			assert(this->nseeks == new_list->nseeks);
 			for (p = new_list; p != NULL; p = p->next)
 				if (p->mode == this->mode)
 					break;

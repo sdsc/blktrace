@@ -37,8 +37,6 @@ int in_devices(struct blk_io_trace *t)
 
 	for (;;) {
 		i = sscanf(p, "%u,%u;", &mjr, &mnr);
-		ASSERT(i == 2);
-
 		if ((mjr == MAJOR(t->device) && (mnr == MINOR(t->device))))
 			return 1;
 
@@ -101,5 +99,5 @@ void clean_bufs(void)
 		free(bip);
 	}
 }
-	
+
 void dbg_ping(void) {}

@@ -205,7 +205,6 @@ static FILE *setup_ofile(char *fname)
 		}
 
 		buf = malloc(SETBUFFER_SIZE);
-		assert(buf);
 
 		setbuffer(ofp, buf, SETBUFFER_SIZE);
 		add_file(&arg_files, ofp, fname);

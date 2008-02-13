@@ -103,10 +103,8 @@ static void insert_pid(struct p_info *that, __u32 pid)
 			p = &(*p)->rb_left;
 		else if (pid > this->u.pid)
 			p = &(*p)->rb_right;
-		else {
-			ASSERT(strcmp(that->name, this->pip->name) == 0);
+		else
 			return;	// Already there
-		}
 	}
 
 	this = malloc(sizeof(struct pn_info));
@@ -181,7 +179,7 @@ struct p_info *find_process(__u32 pid, char *name)
 
 		/*
 		 * We're here because we have a pid, and no name, but
-		 * we didn't find a process ... 
+		 * we didn't find a process ...
 		 *
 		 * We'll craft one using the pid...
 		 */
@@ -192,7 +190,6 @@ struct p_info *find_process(__u32 pid, char *name)
 		return __find_process_pid(pid);
 	}
 
-	assert(name != NULL);
 	return __find_process_name(name);
 }
 
@@ -215,10 +212,10 @@ void pip_update_q(struct io *iop)
 {
 	if (iop->pip) {
 		if (remapper_dev(iop->dip->device))
-			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q_dm, 
+			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q_dm,
 								iop->t.time);
 		else
-			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q, 
+			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q,
 								iop->t.time);
 		update_qregion(&iop->pip->regions, iop->t.time);
 	}

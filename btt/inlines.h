@@ -133,49 +133,18 @@ static inline void dip_update_q(struct d_info *dip, struct io *iop)
 
 static inline struct io *io_alloc(void)
 {
-	struct io *iop;
-
-	if (!list_empty(&free_ios)) {
-		iop = list_entry(free_ios.prev, struct io, f_head);
-		LIST_DEL(&iop->f_head);
-
-#		if defined(COUNT_IOS)
-			nios_reused++;
-#		endif
-	}
-	else {
-		iop = malloc(sizeof(struct io));
-
-#		if defined(COUNT_IOS)
-			nios_alloced++;
-#		endif
-	}
+	struct io *iop = malloc(sizeof(*iop));
 
 	memset(iop, 0, sizeof(struct io));
-
-#	if defined(DEBUG)
-		iop->f_head.next = LIST_POISON1;
-#	endif
-
-#	if defined(COUNT_IOS)
-		list_add_tail(&iop->cio_head, &cios);
-#	endif
+	list_add_tail(&iop->a_head, &all_ios);
 
 	return iop;
 }
 
 static inline void io_free(struct io *iop)
 {
-#	if defined(COUNT_IOS)
-		nios_freed++;
-		LIST_DEL(&iop->cio_head);
-#	endif
-
-#	if defined(DEBUG)
-		memset(iop, 0, sizeof(*iop));
-#	endif
-
-	list_add_tail(&iop->f_head, &free_ios);
+	list_del(&iop->a_head);
+	free(iop);
 }
 
 static inline void io_free_all(void)
@@ -183,8 +152,8 @@ static inline void io_free_all(void)
 	struct io *iop;
 	struct list_head *p, *q;
 
-	list_for_each_safe(p, q, &free_ios) {
-		iop = list_entry(p, struct io, f_head);
+	list_for_each_safe(p, q, &all_ios) {
+		iop = list_entry(p, struct io, a_head);
 		free(iop);
 	}
 }
@@ -203,11 +172,9 @@ static inline int io_setup(struct io *iop, enum iop_type type)
 
 static inline void io_release(struct io *iop)
 {
-	ASSERT(iop->f_head.next == LIST_POISON1);
-
 	if (iop->linked)
 		dip_rem(iop);
-	if (iop->pdu) 
+	if (iop->pdu)
 		free(iop->pdu);
 
 	io_free(iop);
@@ -233,10 +200,6 @@ static inline void io_release(struct io *iop)
 
 static inline void update_q2c(struct io *iop, __u64 c_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "q2c %13.9f\n", BIT_TIME(c_time));
-#	endif
 	if (remapper_dev(iop->dip->device))
 		UPDATE_AVGS(q2c_dm, iop, iop->pip, c_time);
 	else
@@ -245,10 +208,6 @@ static inline void update_q2c(struct io *iop, __u64 c_time)
 
 static inline void update_q2a(struct io *iop, __u64 a_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "q2a %13.9f\n", BIT_TIME(a_time));
-#	endif
 	if (remapper_dev(iop->dip->device))
 		UPDATE_AVGS(q2a_dm, iop, iop->pip, a_time);
 	else
@@ -257,11 +216,6 @@ static inline void update_q2a(struct io *iop, __u64 a_time)
 
 static inline void update_q2g(struct io *iop, __u64 g_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "q2g %13.9f\n", BIT_TIME(g_time));
-#	endif
-
 	UPDATE_AVGS(q2g, iop, iop->pip, g_time);
 }
 
@@ -272,11 +226,6 @@ static inline void unupdate_q2g(struct io *iop, __u64 g_time)
 
 static inline void update_g2i(struct io *iop, __u64 i_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "g2i %13.9f\n", BIT_TIME(i_time));
-#	endif
-
 	UPDATE_AVGS(g2i, iop, iop->pip, i_time);
 }
 
@@ -287,11 +236,6 @@ static inline void unupdate_g2i(struct io *iop, __u64 i_time)
 
 static inline void update_q2m(struct io *iop, __u64 m_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "q2m %13.9f\n", BIT_TIME(m_time));
-#	endif
-
 	UPDATE_AVGS(q2m, iop, iop->pip, m_time);
 }
 
@@ -302,11 +246,6 @@ static inline void unupdate_q2m(struct io *iop, __u64 m_time)
 
 static inline void update_i2d(struct io *iop, __u64 d_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "i2d %13.9f\n", BIT_TIME(d_time));
-#	endif
-
 	UPDATE_AVGS(i2d, iop, iop->pip, d_time);
 }
 
@@ -317,11 +256,6 @@ static inline void unupdate_i2d(struct io *iop, __u64 d_time)
 
 static inline void update_m2d(struct io *iop, __u64 d_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "m2d %13.9f\n", BIT_TIME(d_time));
-#	endif
-
 	UPDATE_AVGS(m2d, iop, iop->pip, d_time);
 }
 
@@ -332,11 +266,6 @@ static inline void unupdate_m2d(struct io *iop, __u64 d_time)
 
 static inline void update_d2c(struct io *iop, __u64 c_time)
 {
-#	if defined(DEBUG)
-		if (per_io_ofp) 
-			fprintf(per_io_ofp, "d2c %13.9f\n", BIT_TIME(c_time));
-#	endif
-
 	UPDATE_AVGS(d2c, iop, iop->pip, c_time);
 }
 
@@ -344,7 +273,6 @@ static inline void update_blks(struct io *iop)
 {
 	__u64 nblks = iop->t.bytes >> 9;
 	avg_update(&all_avgs.blks, nblks);
-	ASSERT(iop->dip != NULL);
 	avg_update(&iop->dip->avgs.blks, nblks);
 	if (iop->pip)
 		avg_update(&iop->pip->avgs.blks, nblks);
@@ -364,21 +292,17 @@ static inline int dip_rb_ins(struct d_info *dip, struct io *iop)
 static inline void dip_rb_rem(struct io *iop)
 {
 	rb_erase(&iop->rb_node, __get_root(iop->dip, iop->type));
-
-#	if defined(DEBUG)
-		rb_tree_size--;
-#	endif
 }
 
-static inline void dip_rb_fe(struct d_info *dip, enum iop_type type, 
-		             struct io *iop, 
-			     void (*fnc)(struct io *iop, struct io *this), 
+static inline void dip_rb_fe(struct d_info *dip, enum iop_type type,
+		             struct io *iop,
+			     void (*fnc)(struct io *iop, struct io *this),
 			     struct list_head *head)
 {
 	rb_foreach(__get_root(dip, type)->rb_node, iop, fnc, head);
 }
 
-static inline struct io *dip_rb_find_sec(struct d_info *dip, 
+static inline struct io *dip_rb_find_sec(struct d_info *dip,
 		                         enum iop_type type, __u64 sec)
 {
 	return rb_find_sec(__get_root(dip, type), sec);
@@ -448,8 +372,8 @@ static inline void __dump_iop2(FILE *ofp, struct io *a_iop, struct io *l_iop)
 	fprintf(ofp, "%5d.%09lu %3d,%-3d %c %10llu+%-4u <- (%3d,%-3d) %10llu\n",
 		(int)SECONDS(a_iop->t.time),
 		(unsigned long)NANO_SECONDS(a_iop->t.time),
-		MAJOR(a_iop->t.device), MINOR(a_iop->t.device), 
-		type2c(a_iop->type), (unsigned long long)a_iop->t.sector, 
-		t_sec(&a_iop->t), MAJOR(l_iop->t.device), 
+		MAJOR(a_iop->t.device), MINOR(a_iop->t.device),
+		type2c(a_iop->type), (unsigned long long)a_iop->t.sector,
+		t_sec(&a_iop->t), MAJOR(l_iop->t.device),
 		MINOR(l_iop->t.device), (unsigned long long)l_iop->t.sector);
 }

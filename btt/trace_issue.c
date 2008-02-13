@@ -38,25 +38,23 @@ static void handle_issue(struct io *d_iop)
 	dip_foreach_list(d_iop, IOP_Q, &head);
 	list_for_each_safe(p, q, &head) {
 		struct io *q_iop = list_entry(p, struct io, f_head);
-		
+
 		if (q_iop->i_time != (__u64)-1)
 			update_i2d(q_iop, tdelta(q_iop->i_time, d_iop->t.time));
 		else if (q_iop->m_time != (__u64)-1)
 			update_m2d(q_iop, tdelta(q_iop->m_time, d_iop->t.time));
 
 		d_iop->bytes_left -= q_iop->t.bytes;
-		LIST_DEL(&q_iop->f_head);
+		list_del(&q_iop->f_head);
 
 		q_iop->d_time = d_iop->t.time;
 		q_iop->d_sec = d_iop->t.sector;
 		q_iop->d_nsec = t_sec(&d_iop->t);
 
 		if (output_all_data)
-			q2d_histo_add(q_iop->dip->q2d_priv, 
+			q2d_histo_add(q_iop->dip->q2d_priv,
 						d_iop->t.time - q_iop->t.time);
 	}
-
-	assert(d_iop->bytes_left == 0);
 }
 
 void trace_issue(struct io *d_iop)

@@ -28,7 +28,6 @@ int rb_insert(struct rb_root *root, struct io *iop)
 	struct rb_node **p = &root->rb_node;
 	__u64 __s, s = BIT_START(iop);
 
-	ASSERT(root != NULL && iop != NULL);
 	while (*p) {
 		parent = *p;
 		__iop = rb_entry(parent, struct io, rb_node);
@@ -65,7 +64,7 @@ struct io *rb_find_sec(struct rb_root *root, __u64 sec)
 	return NULL;
 }
 
-void rb_foreach(struct rb_node *n, struct io *iop, 
+void rb_foreach(struct rb_node *n, struct io *iop,
 		      void (*fnc)(struct io *iop, struct io *this),
 		      struct list_head *head)
 {
@@ -76,10 +75,8 @@ void rb_foreach(struct rb_node *n, struct io *iop,
 
 		if ((iop_s <= this_s) && (this_e <= iop_e)) {
 			if (fnc) fnc(iop, this);
-			if (head) {
-				ASSERT(this->f_head.next == LIST_POISON1);
+			if (head)
 				list_add_tail(&this->f_head, head);
-			}
 		}
 		if (iop_s < this_s)
 			rb_foreach(n->rb_left, iop, fnc, head);

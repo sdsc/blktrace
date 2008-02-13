@@ -24,7 +24,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <assert.h>
 #include <sys/mman.h>
 #include <string.h>
 
@@ -43,8 +42,8 @@ int data_is_native = -1;
 
 static inline size_t min_len(size_t a, size_t b) { return a < b ? a : b; }
 
-static inline size_t convert_to_cpu(struct blk_io_trace *t, 
-                                    struct blk_io_trace *tp, 
+static inline size_t convert_to_cpu(struct blk_io_trace *t,
+                                    struct blk_io_trace *tp,
 				    void **pdu)
 {
 	if (data_is_native == -1)
@@ -65,9 +64,6 @@ static inline size_t convert_to_cpu(struct blk_io_trace *t,
 		tp->error	= be16_to_cpu(t->error);
 		tp->pdu_len	= be16_to_cpu(t->pdu_len);
 	}
-
-	assert(CHECK_MAGIC(tp));
-	assert((tp->magic & 0xff) == SUPPORTED_VERSION);
 
 	if (tp->pdu_len) {
 		*pdu = malloc(tp->pdu_len);

@@ -20,13 +20,13 @@
  */
 #include "globals.h"
 
-static inline void __out(FILE *ofp, __u64 tm, enum iop_type type, 
+static inline void __out(FILE *ofp, __u64 tm, enum iop_type type,
 					__u64 sec, __u32 nsec, int indent)
 {
 	if (tm != (__u64)-1) {
-		if (indent) 
+		if (indent)
 			fprintf(ofp, "         ");
-		fprintf(ofp, "%5d.%09lu %c %10llu+%-4u\n", 
+		fprintf(ofp, "%5d.%09lu %c %10llu+%-4u\n",
 			(int)SECONDS(tm), (unsigned long)NANO_SECONDS(tm),
 			type2c(type), (unsigned long long)sec, nsec);
 	}
@@ -85,7 +85,7 @@ static void handle_complete(struct io *c_iop)
 			display_io_track(per_io_ofp, q_iop);
 		}
 
-		LIST_DEL(&q_iop->f_head);
+		list_del(&q_iop->f_head);
 		io_release(q_iop);
 	}
 }

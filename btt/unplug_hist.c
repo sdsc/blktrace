@@ -47,8 +47,6 @@ void unplug_hist_add(struct io *u_iop)
 {
 	struct d_info *dip;
 
-	assert(u_iop->t.pdu_len >= sizeof(__u64));
-
 	dip = __dip_find(u_iop->t.device);
 	if (dip && dip->unplug_hist_handle) {
 		__u64 *val = u_iop->pdu;
@@ -59,7 +57,6 @@ void unplug_hist_add(struct io *u_iop)
 		if (idx > EXCESS_BKT)
 			idx = EXCESS_BKT;
 
-		assert((0 <= idx) && (idx <= EXCESS_BKT));
 		hbp->hist[idx]++;
 	}
 }

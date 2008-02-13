@@ -81,7 +81,7 @@ void update_idle_time(struct d_info *dip, double now, int force)
 {
 	if (dip->stats.cur_dev == 0 || force) {
 		dip->stats.idle_time += (now - dip->stats.last_dev_change);
-		dip->all_stats.idle_time += 
+		dip->all_stats.idle_time +=
 				       (now - dip->all_stats.last_dev_change);
 	}
 	dip->stats.last_dev_change = dip->all_stats.last_dev_change = now;

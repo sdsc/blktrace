@@ -176,7 +176,7 @@ double seeki_mean(void *handle)
 	return sip->total_sectors / sip->tot_seeks;
 }
 
-int __median(struct rb_node *n, long long sofar, long long target, long 
+int __median(struct rb_node *n, long long sofar, long long target, long
 		   long *rvp)
 {
 	struct seek_bkt *sbp;
@@ -203,7 +203,7 @@ long long seeki_median(void *handle)
 	struct seeki *sip = handle;
 
 	if (sip->root.rb_node)
-		(void)__median(sip->root.rb_node, 0LL, sip->tot_seeks / 2, 
+		(void)__median(sip->root.rb_node, 0LL, sip->tot_seeks / 2,
 			       &rval);
 
 	return rval;
@@ -224,7 +224,7 @@ void __mode(struct rb_node *n, struct mode *mp)
 	else if (sbp->nseeks > mp->most_seeks)
 		mp->nmds = 0;
 	else if (sbp->nseeks == mp->most_seeks)
-		mp->modes = realloc(mp->modes, (mp->nmds + 1) * 
+		mp->modes = realloc(mp->modes, (mp->nmds + 1) *
 							sizeof(long long));
 	else
 		return;
@@ -239,7 +239,7 @@ int seeki_mode(void *handle, struct mode *mp)
 	struct rb_root *root = &sip->root;
 
 	memset(mp, 0, sizeof(struct mode));
-	if (root->rb_node) 
+	if (root->rb_node)
 		__mode(root->rb_node, mp);
 
 	return mp->nmds;

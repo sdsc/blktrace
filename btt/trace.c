@@ -28,14 +28,7 @@ static void __add_trace(struct io *iop)
 	iostat_check_time(iop->t.time);
 
 	if (verbose && ((now - last_vtrace) > 0)) {
-
-#	if defined(DEBUG)
-		printf("%10lu t\ttree size=|%10d|\r", 
-			n_traces, rb_tree_size);
-#	else
 		printf("%10lu t\r", n_traces);
-#	endif
-
 		if ((n_traces % 1000000) == 0) printf("\n");
 		fflush(stdout);
 		last_vtrace = now;
@@ -54,8 +47,8 @@ static void __add_trace(struct io *iop)
 	case __BLK_TA_PLUG:		trace_plug(iop); break;
 	case __BLK_TA_UNPLUG_IO:	trace_unplug_io(iop); break;
 	case __BLK_TA_UNPLUG_TIMER:	trace_unplug_timer(iop); break;
-	default:			
-		io_release(iop); 
+	default:
+		io_release(iop);
 		return;
 	}
 }
@@ -64,7 +57,7 @@ void add_trace(struct io *iop)
 {
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 		if (iop->t.action == BLK_TN_PROCESS) {
-			if (iop->t.pid == 0) 
+			if (iop->t.pid == 0)
 				add_process(0, "kernel");
 			else {
 				char *slash = strchr(iop->pdu, '/');

@@ -52,50 +52,6 @@ static void __destroy_heads(struct rb_root *roots)
 	free(roots);
 }
 
-#if defined(DEBUG)
-void __dump_rb_node(struct rb_node *n)
-{
-	struct io *iop = rb_entry(n, struct io, rb_node);
-
-	dbg_ping();
-	__dump_iop(stdout, iop, 0);
-	if (n->rb_left)
-		__dump_rb_node(n->rb_left);
-	if (n->rb_right)
-		__dump_rb_node(n->rb_right);
-}
-
-void __dump_rb_tree(struct d_info *dip, enum iop_type type)
-{
-	struct rb_root *roots = dip->heads;
-	struct rb_root *root = &roots[type];
-	struct rb_node *n = root->rb_node;
-
-	if (n) {
-		printf("\tIOP_%c\n", type2c(type));
-		__dump_rb_node(n);
-	}
-}
-
-void dump_rb_trees(void)
-{
-	int i;
-	enum iop_type type;
-	struct d_info *dip;
-	struct list_head *p;
-
-	for (i = 0; i < N_DEV_HASH; i++) {
-		__list_for_each(p, &dev_heads[i]) {
-			dip = list_entry(p, struct d_info, hash_head);
-			printf("Trees for %3d,%-3d\n", MAJOR(dip->device),
-			       MINOR(dip->device));
-			for (type = IOP_Q; type < N_IOP_TYPES; type++)
-				__dump_rb_tree(dip, type);
-		}
-	}
-}
-#endif
-
 void init_dev_heads(void)
 {
 	int i;
@@ -184,11 +140,6 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 	iop->linked = dip_rb_ins(dip, iop);
 	dip->end_time = BIT_TIME(iop->t.time);
 
-#	if defined(DEBUG)
-		if (iop->linked) 
-			rb_tree_size++;
-#	endif
-
 	return dip;
 }
 
@@ -200,7 +151,7 @@ void dip_rem(struct io *iop)
 	}
 }
 
-void dip_foreach(struct io *iop, enum iop_type type, 
+void dip_foreach(struct io *iop, enum iop_type type,
 		 void (*fnc)(struct io *iop, struct io *this), int rm_after)
 {
 	if (rm_after) {
@@ -211,7 +162,7 @@ void dip_foreach(struct io *iop, enum iop_type type,
 		dip_rb_fe(iop->dip, type, iop, fnc, &head);
 		list_for_each_safe(p, q, &head) {
 			this = list_entry(p, struct io, f_head);
-			LIST_DEL(&this->f_head);
+			list_del(&this->f_head);
 			io_release(this);
 		}
 	}
@@ -244,10 +195,7 @@ void dip_foreach_out(void (*func)(struct d_info *, void *), void *arg)
 
 		while (p && ((i = sscanf(p, "%u,%u", &mjr, &mnr)) == 2)) {
 			dip = __dip_find((__u32)((mjr << MINORBITS) | mnr));
-			ASSERT(dip);
-
 			func(dip, arg);
-
 			p = strchr(p, ';');
 			if (p) p++;
 		}
