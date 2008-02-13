@@ -49,7 +49,7 @@
 	} while (0)
 
 __u64 last_start, iostat_last_stamp;
-__u64 iostat_interval = 1;
+__u64 iostat_interval = 1000000000;
 char *iostat_name = NULL;
 FILE *iostat_ofp = NULL;
 
