@@ -63,6 +63,12 @@ files containing "range data" \-\- showing things like Q activity (periods
 of time while Q events are being produced), C activity (likewise for
 command completions), and etc.
 
+Included with the distribution is a simple 3D plotting utility,
+\fIbno_plot\fR, which can plot the block numbers btss outputs if the \fI-B\fR
+option is specified. The display will display each IO generated, with the time
+(seconds) along the X-axis, the block number (start) along the Y-axis and the
+number of blocks transferred in the IO represented along the Z-axis.
+
 
 .SH OPTIONS
 
@@ -305,5 +311,5 @@ On Debian systems, the text of the GNU General Public License can be found in
 .SH "SEE ALSO"
 The btt Users Guide, which can be found in /usr/share/doc/blktrace/btt.pdf
 .br
-blktrace (8), blkparse (1), verify_blkparse (1), blkrawverify (1), btt (1)
+bno_plot (1), blktrace (8), blkparse (1), verify_blkparse (1), blkrawverify (1), btt (1)
 
