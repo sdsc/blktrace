@@ -32,7 +32,7 @@ clean: docsclean
 	$(CC) $(CFLAGS) -c -o $*.o $<
 
 btrecord: btrecord.o
-	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^)
 
 btreplay: btreplay.o
 	$(CC) $(CFLAGS) -o $@ $(filter %.o,$^) $(LIBS)
