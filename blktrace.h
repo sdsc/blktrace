@@ -32,6 +32,9 @@ struct io_stats {
 	unsigned long long qread_kb, qwrite_kb, cread_kb, cwrite_kb;
 	unsigned long long iread_kb, iwrite_kb;
 	unsigned long long mread_kb, mwrite_kb;
+	unsigned long qreads_pc, qwrites_pc, ireads_pc, iwrites_pc;
+	unsigned long rrqueue_pc, wrqueue_pc, creads_pc, cwrites_pc;
+	unsigned long long qread_kb_pc, qwrite_kb_pc, iread_kb_pc, iwrite_kb_pc;
 	unsigned long io_unplugs, timer_unplugs;
 };
 
