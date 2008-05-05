@@ -2418,17 +2418,19 @@ static int handle(struct ms_stream *msp)
 	struct blk_io_trace *bit;
 
 	t = ms_peek(msp);
-	if (t->bit->time > stopwatch_end)
-		return 0;
 
 	bit = t->bit;
 	pdi = msp->pdi;
 	pci = get_cpu_info(pdi, msp->cpu);
 	pci->nelems++;
-
 	bit->time -= genesis_time;
+
+	if (t->bit->time > stopwatch_end)
+		return 0;
+
 	pdi->last_reported_time = bit->time;
-	if (bit->action & (act_mask << BLK_TC_SHIFT))
+	if ((bit->action & (act_mask << BLK_TC_SHIFT))&&
+	    t->bit->time >= stopwatch_start)
 		dump_trace(bit, pci, pdi);
 
 	ms_deq(msp);
