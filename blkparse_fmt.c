@@ -44,10 +44,6 @@ int add_format_spec(char *option)
 		return 1;
 	}
 	option += 2;
-	if (*option == '\0') {
-		fprintf(stderr,"Bad format specifier - need fmt %s\n", option);
-		return 1;
-	}
 
 	override_format[spec] = strdup(option);
 
