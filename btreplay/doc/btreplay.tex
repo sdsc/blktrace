@@ -386,12 +386,13 @@ Usage: btreplay -- version 0.9.3
 
 	[ -c <cpus> : --cpus=<cpus>           ] Default: 1
 	[ -d <dir>  : --input-directory=<dir> ] Default: .
-	[ -F        : --find-records           ] Default: Off
+	[ -F        : --find-records          ] Default: Off
 	[ -h        : --help                  ] Default: Off
 	[ -i <base> : --input-base=<base>     ] Default: replay
 	[ -I <iters>: --iterations=<iters>    ] Default: 1
 	[ -M <file> : --map-devs=<file>       ] Default: None
 	[ -N        : --no-stalls             ] Default: Off
+	[ -x <int>  : --acc-factor=<int>      ] Default: 1
 	[ -v        : --verbose               ] Default: Off
 	[ -V        : --version               ] Default: Off
 	[ -W        : --write-enable          ] Default: Off
@@ -495,6 +496,16 @@ Pre-bunch Stalls}
 
 When specified on the command line, all pre-bunch stall indicators will be
 ignored. IOs will be replayed without inter-bunch delays.
+
+\subsubsection{\label{sec:o-x}\texttt{-x} or \texttt{--acc-factor}\\Accelaration
+Factor}
+
+  While the \texttt{--no-stalls} option allows the traces to be replayed
+  with no waiting time, this option specifies some acceleration factor
+  to be used. If the value of two is used, then the stall time is
+  divided by half resulting in a reduction of the execution time by
+  this factor. Note that if this number is too high, the results will
+  be equivalent of not having stall.
 
 \subsubsection{\label{sec:p-o-v}\texttt{-v} or
 \texttt{--verbose}\\Select Verbose Output}

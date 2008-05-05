@@ -154,6 +154,7 @@ static LIST_HEAD(input_files);		// List of input files to handle
 static LIST_HEAD(map_devs);		// List of device maps
 static int nfiles = 0;			// Number of files to handle
 static int no_stalls = 0;		// Boolean: Disable pre-stalls
+static unsigned acc_factor = 1;		// Int: Acceleration factor
 static int find_records = 0;		// Boolean: Find record files auto
 
 /*
@@ -1175,6 +1176,8 @@ static void stall(struct thr_info *tip, long long oclock)
 	struct timespec req;
 	long long dreal, tclock = gettime() - rgenesis;
 
+	oclock /= acc_factor;
+	
 	if (verbose > 1)
 		fprintf(tip->vfp, "   stall(%lld.%09lld, %lld.%09lld)\n",
 			du64_to_sec(oclock), du64_to_nsec(oclock),
@@ -1347,22 +1350,23 @@ static void *replay_sub(void *arg)
  */
 
 static char usage_str[] = 						\
-        "\n"                                                           \
+        "\n"								\
         "\t[ -c <cpus> : --cpus=<cpus>           ] Default: 1\n"        \
         "\t[ -d <dir>  : --input-directory=<dir> ] Default: .\n"        \
-	"\t[ -F        : --find-records          ] Default: Off\n"         \
+	"\t[ -F        : --find-records          ] Default: Off\n"	\
         "\t[ -h        : --help                  ] Default: Off\n"      \
         "\t[ -i <base> : --input-base=<base>     ] Default: replay\n"   \
         "\t[ -I <iters>: --iterations=<iters>    ] Default: 1\n"        \
         "\t[ -M <file> : --map-devs=<file>       ] Default: None\n"     \
         "\t[ -N        : --no-stalls             ] Default: Off\n"      \
+        "\t[ -x        : --acc-factor            ] Default: 1\n"	\
         "\t[ -v        : --verbose               ] Default: Off\n"      \
         "\t[ -V        : --version               ] Default: Off\n"      \
         "\t[ -W        : --write-enable          ] Default: Off\n"      \
         "\t<dev...>                                Default: None\n"     \
         "\n";
 
-#define S_OPTS	"c:d:Fhi:I:M:Nt:vVW"
+#define S_OPTS	"c:d:Fhi:I:M:Nx:t:vVW"
 static struct option l_opts[] = {
 	{
 		.name = "cpus",
@@ -1413,6 +1417,12 @@ static struct option l_opts[] = {
 		.val = 'N'
 	},
 	{
+		.name = "acc-factor",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'x'
+	},
+	{
 		.name = "verbose",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -1445,6 +1455,7 @@ static struct option l_opts[] = {
 static void handle_args(int argc, char *argv[])
 {
 	int c;
+	int r;
 
 	while ((c = getopt_long(argc, argv, S_OPTS, l_opts, NULL)) != -1) {
 		switch (c) {
@@ -1497,6 +1508,16 @@ static void handle_args(int argc, char *argv[])
 
 		case 'N':
 			no_stalls = 1;
+			break;
+
+		case 'x':
+			r = sscanf(optarg,"%u",&acc_factor);
+			if (r!=1) {
+				fprintf(stderr,
+					"Invalid acceleration factor\n");
+				exit(ERR_ARGS);
+				/*NOTREACHED*/
+			}
 			break;
 
 		case 'V':
