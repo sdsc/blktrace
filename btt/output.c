@@ -92,6 +92,17 @@ char *make_dev_hdr(char *pad, size_t len, struct d_info *dip)
 	return pad;
 }
 
+char *make_dev_hdrX(char *pad, size_t len, struct d_info *dip)
+{
+	if (dip->map == NULL)
+		snprintf(pad, len, "%d,%d",
+			 MAJOR(dip->device), MINOR(dip->device));
+	else
+		snprintf(pad, len, "%s", dip->map->device);
+
+	return pad;
+}
+
 struct __oda {
 	FILE *ofp;
 	ai_dip_t (*func)(struct d_info *);
@@ -125,10 +136,10 @@ void __output_q2d_histo(struct d_info *dip, void *arg)
 	struct __q2d *q2dp = arg;
 
 	if (q2d_ok(dip->q2d_priv)) {
-		char scratch[15];
+		char dev_info[15];
 		FILE *ofp = q2dp->ofp;
 
-		fprintf(q2dp->ofp, "%10s | ", make_dev_hdr(scratch, 15, dip));
+		fprintf(q2dp->ofp, "%10s | ", make_dev_hdr(dev_info, 15, dip));
 		q2d_display(ofp, dip->q2d_priv);
 		q2d_acc(q2dp->q2d_all, dip->q2d_priv);
 		q2dp->n++;
@@ -165,7 +176,7 @@ struct {
 void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 {
 	double blks_avg;
-	char scratch[15];
+	char dev_info[15];
 	double ratio, q2c_n, d2c_n;
 
 	if (dip->n_qs == 0 || dip->n_ds == 0)
@@ -183,7 +194,7 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 		blks_avg = (double)dip->avgs.blks.total / d2c_n;
 		fprintf((FILE *)arg,
 			"%10s | %8llu %8llu %7.1lf | %8llu %8llu %8llu %8llu\n",
-			make_dev_hdr(scratch, 15, dip),
+			make_dev_hdr(dev_info, 15, dip),
 			(unsigned long long)dip->n_qs,
 			(unsigned long long)dip->n_ds,
 			ratio,
@@ -191,6 +202,19 @@ void __output_dip_merge_ratio(struct d_info *dip, void *arg)
 			(unsigned long long)blks_avg,
 			(unsigned long long)dip->avgs.blks.max,
 			(unsigned long long)dip->avgs.blks.total);
+
+		if (easy_parse_avgs) {
+			fprintf(xavgs_ofp,
+				"DMI %s %llu %llu %.9lf %llu %llu %llu %llu\n",
+				make_dev_hdrX(dev_info, 15, dip),
+				(unsigned long long)dip->n_qs,
+				(unsigned long long)dip->n_ds,
+				ratio,
+				(unsigned long long)dip->avgs.blks.min,
+				(unsigned long long)blks_avg,
+				(unsigned long long)dip->avgs.blks.max,
+				(unsigned long long)dip->avgs.blks.total);
+		}
 
 		if (n_merges++ == 0) {
 			merge_data.blkmin = dip->avgs.blks.min;
@@ -426,6 +450,18 @@ static void do_output_dip_seek_info(struct d_info *dip, FILE *ofp, int is_q2q)
 			fprintf(ofp, " %lld", m.modes[i]);
 		fprintf(ofp, "\n");
 
+		if (easy_parse_avgs) {
+			char *rec = is_q2q ? "QSK" : "DSK";
+			fprintf(xavgs_ofp,
+				"%s %s %lld %.9lf %lld %lld %d",
+				rec, make_dev_hdrX(dev_info, 15, dip),
+				nseeks, mean, median,
+				nmodes > 0 ? m.modes[0] : 0, m.most_seeks);
+				for (i = 1; i < nmodes; i++)
+					fprintf(xavgs_ofp, " %lld", m.modes[i]);
+				fprintf(xavgs_ofp, "\n");
+		}
+
 		seek_info.nseeks += nseeks;
 		seek_info.mean += (nseeks * mean);
 		seek_info.median += (nseeks * median);
@@ -531,6 +567,13 @@ void __dip_output_plug(struct d_info *dip, void *arg)
 			make_dev_hdr(dev_info, 15, dip),
 			dip->nplugs, dip->n_timer_unplugs, pct);
 
+		if (easy_parse_avgs) {
+			fprintf(xavgs_ofp,
+				"PLG %s %d %d %.9lf\n",
+				make_dev_hdrX(dev_info, 15, dip),
+				dip->nplugs, dip->n_timer_unplugs, pct);
+		}
+
 		n_plugs++;
 		plug_info.n_plugs += dip->nplugs;
 		plug_info.n_timer_unplugs += dip->n_timer_unplugs;
@@ -574,6 +617,13 @@ void __dip_output_plug_nios(struct d_info *dip, void *arg)
 	fprintf(ofp, "%10s | %10.1lf   %10.1lf\n",
 		make_dev_hdr(dev_info, 15, dip),
 		a_nios_uplug, a_nios_uplug_t);
+
+	if (easy_parse_avgs) {
+		fprintf(xavgs_ofp,
+			"UPG %s %.9lf %.9lf\n",
+			make_dev_hdrX(dev_info, 15, dip),
+			a_nios_uplug, a_nios_uplug_t);
+	}
 }
 
 void __dip_output_uplug_all(FILE *ofp, struct nios_plug_info *p)
@@ -625,6 +675,12 @@ void __dip_output_actQ(struct d_info *dip, void *arg)
 
 		fprintf((FILE *)arg, "%10s | %13.1lf\n",
 			make_dev_hdr(dev_info, 15, dip), a_actQs);
+
+		if (easy_parse_avgs) {
+			fprintf(xavgs_ofp,
+				"ARQ %s %.9lf\n",
+				make_dev_hdrX(dev_info, 15, dip), a_actQs);
+		}
 
 		n_actQs++;
 		actQ_info.t_qs += dip->n_qs;

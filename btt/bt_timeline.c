@@ -25,12 +25,13 @@
 #include <time.h>
 #include "globals.h"
 
-char bt_timeline_version[] = "2.02";
+char bt_timeline_version[] = "2.03";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
-FILE *ranges_ofp, *avgs_ofp, *per_io_ofp;
+FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
+int easy_parse_avgs;
 double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;

@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:u:Vv"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:u:VvX"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -158,6 +158,12 @@ static struct option l_opts[] = {
 		.val = 'v'
 	},
 	{
+		.name = "easy-parse-avgs",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'X'
+	},
+	{
 		.name = NULL,
 	}
 };
@@ -181,9 +187,11 @@ static char usage_str[] = \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -t <sec>         | --time-start=<sec> ]\n" \
 	"[ -T <sec>         | --time-end=<sec> ]\n" \
-	"[ -u <output name> | --unplug-hist=<output name> ] \n" \
+	"[ -u <output name> | --unplug-hist=<output name> ]\n" \
 	"[ -V               | --version ]\n" \
-	"[ -v               | --verbose ]\n\n";
+	"[ -v               | --verbose ]\n" \
+	"[ -X               | --easy-parse-avgs ]\n" \
+	"\n";
 
 static struct file_info *arg_files = NULL;
 
@@ -295,6 +303,9 @@ void handle_args(int argc, char *argv[])
 		case 'V':
 			printf("%s version %s\n", argv[0], bt_timeline_version);
 			exit(0);
+		case 'X':
+			easy_parse_avgs++;
+			break;
 		default:
 			usage(argv[0]);
 			exit(1);
@@ -308,8 +319,10 @@ void handle_args(int argc, char *argv[])
 
 	setup_ifile(input_name);
 
-	if (output_name == NULL)
+	if (output_name == NULL) {
 		ranges_ofp = avgs_ofp = stdout;
+		easy_parse_avgs = 0;
+	}
 	else {
 		char *fname = malloc(strlen(output_name) + 32);
 
@@ -320,7 +333,7 @@ void handle_args(int argc, char *argv[])
 			exit(1);
 		}
 		if (verbose)
-			printf("Sending range data to %s.dat\n", output_name);
+			printf("Sending range data to %s\n", fname);
 
 		sprintf(fname, "%s.avg", output_name);
 		avgs_ofp = fopen(fname, "w");
@@ -329,7 +342,18 @@ void handle_args(int argc, char *argv[])
 			exit(1);
 		}
 		if (verbose)
-			printf("Sending stats data to %s.avg\n", output_name);
+			printf("Sending stats data to %s\n", fname);
+
+		if (easy_parse_avgs) {
+			sprintf(fname, "%s.xvg", output_name);
+			xavgs_ofp = fopen(fname, "w");
+			if (avgs_ofp == NULL) {
+				perror(fname);
+				exit(1);
+			}
+			if (verbose)
+				printf("Sending X stats data to %s\n", fname);
+		}
 
 		free(fname);
 	}
