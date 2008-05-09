@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{12 February 2008}
+\date{9 May 2008}
 
 \begin{document}
 \maketitle
@@ -115,7 +115,10 @@ easier.
 
       This is denoted as \emph{Q2I} time.
 
-      This is also broken down into two component times:
+      This is also broken down into two component times\footnote{On
+      occasion there are also some time spent \emph{sleeping} waiting
+      for a request. That occurs between the Q and G operations. You
+      will see these listed as \texttt{S2G} times.}:
 
         \begin{description}
 	  \item[Q2G] Time needed to \emph{get} a request (get request
@@ -760,7 +763,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.03
+Usage: btt 2.04
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -993,19 +996,38 @@ Sending stats data to bttX.avg
   \texttt{UPG}	& Unplug Information:\\
 		& IOsPerUnplug IOsPerUnplugTimeout\\\hline
   \texttt{ARQ}	& Active Requests at Q Information:\\
-  		& AvgReqs@Q\\\hline
+  		& AvgReqs@Q\\\hline\hline
+  \texttt{Q2Q}  & Queue-to-Queue times:\\
+  \texttt{Q2G}  & Queue-to-GetRequest times:\\
+  \texttt{S2G}  & Sleep-to-GetRequest times:\\
+  \texttt{G2I}  & GetRequest-to-Insert times:\\
+  \texttt{Q2M}  & Queue-to-Merge times:\\
+  \texttt{I2D}  & Insert-to-Issue times:\\
+  \texttt{M2D}  & Merge-to-Issue times:\\
+  \texttt{D2C}  & Issue-to-Complete times:\\
+  \texttt{Q2C}  & Queue-to-Complete times:\\
+                & MIN AVG MAX N\\\hline
   \end{tabular}
 
   \bigskip
   A sample output file would look like:
 
   \begin{verbatim}
-DMI 8,16 310407 106729 2.908366049 0 182 1024 19504768
-QSK 8,16 310407 167141.958551192 0 0 235753
+Q2Q 0.000000001 0.003511356 9.700000000 309906
+Q2G 0.000000001 0.774586535 805.300000000 106732
+S2G 0.000000001 0.072525952 0.370000000 578
+G2I 0.000000001 0.000001125 0.010000000 106732
+Q2M 0.000000001 0.730763626 751.820000000 204040
+I2D 0.000000001 1.270720538 612.880000000 106948
+M2D 0.000000001 0.992355230 428.930000000 203114
+D2C 0.000000001 0.008681311 137.020000000 307343
+Q2C 0.000000001 1.304370794 805.660000000 308921
+DMI 8,16 309907 106729 2.903681286 8 182 1024 19504768
+QSK 8,16 309907 167200.935561314 0 0 235708
 DSK 8,16 106729 433247.436563633 0 0 33974
-PLG 8,16 40824 382 0.008882101
+PLG 8,16 40824 382 0.008881420
 UPG 8,16 1.993361748 1.866492147
-ARQ 8,16 22.863331046
+ARQ 8,16 12.938165321
   \end{verbatim}
 
 \newpage\section{\label{sec:bno_plot}bno\_plot.py}

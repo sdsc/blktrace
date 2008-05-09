@@ -30,6 +30,7 @@ ai_dip_t dip_q2q_avg(struct d_info *dip) { return &dip->avgs.q2q; }
 ai_dip_t dip_q2c_avg(struct d_info *dip) { return &dip->avgs.q2c; }
 ai_dip_t dip_q2a_avg(struct d_info *dip) { return &dip->avgs.q2a; }
 ai_dip_t dip_q2g_avg(struct d_info *dip) { return &dip->avgs.q2g; }
+ai_dip_t dip_s2g_avg(struct d_info *dip) { return &dip->avgs.s2g; }
 ai_dip_t dip_g2i_avg(struct d_info *dip) { return &dip->avgs.g2i; }
 ai_dip_t dip_q2m_avg(struct d_info *dip) { return &dip->avgs.q2m; }
 ai_dip_t dip_i2d_avg(struct d_info *dip) { return &dip->avgs.i2d; }
@@ -44,6 +45,7 @@ ai_pip_t pip_q2q_avg(struct p_info *pip) { return &pip->avgs.q2q; }
 ai_pip_t pip_q2c_avg(struct p_info *pip) { return &pip->avgs.q2c; }
 ai_pip_t pip_q2a_avg(struct p_info *pip) { return &pip->avgs.q2a; }
 ai_pip_t pip_q2g_avg(struct p_info *pip) { return &pip->avgs.q2g; }
+ai_pip_t pip_s2g_avg(struct p_info *pip) { return &pip->avgs.s2g; }
 ai_pip_t pip_g2i_avg(struct p_info *pip) { return &pip->avgs.g2i; }
 ai_pip_t pip_q2m_avg(struct p_info *pip) { return &pip->avgs.q2m; }
 ai_pip_t pip_i2d_avg(struct p_info *pip) { return &pip->avgs.i2d; }
@@ -63,12 +65,19 @@ void output_hdr(FILE *ofp, char *hdr)
 	fprintf(ofp, "--------------- ------------- ------------- ------------- -----------\n");
 }
 
-void __output_avg(FILE *ofp, char *hdr, struct avg_info *ap)
+void __output_avg(FILE *ofp, char *hdr, struct avg_info *ap, int do_easy)
 {
 	if (ap->n > 0) {
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
 		fprintf(ofp, "%-15s %13.9f %13.9f %13.9f %11d\n", hdr,
 			BIT_TIME(ap->min), ap->avg, BIT_TIME(ap->max), ap->n);
+
+		if (do_easy && easy_parse_avgs) {
+			fprintf(xavgs_ofp,
+				"%s %.9lf %.9lf %.9lf %d\n",
+				hdr, BIT_TIME(ap->min), ap->avg,
+						BIT_TIME(ap->max), ap->n);
+		}
 	}
 }
 
@@ -114,7 +123,7 @@ void __output_dip_avg(struct d_info *dip, void *arg)
 	if (ap->n > 0) {
 		char dev_info[15];
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
-		__output_avg(odap->ofp, make_dev_hdr(dev_info, 15, dip), ap);
+		__output_avg(odap->ofp, make_dev_hdr(dev_info, 15, dip), ap, 0);
 	}
 }
 
@@ -533,7 +542,7 @@ void __output_pip_avg(struct p_info *pip, void *arg)
 		snprintf(proc_name, 15, pip->name);
 
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
-		__output_avg(opap->ofp, proc_name, ap);
+		__output_avg(opap->ofp, proc_name, ap, 0);
 	}
 }
 
@@ -756,6 +765,7 @@ int output_avgs(FILE *ofp)
 			output_pip_avg(ofp, "Q2Q", pip_q2q_avg);
 			output_pip_avg(ofp, "Q2A", pip_q2a_avg);
 			output_pip_avg(ofp, "Q2G", pip_q2g_avg);
+			output_pip_avg(ofp, "S2G", pip_s2g_avg);
 			output_pip_avg(ofp, "G2I", pip_g2i_avg);
 			output_pip_avg(ofp, "Q2M", pip_q2m_avg);
 			output_pip_avg(ofp, "I2D", pip_i2d_avg);
@@ -772,6 +782,7 @@ int output_avgs(FILE *ofp)
 		output_dip_avg(ofp, "Q2Q", dip_q2q_avg);
 		output_dip_avg(ofp, "Q2A", dip_q2a_avg);
 		output_dip_avg(ofp, "Q2G", dip_q2g_avg);
+		output_dip_avg(ofp, "S2G", dip_s2g_avg);
 		output_dip_avg(ofp, "G2I", dip_g2i_avg);
 		output_dip_avg(ofp, "Q2M", dip_q2m_avg);
 		output_dip_avg(ofp, "I2D", dip_i2d_avg);
@@ -781,20 +792,21 @@ int output_avgs(FILE *ofp)
 
 	output_section_hdr(ofp, "All Devices");
 	output_hdr(ofp, "ALL");
-	__output_avg(ofp, "Q2Qdm", &all_avgs.q2q_dm);
-	__output_avg(ofp, "Q2Adm", &all_avgs.q2a_dm);
-	__output_avg(ofp, "Q2Cdm", &all_avgs.q2c_dm);
+	__output_avg(ofp, "Q2Qdm", &all_avgs.q2q_dm, 0);
+	__output_avg(ofp, "Q2Adm", &all_avgs.q2a_dm, 0);
+	__output_avg(ofp, "Q2Cdm", &all_avgs.q2c_dm, 0);
 	fprintf(ofp, "\n");
 
-	__output_avg(ofp, "Q2Q", &all_avgs.q2q);
-	__output_avg(ofp, "Q2A", &all_avgs.q2a);
-	__output_avg(ofp, "Q2G", &all_avgs.q2g);
-	__output_avg(ofp, "G2I", &all_avgs.g2i);
-	__output_avg(ofp, "Q2M", &all_avgs.q2m);
-	__output_avg(ofp, "I2D", &all_avgs.i2d);
-	__output_avg(ofp, "M2D", &all_avgs.m2d);
-	__output_avg(ofp, "D2C", &all_avgs.d2c);
-	__output_avg(ofp, "Q2C", &all_avgs.q2c);
+	__output_avg(ofp, "Q2Q", &all_avgs.q2q, 1);
+	__output_avg(ofp, "Q2A", &all_avgs.q2a, 1);
+	__output_avg(ofp, "Q2G", &all_avgs.q2g, 1);
+	__output_avg(ofp, "S2G", &all_avgs.s2g, 1);
+	__output_avg(ofp, "G2I", &all_avgs.g2i, 1);
+	__output_avg(ofp, "Q2M", &all_avgs.q2m, 1);
+	__output_avg(ofp, "I2D", &all_avgs.i2d, 1);
+	__output_avg(ofp, "M2D", &all_avgs.m2d, 1);
+	__output_avg(ofp, "D2C", &all_avgs.d2c, 1);
+	__output_avg(ofp, "Q2C", &all_avgs.q2c, 1);
 	fprintf(ofp, "\n");
 
 	output_section_hdr(ofp, "Device Overhead");

@@ -43,6 +43,9 @@ static void handle_queue(struct io *q_iop)
 
 void trace_queue(struct io *q_iop)
 {
+	if (q_iop->t.bytes == 0)
+		return;
+
 	if (io_setup(q_iop, IOP_Q))
 		handle_queue(q_iop);
 	else

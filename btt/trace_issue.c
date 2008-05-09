@@ -59,8 +59,12 @@ static void handle_issue(struct io *d_iop)
 
 void trace_issue(struct io *d_iop)
 {
+	if (d_iop->t.bytes == 0)
+		return;
+
 	if (io_setup(d_iop, IOP_D))
 		handle_issue(d_iop);
+
 	io_release(d_iop);
 
 }

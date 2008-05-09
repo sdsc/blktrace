@@ -219,6 +219,11 @@ static inline void update_q2g(struct io *iop, __u64 g_time)
 	UPDATE_AVGS(q2g, iop, iop->pip, g_time);
 }
 
+static inline void update_s2g(struct io *iop, __u64 g_time)
+{
+	UPDATE_AVGS(s2g, iop, iop->pip, g_time);
+}
+
 static inline void unupdate_q2g(struct io *iop, __u64 g_time)
 {
 	UNUPDATE_AVGS(q2g, iop, iop->pip, g_time);

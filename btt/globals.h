@@ -55,9 +55,10 @@ enum iop_type {
 	IOP_D = 5,
 	IOP_C = 6,
 	IOP_R = 7,
-	IOP_I = 8
+	IOP_I = 8,
+	IOP_S = 9
 };
-#define N_IOP_TYPES	(IOP_I + 1)
+#define N_IOP_TYPES	(IOP_S + 1)
 
 struct file_info {
 	struct file_info *next;
@@ -91,6 +92,7 @@ struct avgs_info {
         struct avg_info q2q;
 	struct avg_info q2a;
 	struct avg_info q2g;
+	struct avg_info s2g;
 	struct avg_info g2i;
 	struct avg_info q2m;
 	struct avg_info i2d;
@@ -165,6 +167,7 @@ struct io {
 	struct p_info *pip;
 	void *pdu;
 	__u64 bytes_left, g_time, i_time, m_time, d_time, c_time, d_sec, c_sec;
+	__u64 s_time;
 	__u32 d_nsec, c_nsec;
 
 	struct blk_io_trace t;
@@ -305,6 +308,7 @@ int ready_im(struct io *im_iop, struct io *c_iop);
 void trace_insert(struct io *i_iop);
 void trace_merge(struct io *m_iop);
 void trace_getrq(struct io *g_iop);
+void trace_sleeprq(struct io *s_iop);
 
 /* trace_issue.c */
 void run_issue(struct io *d_iop, struct io *u_iop, struct io *c_iop);

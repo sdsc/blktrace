@@ -92,6 +92,9 @@ static void handle_complete(struct io *c_iop)
 
 void trace_complete(struct io *c_iop)
 {
+	if (c_iop->t.bytes == 0)
+		return;
+
 	if (io_setup(c_iop, IOP_C))
 		handle_complete(c_iop);
 
