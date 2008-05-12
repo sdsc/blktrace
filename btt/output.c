@@ -266,70 +266,37 @@ struct __ohead_data {
 
 struct ohead_data {
 	FILE *ofp;
-	struct __ohead_data q2g, g2i, q2m, i2d, d2c;
+	struct __ohead_data q2g, g2i, q2m, i2d, d2c, q2c;
 };
 
-#define AVG(a,b) (100.0 * ((double)(a) / (double)(b)))
-#define CALC_AVG(ap) (ap)->avg = ((ap)->n == 0 ? 0.0 :			  \
-                                                 (BIT_TIME((ap)->total) / \
-							(double)(ap)->n))
-
-#define x_v_q2C(fld, dip, s, odp)					\
-	double q2c;							\
-	if (dip->avgs. fld .n == 0) return " ";				\
-	q2c = dip->avgs.g2i.avg + dip->avgs.g2i.avg +			\
-				dip->avgs.i2d.avg + dip->avgs.d2c.avg;	\
-	sprintf(s, "%8.4lf%%", AVG(dip->avgs. fld .avg, q2c));		\
-	odp-> fld .n += dip->avgs. fld .n;				\
-	odp-> fld .total += dip->avgs. fld .total;			\
-	return s;
-
-char *q2g_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
-{
-	x_v_q2C(q2g, dip, s, odp);
-}
-
-char *g2i_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
-{
-	x_v_q2C(g2i, dip, s, odp);
-}
-
-char *q2m_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
-{
-	x_v_q2C(q2m, dip, s, odp);
-}
-
-char *i2d_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
-{
-	x_v_q2C(i2d, dip, s, odp);
-}
-
-char *d2c_v_q2C(struct d_info *dip, char *s, struct ohead_data *odp)
-{
-	x_v_q2C(d2c, dip, s, odp);
-}
+#define __update_odp(odp, dip, fld)					\
+	do {								\
+		(odp)-> fld .total += dip->avgs. fld . total;		\
+		(odp)-> fld .n     += dip->avgs. fld . n;		\
+	} while (0)
 
 void __output_dip_prep_ohead(struct d_info *dip, void *arg)
 {
-	char dev_info[15];
-	char s1[16], s2[16], s3[16], s4[16], s5[16];
-	struct ohead_data *odp = arg;
+	if (dip->avgs.q2c.n > 0 && dip->avgs.q2c.total > 0) {
+		char dev_info[15];
+		struct ohead_data *odp = arg;
+		double q2c_total = (double)(dip->avgs.q2c.total);
 
-	if (dip->avgs.q2g.n > 0 && dip->avgs.g2i.n > 0 &&
-				   dip->avgs.i2d.n > 0 && dip->avgs.d2c.n > 0) {
-		CALC_AVG(&dip->avgs.q2g);
-		CALC_AVG(&dip->avgs.g2i);
-		CALC_AVG(&dip->avgs.q2m);
-		CALC_AVG(&dip->avgs.i2d);
-		CALC_AVG(&dip->avgs.d2c);
-
-		fprintf(odp->ofp, "%10s | %9s %9s %9s %9s %9s\n",
+		fprintf(odp->ofp,
+			"%10s | %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%%\n",
 			make_dev_hdr(dev_info, 15, dip),
-			q2g_v_q2C(dip, s1, odp),
-			g2i_v_q2C(dip, s2, odp),
-			q2m_v_q2C(dip, s3, odp),
-			i2d_v_q2C(dip, s4, odp),
-			d2c_v_q2C(dip, s5, odp));
+			100.0 * (double)(dip->avgs.q2g.total) / q2c_total,
+			100.0 * (double)(dip->avgs.g2i.total) / q2c_total,
+			100.0 * (double)(dip->avgs.q2m.total) / q2c_total,
+			100.0 * (double)(dip->avgs.i2d.total) / q2c_total,
+			100.0 * (double)(dip->avgs.d2c.total) / q2c_total);
+
+		__update_odp(odp, dip, q2g);
+		__update_odp(odp, dip, g2i);
+		__update_odp(odp, dip, q2m);
+		__update_odp(odp, dip, i2d);
+		__update_odp(odp, dip, d2c);
+		__update_odp(odp, dip, q2c);
 	}
 }
 
@@ -354,8 +321,7 @@ void output_dip_prep_ohead(FILE *ofp)
 						od.i2d.n == 0 && od.d2c.n == 0)
 		goto out;
 
-	q2c = od.q2g.total + od.g2i.total + od.q2m.total +
-						od.i2d.total + od.d2c.total;
+	q2c = od.q2c.total;
 	fprintf(ofp, "---------- | --------- --------- --------- --------- ---------\n");
 	fprintf(ofp, "%10s | %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%% %8.4lf%%\n", "Overall",
 			OD_AVG(od, q2g, q2c), OD_AVG(od, g2i, q2c),
