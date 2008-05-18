@@ -544,7 +544,7 @@ static struct process_pid_map *find_ppm(pid_t pid)
 	return NULL;
 }
 
-static void add_ppm_hash(pid_t pid, const char *name)
+static struct process_pid_map *add_ppm_hash(pid_t pid, const char *name)
 {
 	const int hash_idx = ppm_hash_pid(pid);
 	struct process_pid_map *ppm;
@@ -558,6 +558,8 @@ static void add_ppm_hash(pid_t pid, const char *name)
 		ppm->hash_next = ppm_hash_table[hash_idx];
 		ppm_hash_table[hash_idx] = ppm;
 	}
+
+	return ppm;
 }
 
 static void handle_notify(struct blk_io_trace *bit)
@@ -937,6 +939,8 @@ static struct io_track *find_track(struct per_dev_info *pdi, pid_t pid,
 	if (!iot) {
 		iot = malloc(sizeof(*iot));
 		iot->ppm = find_ppm(pid);
+		if (!iot->ppm)
+			iot->ppm = add_ppm_hash(pid, "unknown");
 		iot->sector = sector;
 		track_rb_insert(pdi, iot);
 	}
@@ -1119,6 +1123,8 @@ static struct io_stats *find_process_io_stats(pid_t pid)
 		ppi = malloc(sizeof(*ppi));
 		memset(ppi, 0, sizeof(*ppi));
 		ppi->ppm = find_ppm(pid);
+		if (!ppi->ppm)
+			ppi->ppm = add_ppm_hash(pid, "unknown");
 		add_ppi_to_hash(ppi);
 		add_ppi_to_list(ppi);
 	}
