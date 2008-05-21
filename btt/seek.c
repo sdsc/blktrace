@@ -18,6 +18,7 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
+#include <float.h>
 #include "globals.h"
 
 static struct file_info *seek_files = NULL;
@@ -102,13 +103,13 @@ static void sps_emit(struct seeki *sip)
 {
 	double tstamp, s_p_s;
 	struct sps_bkt *sps = &sip->sps;
+	double delta = sps->t_last - sps->t_start;
 
-	if (sps->nseeks == 1) {
-		s_p_s = 1.0;
+	if ((sps->nseeks == 1) || (delta < DBL_EPSILON)) {
+		s_p_s = (double)(sps->nseeks);
 		tstamp = sps->t_start;
 	}
 	else {
-		double delta = sps->t_last - sps->t_start;
 
 		s_p_s = (double)(sps->nseeks) / delta;
 		tstamp = sps->t_start + (delta / 2);

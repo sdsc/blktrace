@@ -769,7 +769,9 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 
   When there is only a single data point within a 1-second window,
   \texttt{btt} will just output the time value for the point, and the
-  value 1.0 in the second column.
+  value 1.0 in the second column. If there is no perceived difference
+  in the times present for the current sample, then the second columns
+  value is the number of seeks present at that time.
 
   Otherwise, if $\alpha$ and $\Omega$ are the first and last times
   seen within a 1-second window, and $\nu$ are the number of seeks seen
