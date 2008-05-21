@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{9 May 2008}
+\date{21 May 2008}
 
 \begin{document}
 \maketitle
@@ -683,7 +683,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
   while the second column (Y values) shows the actual latency for a
   command at that time (either Q2C or D2C).
 
-\newpage\section{\label{sec:seek}Seek Data File}
+\newpage\section{\label{sec:seek}Seek Data Files}
 
   \texttt{btt} can also produce two data files containing all IO-to-IO sector
   deltas, providing seek information which can then be plotted. The
@@ -760,10 +760,43 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
     between the end of the previous IO and the start of this IO.
   \end{description}
 
+\newpage\subsection{\label{sec:sps-spec}Seeks Per Second}
+
+  When the \texttt{-m} option provides a name, Q2Q and/or D2D seeks
+  will trigger \texttt{btt} to output seeks-per-second information. The
+  first column will contain a time value (seconds), and the second column
+  will indicate the number of seeks per second at that point.
+
+  When there is only a single data point within a 1-second window,
+  \texttt{btt} will just output the time value for the point, and the
+  value 1.0 in the second column.
+
+  Otherwise, if $\alpha$ and $\Omega$ are the first and last times
+  seen within a 1-second window, and $\nu$ are the number of seeks seen
+  in that time frame, then:
+
+  \begin{description}
+    \item[column 1] Midway point in time for this span, or: \hfill$\alpha +
+    {{(\Omega - \alpha)} / 2}$
+
+    \item[column 2] Average seeks per second over this span, or: \hfill$\nu  /
+    {(\Omega - \alpha)}$
+  \end{description}
+
+  Figure~\ref{fig:sps} shows a simple pair of graphs generated from
+  \texttt{-m} output:
+
+  \begin{figure}[h!]
+  \leavevmode\centering
+  \epsfig{file=sps.eps,width=4.5in}
+  \caption{\label{fig:sps}Seeks-per-second Chart}
+  \end{figure}
+  \FloatBarrier
+
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.04
+Usage: btt 2.05
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -774,6 +807,7 @@ Usage: btt 2.04
 [ -i <input name>  | --input-file=<input name> ]
 [ -I <output name> | --iostat=<output name> ]
 [ -l <output name> | --d2c-latencies=<output name> ]
+[ -m <output name> | --seeks-per-second=<output name> ]
 [ -M <dev map>     | --dev-maps=<dev map>
 [ -o <output name> | --output-file=<output name> ]
 [ -p <output name> | --per-io-dump=<output name> ]
@@ -869,6 +903,18 @@ Usage: btt 2.04
 
   This option instructs \texttt{btt} to generate the D2C latency file
   discussed in section~\ref{sec:lat-d2c}.
+
+\subsection{\label{sec:o-m}\texttt{--seeks-per-second}\texttt{-m}}
+
+  Tells \texttt{btt} to output seeks per second information.  Each device
+  being measured can have up to 2 files output: One with Q2Q information
+  and one with D2D seek information. Information on the output produced
+  can be found in section~\ref{sec:sps-spec}.
+
+  \begin{quote}
+    \textbf{Note: This requires seek output to be selected -- see
+    section~\ref{sec:seek}.}
+  \end{quote}
 
 \subsection{\label{sec:o-M}\texttt{--dev-maps}/\texttt{-M}}
 

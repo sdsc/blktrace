@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:M:o:p:q:s:S:t:T:u:VvX"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:m:M:o:p:q:s:S:t:T:u:VvX"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -90,6 +90,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'l'
+	},
+	{
+		.name = "seeks-per-second",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'm'
 	},
 	{
 		.name = "dev-maps",
@@ -179,6 +185,7 @@ static char usage_str[] = \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
 	"[ -I <output name> | --iostat=<output name> ]\n" \
 	"[ -l <output name> | --d2c-latencies=<output name> ]\n" \
+	"[ -m <output name> | --seeks-per-second=<output name> ]\n" \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
 	"[ -p <output name> | --per-io-dump=<output name> ]\n" \
@@ -264,6 +271,9 @@ void handle_args(int argc, char *argv[])
 		case 'I':
 			iostat_name = strdup(optarg);
 			break;
+		case 'm':
+			sps_name = strdup(optarg);
+			break;
 		case 'M':
 			if (dev_map_read(optarg))
 				exit(1);
@@ -314,6 +324,11 @@ void handle_args(int argc, char *argv[])
 
 	if (input_name == NULL) {
 		usage(argv[0]);
+		exit(1);
+	}
+
+	if (sps_name && !seek_name) {
+		fprintf(stderr, "FATAL: -m option requires -s options\n");
 		exit(1);
 	}
 

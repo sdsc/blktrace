@@ -180,7 +180,7 @@ struct io {
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
-extern char *bno_dump_name, *unplug_hist_name;
+extern char *bno_dump_name, *unplug_hist_name, *sps_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;

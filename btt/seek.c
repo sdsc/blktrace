@@ -28,9 +28,16 @@ struct seek_bkt {
 	int nseeks;
 };
 
+/* Seeks per second */
+struct sps_bkt {
+	double t_start, t_last;
+	unsigned long nseeks;
+};
+
 struct seeki {
-	FILE *rfp, *wfp, *cfp;
+	FILE *rfp, *wfp, *cfp, *sps_fp;
 	struct rb_root root;
+	struct sps_bkt sps;
 	long long tot_seeks;
 	double total_sectors;
 	long long last_start, last_end;
@@ -91,6 +98,46 @@ static void __destroy(struct rb_node *n)
 	}
 }
 
+static void sps_emit(struct seeki *sip)
+{
+	double tstamp, s_p_s;
+	struct sps_bkt *sps = &sip->sps;
+
+	if (sps->nseeks == 1) {
+		s_p_s = 1.0;
+		tstamp = sps->t_start;
+	}
+	else {
+		double delta = sps->t_last - sps->t_start;
+
+		s_p_s = (double)(sps->nseeks) / delta;
+		tstamp = sps->t_start + (delta / 2);
+	}
+
+	fprintf(sip->sps_fp, "%15.9lf %.2lf\n", sps->t_start, s_p_s);
+
+	sps->t_start = 0;
+	sps->nseeks = 0;
+}
+
+static void sps_add(struct seeki *sip, double t)
+{
+	if (sip->sps_fp) {
+		struct sps_bkt *sps = &sip->sps;
+
+		if (sps->nseeks != 0 && ((t - sps->t_start) >= 1.0))
+			sps_emit(sip);
+
+		sps->t_last = t;
+		if (sps->nseeks == 0) {
+			sps->t_start = t;
+			sps->nseeks = 1;
+		}
+		else
+			sps->nseeks++;
+	}
+}
+
 void seek_clean(void)
 {
 	clean_files(&seek_files);
@@ -132,12 +179,30 @@ void *seeki_init(char *str)
 	sip->last_start = sip->last_end = 0;
 	memset(&sip->root, 0, sizeof(sip->root));
 
+	if (sps_name) {
+		char *oname;
+
+		memset(&sip->sps, 0, sizeof(sip->sps));
+
+		oname = malloc(strlen(sps_name) + strlen(str) + 32);
+		sprintf(oname, "%s_%s.dat", sps_name, str);
+		if ((sip->sps_fp = fopen(oname, "w")) == NULL)
+			perror(oname);
+		else
+			add_file(&seek_files, sip->sps_fp, oname);
+	}
+	else
+		sip->sps_fp = NULL;
+
 	return sip;
 }
 
 void seeki_exit(void *param)
 {
 	struct seeki *sip = param;
+
+	if (sip->sps_fp && sip->sps.nseeks != 0)
+		sps_emit(sip);
 
 	/*
 	 * Associated files are cleaned up by seek_clean
@@ -163,6 +228,8 @@ void seeki_add(void *handle, struct io *iop)
 	sip->tot_seeks++;
 	sip->total_sectors += dist;
 	__insert(&sip->root, dist);
+
+	sps_add(sip, tstamp);
 }
 
 long long seeki_nseeks(void *handle)
