@@ -390,10 +390,14 @@ static void process_default(char *act, struct per_cpu_info *pci,
 			MAJOR(r.device), MINOR(r.device),
 			(unsigned long long) r.sector);
 		break;
-		
+
 	case 'X': 	/* Split */
 		fprintf(ofp, "%llu / %u [%s]\n", (unsigned long long) t->sector,
 			get_pdu_int(t), name);
+		break;
+
+	case 'm':	/* Message */
+		fprintf(ofp, "%*s\n", pdu_len, pdu_buf);
 		break;
 
 	default:

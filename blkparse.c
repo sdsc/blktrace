@@ -590,6 +590,22 @@ static void handle_notify(struct blk_io_trace *bit)
 
 		break;
 
+	case BLK_TN_MESSAGE:
+		if (bit->pdu_len > 0) {
+			char msg[bit->pdu_len+1];
+
+			memcpy(msg, (char *)payload, bit->pdu_len);
+			msg[bit->pdu_len] = '\0';
+
+			fprintf(ofp,
+				"%3d,%-3d %2d %8s %5d.%09lu %5u %2s %3s %s\n",
+				MAJOR(bit->device), MINOR(bit->device),
+				bit->cpu, "0", (int) SECONDS(bit->time),
+				(unsigned long) NANO_SECONDS(bit->time),
+				0, "m", "N", msg);
+		}
+		break;
+
 	default:
 		/* Ignore unknown notify events */
 		;
@@ -1577,7 +1593,9 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 		       struct per_dev_info *pdi)
 {
 	if (text_output) {
-		if (t->action & BLK_TC_ACT(BLK_TC_PC))
+		if (t->action == BLK_TN_MESSAGE)
+			handle_notify(t);
+		else if (t->action & BLK_TC_ACT(BLK_TC_PC))
 			dump_trace_pc(t, pdi, pci);
 		else
 			dump_trace_fs(t, pdi, pci);
@@ -2176,7 +2194,7 @@ static int read_events(int fd, int always_block, int *fdblock)
 		/*
 		 * not a real trace, so grab and handle it here
 		 */
-		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
+		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY) && bit->action != BLK_TN_MESSAGE) {
 			handle_notify(bit);
 			output_binary(bit, sizeof(*bit) + bit->pdu_len);
 			continue;
@@ -2319,7 +2337,7 @@ static int ms_prime(struct ms_stream *msp)
 		if (verify_trace(bit))
 			goto err;
 
-		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
+		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY) && bit->action != BLK_TN_MESSAGE) {
 			handle_notify(bit);
 			output_binary(bit, sizeof(*bit) + bit->pdu_len);
 			bit_free(bit);
