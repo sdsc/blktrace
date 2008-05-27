@@ -183,6 +183,7 @@ extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern char *bno_dump_name, *unplug_hist_name, *sps_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
+extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
 extern int easy_parse_avgs;
 extern unsigned int n_devs;
@@ -250,6 +251,7 @@ void add_file(struct file_info **fipp, FILE *fp, char *oname);
 void clean_files(struct file_info **fipp);
 void add_buf(void *buf);
 void clean_bufs(void);
+char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens);
 void dbg_ping(void);
 
 /* mmap.c */
@@ -260,7 +262,6 @@ int next_trace(struct blk_io_trace *t, void **pdu);
 /* output.c */
 int output_avgs(FILE *ofp);
 int output_ranges(FILE *ofp);
-char *make_dev_hdr(char *pad, size_t len, struct d_info *dip);
 
 /* proc.c */
 void add_process(__u32 pid, char *name);

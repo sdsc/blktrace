@@ -100,4 +100,20 @@ void clean_bufs(void)
 	}
 }
 
+char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
+{
+	if (dip->map == NULL) {
+		if (add_parens)
+			snprintf(pad, len, "(%3d,%3d)",
+				 MAJOR(dip->device), MINOR(dip->device));
+		else
+			snprintf(pad, len, "%d,%d",
+				 MAJOR(dip->device), MINOR(dip->device));
+	}
+	else
+		snprintf(pad, len, "%s", dip->map->device);
+
+	return pad;
+}
+
 void dbg_ping(void) {}

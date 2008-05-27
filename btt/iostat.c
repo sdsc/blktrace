@@ -124,7 +124,7 @@ void __dump_stats(__u64 stamp, int all, struct d_info *dip, struct stats_t *asp)
 	 * and we add in nrqm (number of merges), which should give
 	 * us the total number of IOs sent to the block IO layer.
 	 */
-	fprintf(iostat_ofp, "%-11s ", make_dev_hdr(hdr, 11, dip));
+	fprintf(iostat_ofp, "%-11s ", make_dev_hdr(hdr, 11, dip, 1));
 	fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[1] / dt);
 	fprintf(iostat_ofp, "%8.2lf ", (double)sp->rqm[0] / dt);
 	fprintf(iostat_ofp, "%7.2lf ", (double)sp->ios[1] / dt);

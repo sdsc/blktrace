@@ -30,7 +30,7 @@ char bt_timeline_version[] = "2.05";
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
 char *sps_name;
-FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp;
+FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
 int easy_parse_avgs;
 double t_astart, t_aend;
@@ -69,6 +69,8 @@ int main(int argc, char *argv[])
 		iostat_dump_stats(iostat_last_stamp, 1);
 	}
 
+	if (msgs_ofp != stdout)
+		fclose(msgs_ofp);
 	if (ranges_ofp != stdout)
 		fclose(ranges_ofp);
 	if (avgs_ofp != stdout)

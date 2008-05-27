@@ -335,7 +335,7 @@ void handle_args(int argc, char *argv[])
 	setup_ifile(input_name);
 
 	if (output_name == NULL) {
-		ranges_ofp = avgs_ofp = stdout;
+		ranges_ofp = avgs_ofp = msgs_ofp = stdout;
 		easy_parse_avgs = 0;
 	}
 	else {
@@ -358,6 +358,15 @@ void handle_args(int argc, char *argv[])
 		}
 		if (verbose)
 			printf("Sending stats data to %s\n", fname);
+
+		sprintf(fname, "%s.msg", output_name);
+		msgs_ofp = fopen(fname, "w");
+		if (msgs_ofp == NULL) {
+			perror(fname);
+			exit(1);
+		}
+		if (verbose)
+			printf("Sending K messages to %s\n", fname);
 
 		if (easy_parse_avgs) {
 			sprintf(fname, "%s.xvg", output_name);

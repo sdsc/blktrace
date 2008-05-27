@@ -54,6 +54,23 @@ static void __add_trace(struct io *iop)
 	}
 }
 
+static void trace_message(struct io *iop)
+{
+	char scratch[15];
+	char msg[iop->t.pdu_len + 1];
+
+	if (!io_setup(iop, IOP_M))
+		return;
+
+	memcpy(msg, iop->pdu, iop->t.pdu_len);
+	msg[iop->t.pdu_len] = '\0';
+
+	fprintf(msgs_ofp, "%s %5d.%09lu %s\n",
+		make_dev_hdr(scratch, 15, iop->dip, 1),
+		(int)SECONDS(iop->t.time),
+		(unsigned long)NANO_SECONDS(iop->t.time), msg);
+}
+
 void add_trace(struct io *iop)
 {
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
@@ -68,6 +85,8 @@ void add_trace(struct io *iop)
 				add_process(iop->t.pid, iop->pdu);
 			}
 		}
+		else if (iop->t.action == BLK_TN_MESSAGE)
+			trace_message(iop);
 		io_release(iop);
 	}
 	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))
