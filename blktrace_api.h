@@ -20,6 +20,7 @@ enum {
 	BLK_TC_NOTIFY	= 1 << 10,	/* special message */
 	BLK_TC_AHEAD	= 1 << 11,	/* readahead */
 	BLK_TC_META	= 1 << 12,	/* metadata */
+	BLK_TC_DISCARD	= 1 << 13,	/* discard requests */
 
 	BLK_TC_END	= 1 << 15,	/* only 16-bits, reminder */
 };

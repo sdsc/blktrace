@@ -57,9 +57,12 @@ static inline void fill_rwbs(char *rwbs, struct blk_io_trace *t)
 	int b = t->action & BLK_TC_ACT(BLK_TC_BARRIER);
 	int s = t->action & BLK_TC_ACT(BLK_TC_SYNC);
 	int m = t->action & BLK_TC_ACT(BLK_TC_META);
+	int d = t->action & BLK_TC_ACT(BLK_TC_DISCARD);
 	int i = 0;
 
-	if (w)
+	if (d)
+		rwbs[i++] = 'D';
+	else if (w)
 		rwbs[i++] = 'W';
 	else if (t->bytes)
 		rwbs[i++] = 'R';
