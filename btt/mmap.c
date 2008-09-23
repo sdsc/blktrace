@@ -138,3 +138,8 @@ int next_trace(struct blk_io_trace *t, void **pdu)
 
 	return 1;
 }
+
+double pct_done(void)
+{
+	return 100.0 * ((double)cur / (double)total_size);
+}

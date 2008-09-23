@@ -258,6 +258,7 @@ void dbg_ping(void);
 void setup_ifile(char *fname);
 void cleanup_ifile(void);
 int next_trace(struct blk_io_trace *t, void **pdu);
+double pct_done(void);
 
 /* output.c */
 int output_avgs(FILE *ofp);

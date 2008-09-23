@@ -28,7 +28,7 @@ static void __add_trace(struct io *iop)
 	iostat_check_time(iop->t.time);
 
 	if (verbose && ((now - last_vtrace) > 0)) {
-		printf("%10lu t\r", n_traces);
+		printf("%10lu t (%6.2lf%%)\r", n_traces, pct_done());
 		if ((n_traces % 1000000) == 0) printf("\n");
 		fflush(stdout);
 		last_vtrace = now;
