@@ -48,6 +48,7 @@ rm -rf $RPM_BUILD_ROOT
 %defattr(-,root,root)
 %doc README doc/blktrace.pdf
 /usr/bin/*
+/usr/man/*
 
 %changelog -n btrace
 * Mon Oct 10 2005 - axboe@suse.de
