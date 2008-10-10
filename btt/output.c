@@ -351,8 +351,12 @@ void output_seek_mode_info(FILE *ofp, struct o_seek_info *sip)
 	        "Average", sip->nseeks, sip->mean / sip->nseeks,
 		sip->median / sip->nseeks, new_list->mode, new_list->nseeks);
 
-	for (p = new_list->next; p != NULL; p = p->next)
-		fprintf(ofp, " %lld(%d)", p->mode, p->nseeks);
+	if (new_list->next) {
+		int i = 0;
+		for (p = new_list->next; p != NULL; p = p->next)
+			i++;
+		fprintf(ofp, "\n%10s   %15s %15s %15s   ...(%d more)\n", "", "", "", "", i);
+	}
 }
 
 void add_seek_mode_info(struct o_seek_info *sip, struct mode *mp)
@@ -401,9 +405,13 @@ static void do_output_dip_seek_info(struct d_info *dip, FILE *ofp, int is_q2q)
 		fprintf(ofp, "%10s | %15lld %15.1lf %15lld | %lld(%d)",
 			make_dev_hdr(dev_info, 15, dip, 1), nseeks, mean,
 			median, nmodes > 0 ? m.modes[0] : 0, m.most_seeks);
-		for (i = 1; i < nmodes; i++)
-			fprintf(ofp, " %lld", m.modes[i]);
-		fprintf(ofp, "\n");
+		if (nmodes > 2)
+			fprintf(ofp, "\n%10s   %15s %15s %15s   ...(%d more)\n", "", "", "", "", nmodes-1);
+		else  {
+			for (i = 1; i < nmodes; i++)
+				fprintf(ofp, " %lld", m.modes[i]);
+			fprintf(ofp, "\n");
+		}
 
 		if (easy_parse_avgs) {
 			char *rec = is_q2q ? "QSK" : "DSK";
