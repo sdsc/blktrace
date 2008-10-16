@@ -1583,6 +1583,9 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 		case __BLK_TA_REMAP:
 			log_generic(pci, t, "A");
 			break;
+		case __BLK_TA_DRV_DATA:
+			/* dump to binary file only */
+			break;
 		default:
 			fprintf(stderr, "Bad fs action %x\n", t->action);
 			break;

@@ -21,6 +21,7 @@ enum {
 	BLK_TC_AHEAD	= 1 << 11,	/* readahead */
 	BLK_TC_META	= 1 << 12,	/* metadata */
 	BLK_TC_DISCARD	= 1 << 13,	/* discard requests */
+	BLK_TC_DRV_DATA	= 1 << 14,	/* binary driver data */
 
 	BLK_TC_END	= 1 << 15,	/* only 16-bits, reminder */
 };
@@ -47,6 +48,7 @@ enum {
 	__BLK_TA_SPLIT,			/* bio was split */
 	__BLK_TA_BOUNCE,		/* bio was bounced */
 	__BLK_TA_REMAP,			/* bio was remapped */
+	__BLK_TA_DRV_DATA,		/* binary driver data */
 };
 
 /*
@@ -76,6 +78,7 @@ enum blktrace_notify {
 #define BLK_TA_SPLIT		(__BLK_TA_SPLIT)
 #define BLK_TA_BOUNCE		(__BLK_TA_BOUNCE)
 #define BLK_TA_REMAP		(__BLK_TA_REMAP | BLK_TC_ACT(BLK_TC_QUEUE))
+#define BLK_TA_DRV_DATA		(__BLK_TA_DRV_DATA | BLK_TC_ACT(BLK_TC_DRV_DATA))
 
 #define BLK_TN_PROCESS		(__BLK_TN_PROCESS | BLK_TC_ACT(BLK_TC_NOTIFY))
 #define BLK_TN_TIMESTAMP	(__BLK_TN_TIMESTAMP | BLK_TC_ACT(BLK_TC_NOTIFY))
