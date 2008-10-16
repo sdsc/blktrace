@@ -120,6 +120,7 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip->unplug_hist_handle = unplug_hist_init(device);
 		dip->seek_handle = seeki_init(mkhandle(str, device, "_d2d"));
 		dip->q2q_handle = seeki_init(mkhandle(str, device, "_q2q"));
+		dip->aqd_handle = aqd_init(mkhandle(str, device, "_aqd"));
 		latency_init(dip);
 		list_add_tail(&dip->hash_head, &dev_heads[DEV_HASH(device)]);
 		list_add_tail(&dip->all_head, &all_devs);

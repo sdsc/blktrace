@@ -798,7 +798,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.05
+Usage: btt 2.05 
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -814,6 +814,7 @@ Usage: btt 2.05
 [ -o <output name> | --output-file=<output name> ]
 [ -p <output name> | --per-io-dump=<output name> ]
 [ -q <output name> | --q2c-latencies=<output name> ]
+[ -Q <output name> | --active-queue-depth=<output name> ]
 [ -s <output name> | --seeks=<output name> ]
 [ -S <interval>    | --iostat-interval=<interval> ]
 [ -t <sec>         | --time-start=<sec> ]
@@ -937,6 +938,14 @@ Usage: btt 2.05
 
   This option instructs \texttt{btt} to generate the Q2C latency file
   discussed in section~\ref{sec:lat-q2c}.
+
+\subsection{\label{sec:o-Q}\texttt{--active-queue-depth}/\texttt{-Q}}
+
+  This option tells \texttt{btt} to generate a data file (using the given
+  name as a base) which contains: A time stamp in the first column,
+  and then the number of \emph{active} requests issued to the device
+  driver. (The value is incremented when an \emph{issue} is performend,
+  and decremented when a \emph{complete} is performed.
 
 \subsection{\label{sec:o-s}\texttt{--seeks}/\texttt{-s}}
 

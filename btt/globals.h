@@ -146,7 +146,7 @@ struct d_info {
 	struct region_info regions;
 	struct devmap *map;
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *unplug_hist_handle;
-	void *q2d_priv;
+	void *q2d_priv, *aqd_handle;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -180,7 +180,7 @@ struct io {
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
-extern char *bno_dump_name, *unplug_hist_name, *sps_name;
+extern char *bno_dump_name, *unplug_hist_name, *sps_name, *aqd_name;
 extern double range_delta;
 extern FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
@@ -201,6 +201,11 @@ extern __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 /* args.c */
 void handle_args(int argc, char *argv[]);
 void clean_args();
+
+/* aqd.c */
+void *aqd_init(char *str);
+void aqd_issue(void *info, double ts);
+void aqd_complete(void *info, double ts);
 
 /* devmap.c */
 int dev_map_read(char *fname);

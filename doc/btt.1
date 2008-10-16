@@ -8,7 +8,7 @@ btt \- analyse block i/o traces produces by blktrace
 .SH SYNOPSIS
 .B btt 
 [ \-a               | \-\-seek\-absolute ]
-.RS 4
+.br
 [ \-A               | \-\-all\-data ]
 .br
 [ \-B <\fIoutput name\fR> | \-\-dump\-blocknos=<\fIoutput name\fR> ]
@@ -34,6 +34,8 @@ btt \- analyse block i/o traces produces by blktrace
 [ \-p <\fIoutput name\fR> | \-\-per\-io\-dump=<\fIoutput name\fR> ]
 .br
 [ \-q <\fIoutput name\fR> | \-\-q2c\-latencies=<\fIoutput name\fR> ]
+.br
+[ \-Q <\fIoutput name\fR> | \-\-active\-queue\-depth=<\fIoutput name\fR> ]
 .br
 [ \-s <\fIoutput name\fR> | \-\-seeks=<\fIoutput name\fR> ]
 .br
@@ -209,6 +211,14 @@ The \-p option will generate a file that contains a list of all IO
 The \-q option allows one to output per\-IO Q2C latencies
 respectively. The supplied argument provides the basis for the output
 name for each device.
+.RE
+
+.B \-Q <\fIoutput name\fR>
+.br
+.B \-\-active\-queue\-depth=<\fIoutput name\fR>
+.RS 4
+The \-Q option allows one to output data files showing the time stamp
+and the depth of active commands (those issued but not completed).
 .RE
 
 .B \-s <\fIoutput name\fR>

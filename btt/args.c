@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:m:M:o:p:q:s:S:t:T:u:VvX"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:m:M:o:p:q:Q:s:S:t:T:u:VvX"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -122,6 +122,12 @@ static struct option l_opts[] = {
 		.val = 'q'
 	},
 	{
+		.name = "active-queue-depth",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'Q'
+	},
+	{
 		.name = "seeks",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -190,6 +196,7 @@ static char usage_str[] = \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
 	"[ -p <output name> | --per-io-dump=<output name> ]\n" \
 	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
+	"[ -Q <output name> | --active-queue-depth=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -t <sec>         | --time-start=<sec> ]\n" \
@@ -286,6 +293,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'q':
 			q2c_name = strdup(optarg);
+			break;
+		case 'Q':
+			aqd_name = strdup(optarg);
 			break;
 		case 's':
 			seek_name = strdup(optarg);

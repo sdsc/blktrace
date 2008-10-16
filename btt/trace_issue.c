@@ -34,6 +34,7 @@ static void handle_issue(struct io *d_iop)
 	d_iop->dip->n_ds++;
 	if (!remapper_dev(d_iop->t.device))
 		update_d_histo(d_iop->t.bytes);
+	aqd_issue(d_iop->dip->aqd_handle, BIT_TIME(d_iop->t.time));
 
 	dip_foreach_list(d_iop, IOP_Q, &head);
 	list_for_each_safe(p, q, &head) {
