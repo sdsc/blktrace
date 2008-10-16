@@ -60,7 +60,7 @@ static char blktrace_version[] = "0.99.3";
 
 #define DEBUGFS_TYPE	0x64626720
 
-#define S_OPTS	"d:a:A:r:o:kw:Vb:n:D:lh:p:sI:"
+#define S_OPTS	"d:a:A:r:o:kw:vVb:n:D:lh:p:sI:"
 static struct option l_opts[] = {
 	{
 		.name = "dev",
@@ -109,6 +109,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'w'
+	},
+	{
+		.name = "version",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'v'
 	},
 	{
 		.name = "version",
@@ -1853,6 +1859,7 @@ int main(int argc, char *argv[])
 			}
 			break;
 		case 'V':
+		case 'v':
 			printf("%s version %s\n", argv[0], blktrace_version);
 			return 0;
 		case 'b':
