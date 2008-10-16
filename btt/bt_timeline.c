@@ -45,6 +45,7 @@ LIST_HEAD(free_ios);
 LIST_HEAD(free_bilinks);
 __u64 q_histo[N_HIST_BKTS], d_histo[N_HIST_BKTS];
 
+double plat_freq = 0.0;
 double range_delta = 0.1;
 __u64 last_q = (__u64)-1;
 
@@ -82,6 +83,7 @@ int main(int argc, char *argv[])
 	dip_exit();
 	seek_clean();
 	pip_exit();
+	aqd_clean();
 	io_free_all();
 	region_exit(&all_regions);
 

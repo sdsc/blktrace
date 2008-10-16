@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:m:M:o:p:q:Q:s:S:t:T:u:VvX"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:q:Q:s:S:t:T:u:VvX"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -90,6 +90,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'l'
+	},
+	{
+		.name = "periodic-latencies",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'L'
 	},
 	{
 		.name = "seeks-per-second",
@@ -191,6 +197,7 @@ static char usage_str[] = \
 	"[ -i <input name>  | --input-file=<input name> ]\n" \
 	"[ -I <output name> | --iostat=<output name> ]\n" \
 	"[ -l <output name> | --d2c-latencies=<output name> ]\n" \
+	"[ -L <freq>        | --periodic-latencies=<freq> ]\n" \
 	"[ -m <output name> | --seeks-per-second=<output name> ]\n" \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
@@ -274,6 +281,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'l':
 			d2c_name = strdup(optarg);
+			break;
+		case 'L':
+			plat_freq = atof(optarg);
 			break;
 		case 'I':
 			iostat_name = strdup(optarg);

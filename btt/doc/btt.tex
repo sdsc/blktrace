@@ -809,6 +809,7 @@ Usage: btt 2.05
 [ -i <input name>  | --input-file=<input name> ]
 [ -I <output name> | --iostat=<output name> ]
 [ -l <output name> | --d2c-latencies=<output name> ]
+[ -L <freq>        | --periodic-latencies=<freq> ]
 [ -m <output name> | --seeks-per-second=<output name> ]
 [ -M <dev map>     | --dev-maps=<dev map>
 [ -o <output name> | --output-file=<output name> ]
@@ -906,6 +907,12 @@ Usage: btt 2.05
 
   This option instructs \texttt{btt} to generate the D2C latency file
   discussed in section~\ref{sec:lat-d2c}.
+
+\subsection{\label{sec:o-L}\texttt{--periodic-latencies}/\texttt{-L}}
+
+  When given a value greater than 0, this option will create two data
+  files (q2c \& d2c) per device containing a periodic timestamp \&
+  average latency over that period.
 
 \subsection{\label{sec:o-m}\texttt{--seeks-per-second}\texttt{-m}}
 

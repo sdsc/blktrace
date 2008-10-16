@@ -62,10 +62,12 @@ void latency_clean(void)
 
 void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency)
 {
+	plat_x2c(dip->d2c_plat_handle, tstamp, latency);
 	latency_out(dip->d2c_ofp, tstamp, latency);
 }
 
 void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency)
 {
+	plat_x2c(dip->q2c_plat_handle, tstamp, latency);
 	latency_out(dip->q2c_ofp, tstamp, latency);
 }

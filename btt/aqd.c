@@ -53,6 +53,16 @@ void *aqd_init(char *str)
 
 }
 
+void aqd_exit(void *info)
+{
+	free(info);
+}
+
+void aqd_clean(void)
+{
+	clean_files(&aqd_files);
+}
+
 void aqd_issue(void *info, double ts)
 {
 	struct aqd_info *ap = info;

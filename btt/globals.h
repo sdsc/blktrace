@@ -146,7 +146,7 @@ struct d_info {
 	struct region_info regions;
 	struct devmap *map;
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *unplug_hist_handle;
-	void *q2d_priv, *aqd_handle;
+	void *q2d_priv, *aqd_handle, *q2c_plat_handle, *d2c_plat_handle;
 	FILE *d2c_ofp, *q2c_ofp;
 	struct avgs_info avgs;
 	struct stats stats, all_stats;
@@ -181,7 +181,7 @@ struct io {
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern char *bno_dump_name, *unplug_hist_name, *sps_name, *aqd_name;
-extern double range_delta;
+extern double range_delta, plat_freq;
 extern FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
@@ -204,6 +204,8 @@ void clean_args();
 
 /* aqd.c */
 void *aqd_init(char *str);
+void aqd_exit(void *info);
+void aqd_clean(void);
 void aqd_issue(void *info, double ts);
 void aqd_complete(void *info, double ts);
 
@@ -281,6 +283,12 @@ void *bno_dump_init(__u32 device);
 void bno_dump_exit(void *param);
 void bno_dump_add(void *handle, struct io *iop);
 void bno_dump_clean(void);
+
+/* plat.c */
+void *plat_init(char *str);
+void plat_exit(void *info);
+void plat_clean(void);
+void plat_x2c(void *info, __u64 ts, __u64 latency);
 
 /* q2d.c */
 void q2d_histo_add(void *priv, __u64 q2d);

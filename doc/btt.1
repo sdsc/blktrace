@@ -27,6 +27,8 @@ btt \- analyse block i/o traces produces by blktrace
 .br
 [ \-l <\fIoutput name\fR> | \-\-d2c\-latencies=<\fIoutput name\fR> ]
 .br
+[ \-L <\fIfreq\fR>        | \-\-periodic\-latencies=<\fIfreq\fR> ]
+.br
 [ \-M <\fIdev map\fR>     | \-\-dev\-maps=<\fIdev map\fR>
 .br
 [ \-o <\fIoutput name\fR> | \-\-output\-file=<\fIoutput name\fR> ]
@@ -179,6 +181,15 @@ data columns.
 The \-l option allows one to output per\-IO D2C latencies
 respectively. The supplied argument provides the basis for the output
 name for each device.
+.RE
+
+.B \-L <\fIfreq\fR>
+.br
+.B \-\-periodic\-latencies=<\fIfreq\fR>
+.RS 4
+The \-L option allows one to output periodic latency information for both
+Q2C and D2C latencies. The frequency specified will regulate how often
+an average latency is output -- a floating point value expressing seconds.
 .RE
 
 .B \-M <\fIdev map\fR>
