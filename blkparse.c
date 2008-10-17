@@ -292,6 +292,8 @@ static volatile int done;
 struct timespec		abs_start_time;
 static unsigned long long start_timestamp;
 
+static int have_drv_data = 0;
+
 #define JHASH_RANDOM	(0x3af5f2ee)
 
 #define CPUS_PER_LONG	(8 * sizeof(unsigned long))
@@ -1584,6 +1586,7 @@ static void dump_trace_fs(struct blk_io_trace *t, struct per_dev_info *pdi,
 			log_generic(pci, t, "A");
 			break;
 		case __BLK_TA_DRV_DATA:
+			have_drv_data = 1;
 			/* dump to binary file only */
 			break;
 		default:
@@ -2843,6 +2846,10 @@ int main(int argc, char *argv[])
 
 	if (!ret)
 		show_stats();
+
+	if (have_drv_data && !dump_binary)
+		printf("\ndiscarded traces containing low-level device driver "
+		       "specific data (only available in binary output)\n");
 
 	if (ofp_buffer) {
 		fflush(ofp);
