@@ -88,7 +88,7 @@ static struct rb_root dstat_tree[2] = { RB_ROOT, RB_ROOT };
 static struct dstat *dstat_list[2] = {};
 static int dstat_curr = 0;
 
-static struct output human, binary, debug;
+static struct output drvdata, human, binary, debug;
 
 static char *msg_q_name = NULL;
 static int msg_q_id = -1, msg_q = -1;
@@ -427,6 +427,26 @@ static struct trace *blkiomon_do_trace(struct trace *t)
 	return t_old;
 }
 
+static int blkiomon_dump_drvdata(struct blk_io_trace *bit, void *pdu_buf)
+{
+	if (!drvdata.fn)
+		return 0;
+
+	if (fwrite(bit, sizeof(*bit), 1, drvdata.fp) != 1)
+		goto failed;
+	if (fwrite(pdu_buf, bit->pdu_len, 1, drvdata.fp) != 1)
+		goto failed;
+	if (drvdata.pipe && fflush(drvdata.fp))
+		goto failed;
+	return 0;
+
+failed:
+	fprintf(stderr, "blkiomon: could not write to %s\n", drvdata.fn);
+	fclose(drvdata.fp);
+	drvdata.fn = NULL;
+	return 1;
+}
+
 static int blkiomon_do_fifo(void)
 {
 	struct trace *t;
@@ -472,6 +492,14 @@ static int blkiomon_do_fifo(void)
 		}
 
 		t->sequence = sequence++;
+
+		/* forward low-level device driver trace to other tool */
+		if (bit->action & BLK_TC_ACT(BLK_TC_DRV_DATA)) {
+			driverdata++;
+			if (blkiomon_dump_drvdata(bit, pdu_buf))
+				break;
+			continue;
+		}
 
 		if (!(bit->action & BLK_TC_ACT(BLK_TC_ISSUE | BLK_TC_COMPLETE)))
 			continue;
@@ -557,7 +585,7 @@ static void blkiomon_debug(void)
 		leftover, match, mismatch, driverdata, sequence);
 }
 
-#define S_OPTS "b:D:h:I:Q:q:m:V"
+#define S_OPTS "b:d:D:h:I:Q:q:m:V"
 
 static char usage_str[] = "\n\nblkiomon " \
 	"-I <interval>       | --interval=<interval>\n" \
@@ -571,6 +599,7 @@ static char usage_str[] = "\n\nblkiomon " \
 	"\t-I   Sample interval.\n" \
 	"\t-h   Human-readable output file.\n" \
 	"\t-b   Binary output file.\n" \
+	"\t-d   Output file for data emitted by low level device driver.\n" \
 	"\t-D   Output file for debugging data.\n" \
 	"\t-Qqm Output to message queue using given ID for messages.\n" \
 	"\t-V   Print program version.\n\n";
@@ -587,6 +616,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'b'
+	},
+	{
+		.name = "dump-lldd",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'd'
 	},
 	{
 		.name = "debug",
@@ -652,6 +687,9 @@ int main(int argc, char *argv[])
 		case 'b':
 			binary.fn = optarg;
 			break;
+		case 'd':
+			drvdata.fn = optarg;
+			break;
 		case 'D':
 			debug.fn = optarg;
 			break;
@@ -690,6 +728,8 @@ int main(int argc, char *argv[])
 	if (blkiomon_open_output(&human))
 		return 1;
 	if (blkiomon_open_output(&binary))
+		return 1;
+	if (blkiomon_open_output(&drvdata))
 		return 1;
 	if (blkiomon_open_output(&debug))
 		return 1;
