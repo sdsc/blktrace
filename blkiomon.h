@@ -98,8 +98,8 @@ static inline void blkiomon_stat_print(FILE *fp, struct blkiomon_stat *p)
 		(unsigned long)p->bidir);
 	minmax_print(fp, "sizes", &p->size_mm);
 	minmax_print(fp, "d2c", &p->d2c_mm);
-	histlog2_print(fp, "sizes histogram (in kB)", p->size_hist, &size_hist);
-	histlog2_print(fp, "d2c histogram (in usec)", p->d2c_hist, &d2c_hist);
+	histlog2_print(fp, "sizes histogram (bytes)", p->size_hist, &size_hist);
+	histlog2_print(fp, "d2c histogram (usec)", p->d2c_hist, &d2c_hist);
 }
 
 #endif
