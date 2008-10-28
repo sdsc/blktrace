@@ -316,6 +316,7 @@ static int blkiomon_account(struct blk_io_trace *bit_d,
 	struct blkiomon_stat *p;
 	__u64 d2c = (bit_c->time - bit_d->time) / 1000; /* ns -> us */
 	__u32 size = bit_d->bytes;
+	__u64 thrput = size * 1000 / d2c;
 
 	dstat = blkiomon_get_dstat(bit_d->device);
 	if (!dstat)
@@ -323,9 +324,11 @@ static int blkiomon_account(struct blk_io_trace *bit_d,
 	p = &dstat->msg.stat;
 
 	if (BLK_DATADIR(bit_c->action) & BLK_TC_READ) {
+		minmax_account(&p->thrput_r, thrput);
 		minmax_account(&p->size_r, size);
 		minmax_account(&p->d2c_r, d2c);
 	} else if (BLK_DATADIR(bit_c->action) & BLK_TC_WRITE) {
+		minmax_account(&p->thrput_w, thrput);
 		minmax_account(&p->size_w, size);
 		minmax_account(&p->d2c_w, d2c);
 	} else

@@ -38,6 +38,8 @@ struct blkiomon_stat {
 	struct minmax size_w;
 	struct minmax d2c_r;
 	struct minmax d2c_w;
+	struct minmax thrput_r;
+	struct minmax thrput_w;
 	__u64 bidir;
 	__u32 device;
 } __attribute__ ((packed));
@@ -61,6 +63,8 @@ static inline void blkiomon_stat_init(struct blkiomon_stat *bstat)
 	minmax_init(&bstat->size_w);
 	minmax_init(&bstat->d2c_r);
 	minmax_init(&bstat->d2c_w);
+	minmax_init(&bstat->thrput_r);
+	minmax_init(&bstat->thrput_w);
 }
 
 static inline void blkiomon_stat_to_be(struct blkiomon_stat *bstat)
@@ -71,6 +75,8 @@ static inline void blkiomon_stat_to_be(struct blkiomon_stat *bstat)
 	minmax_to_be(&bstat->size_w);
 	minmax_to_be(&bstat->d2c_r);
 	minmax_to_be(&bstat->d2c_w);
+	minmax_to_be(&bstat->thrput_r);
+	minmax_to_be(&bstat->thrput_w);
 	bstat->bidir = cpu_to_be64(bstat->bidir);
 	bstat->time = cpu_to_be64(bstat->time);
 	bstat->device = cpu_to_be32(bstat->device);
@@ -85,6 +91,8 @@ static inline void blkiomon_stat_merge(struct blkiomon_stat *dst,
 	minmax_merge(&dst->size_w, &src->size_w);
 	minmax_merge(&dst->d2c_r, &src->d2c_r);
 	minmax_merge(&dst->d2c_w, &src->d2c_w);
+	minmax_merge(&dst->thrput_r, &src->thrput_r);
+	minmax_merge(&dst->thrput_w, &src->thrput_w);
 	dst->bidir += src->bidir;
 }
 
@@ -99,6 +107,8 @@ static inline void blkiomon_stat_print(FILE *fp, struct blkiomon_stat *p)
 	minmax_print(fp, "sizes write (bytes)", &p->size_w);
 	minmax_print(fp, "d2c read (usec)", &p->d2c_r);
 	minmax_print(fp, "d2c write (usec)", &p->d2c_w);
+	minmax_print(fp, "throughput read (bytes/msec)", &p->thrput_r);
+	minmax_print(fp, "throughput write (bytes/msec)", &p->thrput_w);
 	histlog2_print(fp, "sizes histogram (bytes)", p->size_hist, &size_hist);
 	histlog2_print(fp, "d2c histogram (usec)", p->d2c_hist, &d2c_hist);
 	fprintf(fp, "bidirectional requests: %ld\n", (unsigned long)p->bidir);
