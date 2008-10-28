@@ -211,8 +211,10 @@ static struct dstat *blkiomon_get_dstat(__u32 device)
 		goto out;
 
 	dstat->msg.stat.device = device;
-	dstat->msg.stat.size_mm.min = -1ULL;
-	dstat->msg.stat.d2c_mm.min = -1ULL;
+	dstat->msg.stat.size_r.min = -1ULL;
+	dstat->msg.stat.size_w.min = -1ULL;
+	dstat->msg.stat.d2c_r.min = -1ULL;
+	dstat->msg.stat.d2c_w.min = -1ULL;
 
 	rb_link_node(&dstat->node, search.parent, search.node_ptr);
 	rb_insert_color(&dstat->node, &dstat_tree[dstat_curr]);
@@ -320,17 +322,17 @@ static int blkiomon_account(struct blk_io_trace *bit_d,
 		return 1;
 	p = &dstat->msg.stat;
 
-	if (BLK_DATADIR(bit_c->action) & BLK_TC_READ)
-		p->read++;
-	else if (BLK_DATADIR(bit_c->action) & BLK_TC_WRITE)
-		p->write++;
-	else
+	if (BLK_DATADIR(bit_c->action) & BLK_TC_READ) {
+		minmax_account(&p->size_r, size);
+		minmax_account(&p->d2c_r, d2c);
+	} else if (BLK_DATADIR(bit_c->action) & BLK_TC_WRITE) {
+		minmax_account(&p->size_w, size);
+		minmax_account(&p->d2c_w, d2c);
+	} else
 		p->bidir++;
 
 	histlog2_account(p->size_hist, size, &size_hist);
 	histlog2_account(p->d2c_hist, d2c, &d2c_hist);
-	minmax_account(&p->size_mm, size);
-	minmax_account(&p->d2c_mm, d2c);
 	return 0;
 }
 
