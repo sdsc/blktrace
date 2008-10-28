@@ -40,7 +40,7 @@ struct blkiomon_stat {
 	__u64 write;
 	__u64 bidir;
 	__u32 device;
-};
+} __attribute__ ((packed));
 
 static struct histlog2 size_hist = {
 	.first = 0,
