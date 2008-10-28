@@ -78,7 +78,6 @@ static int interval = -1;
 
 static struct trace *vacant_traces_list = NULL;
 static int vacant_traces = 0;
-static struct rb_root trace_tree = RB_ROOT;
 
 #define TRACE_HASH_SIZE 128
 struct trace *thash[TRACE_HASH_SIZE] = {};
@@ -569,17 +568,18 @@ static int blkiomon_open_msg_q(void)
 
 static void blkiomon_debug(void)
 {
-	struct rb_node *n;
+	int i;
 	struct trace *t;
 
 	if (!debug.fn)
 		return;
 
-	for (n = rb_first(&trace_tree); n; n = rb_next(n)) {
-		t = rb_entry(n, struct trace, node);
-		dump_bit(t, "leftover");
-		leftover++;
-	}
+	for (i = 0; i < TRACE_HASH_SIZE; i++)
+		for (t = thash[i]; t; t = t->next) {
+			dump_bit(t, "leftover");
+			leftover++;
+		}
+
 	fprintf(debug.fp, "%ld leftover, %ld match, %ld mismatch, "
 		"%ld driverdata, %ld overall\n",
 		leftover, match, mismatch, driverdata, sequence);
