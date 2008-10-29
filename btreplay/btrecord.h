@@ -87,9 +87,9 @@ static inline void get_btversion(__u64 version, int *mjr, int *mnr, int *sub)
 	*sub = (int)((version >>  0) & 0xff);
 }
 
-static char my_btversion[] = "0.9.3";
-static int btver_mjr = 0;
-static int btver_mnr = 9;
-static int btver_sub = 3;
+static char my_btversion[] = "1.0.0";
+static int btver_mjr = 1;
+static int btver_mnr = 0;
+static int btver_sub = 0;
 
 #endif
