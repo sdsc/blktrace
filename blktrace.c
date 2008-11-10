@@ -47,7 +47,7 @@
 #include "blktrace.h"
 #include "barrier.h"
 
-static char blktrace_version[] = "0.99.3";
+static char blktrace_version[] = "1.0.0";
 
 /*
  * You may want to increase this even more, if you are logging at a high
