@@ -52,6 +52,8 @@ btt \- analyse block i/o traces produces by blktrace
 [ \-v               | \-\-verbose ]
 .br
 [ \-V               | \-\-version ]
+.br
+[ \-z <\fIoutput name\fR> | \-\-q2d\-latencies=<\fIoutput name\fR> ]
 
 
 .SH DESCRIPTION
@@ -306,10 +308,19 @@ Shows the version of btt.
 Requests a more verbose output.
 .RE
 
+.B \-z <\fIoutput name\fR>
+.br
+.B \-\-q2d\-latencies=<\fIoutput name\fR>
+.RS 4
+The \-z option allows one to output per\-IO Q2D latencies
+respectively. The supplied argument provides the basis for the output
+name for each device.
+.RE
+
 
 .SH AUTHORS
-\fIblkparse\fR was written by Jens Axboe, Alan D. Brunelle and Nathan Scott.  This
-man page was created from the \fIblktrace\fR documentation by Bas Zoetekouw.
+\fIbtt\fR was written by Alan D. Brunelle.  This man page was created
+from the \fIblktrace\fR documentation by Bas Zoetekouw.
 
 
 .SH "REPORTING BUGS"

@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{21 May 2008}
+\date{30 October 2008}
 
 \begin{document}
 \maketitle
@@ -460,9 +460,9 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
     than grepping through a blkparse output file for example). The
     details on this file is included in section~\ref{sec:per-io}.
 
-    \item[iostat] Latency information -- both Q2C and D2C --
+    \item[iostat] Latency information -- both Q2d, D2c and Q2C --
     on a per-IO basis can be generated. These are described in
-    sections~\ref{sec:lat-q2c} and~\ref{sec:lat-d2c}.
+    section~\ref{sec:lat}.
 
     \item[seek details] A set of data files containing all IO-to-IO
     sector differences can be output, with details found in
@@ -673,15 +673,16 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
     \item start block + number of blocks
   \end{enumerate}
  
-\newpage\section{\label{sec:lat}\label{sec:lat-q2c}\label{sec:lat-d2c}Latency Data Files}
+\newpage\section{\label{sec:lat}\label{sec:lat-q2d}\label{sec:lat-q2c}\label{sec:lat-d2c}Latency Data Files}
 
   The latency data files which can be optionally produced by \texttt{btt}
-  provide per-IO latency information, one for total IO time (Q2C) and
-  one for latencies induced by lower layer drivers and devices (D2C).
+  provide per-IO latency information, one for queue time (Q2D), one
+  for total IO time (Q2C) and one for latencies induced by lower layer
+  drivers and devices (D2C).
 
   In both cases, the first column (X values) represent runtime (seconds),
   while the second column (Y values) shows the actual latency for a
-  command at that time (either Q2C or D2C).
+  command at that time (either Q2D, D2C or Q2C).
 
 \newpage\section{\label{sec:seek}Seek Data Files}
 
@@ -798,7 +799,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.05 
+Usage: btt 2.06
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -824,6 +825,7 @@ Usage: btt 2.05
 [ -V               | --version ]
 [ -v               | --verbose ]
 [ -X               | --easy-parse-avgs ]
+[ -z <output name> | --q2d-latencies=<output name> ]
 \end{verbatim}
 
 \subsection{\label{sec:o-a}\texttt{--seek-absolute}/\texttt{-a}}
@@ -1093,6 +1095,11 @@ PLG 8,16 40824 382 0.008881420
 UPG 8,16 1.993361748 1.866492147
 ARQ 8,16 12.938165321
   \end{verbatim}
+
+\subsection{\label{sec:o-z}\texttt{--q2d-latencies}/\texttt{-l}}
+
+  This option instructs \texttt{btt} to generate the Q2D latency file
+  discussed in section~\ref{sec:lat-q2d}.
 
 \newpage\section{\label{sec:bno_plot}bno\_plot.py}
 

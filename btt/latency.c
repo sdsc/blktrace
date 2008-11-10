@@ -51,6 +51,7 @@ FILE *latency_open(__u32 device, char *name, char *post)
 
 void latency_init(struct d_info *dip)
 {
+	dip->q2d_ofp = latency_open(dip->device, q2d_name, "q2d");
 	dip->d2c_ofp = latency_open(dip->device, d2c_name, "d2c");
 	dip->q2c_ofp = latency_open(dip->device, q2c_name, "q2c");
 }
@@ -58,6 +59,12 @@ void latency_init(struct d_info *dip)
 void latency_clean(void)
 {
 	clean_files(&all_files);
+}
+
+void latency_q2d(struct d_info *dip, __u64 tstamp, __u64 latency)
+{
+	plat_x2c(dip->q2d_plat_handle, tstamp, latency);
+	latency_out(dip->q2d_ofp, tstamp, latency);
 }
 
 void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency)

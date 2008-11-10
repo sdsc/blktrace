@@ -86,6 +86,7 @@ void dip_exit(void)
 		seeki_exit(dip->seek_handle);
 		seeki_exit(dip->q2q_handle);
 		aqd_exit(dip->aqd_handle);
+		plat_exit(dip->q2d_plat_handle);
 		plat_exit(dip->q2c_plat_handle);
 		plat_exit(dip->d2c_plat_handle);
 		bno_dump_exit(dip->bno_dump_handle);
@@ -124,6 +125,8 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		dip->seek_handle = seeki_init(mkhandle(str, device, "_d2d"));
 		dip->q2q_handle = seeki_init(mkhandle(str, device, "_q2q"));
 		dip->aqd_handle = aqd_init(mkhandle(str, device, "_aqd"));
+		dip->q2d_plat_handle =
+				plat_init(mkhandle(str, device, "_q2d_plat"));
 		dip->q2c_plat_handle =
 				plat_init(mkhandle(str, device, "_q2c_plat"));
 		dip->d2c_plat_handle =

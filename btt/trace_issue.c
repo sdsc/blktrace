@@ -55,6 +55,8 @@ static void handle_issue(struct io *d_iop)
 		if (output_all_data)
 			q2d_histo_add(q_iop->dip->q2d_priv,
 						d_iop->t.time - q_iop->t.time);
+		latency_q2d(q_iop->dip, d_iop->t.time, 
+						d_iop->t.time - q_iop->t.time);
 	}
 }
 

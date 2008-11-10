@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:q:Q:s:S:t:T:u:VvX"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:q:Q:s:S:t:T:u:VvXz:"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -182,6 +182,12 @@ static struct option l_opts[] = {
 		.val = 'X'
 	},
 	{
+		.name = "q2d-latencies",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'z'
+	},
+	{
 		.name = NULL,
 	}
 };
@@ -212,6 +218,7 @@ static char usage_str[] = \
 	"[ -V               | --version ]\n" \
 	"[ -v               | --verbose ]\n" \
 	"[ -X               | --easy-parse-avgs ]\n" \
+	"[ -z <output name> | --q2d-latencies=<output name> ]\n" \
 	"\n";
 
 static struct file_info *arg_files = NULL;
@@ -335,6 +342,9 @@ void handle_args(int argc, char *argv[])
 			exit(0);
 		case 'X':
 			easy_parse_avgs++;
+			break;
+		case 'z':
+			q2d_name = strdup(optarg);
 			break;
 		default:
 			usage(argv[0]);
