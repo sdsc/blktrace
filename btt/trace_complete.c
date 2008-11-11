@@ -53,6 +53,8 @@ static void handle_complete(struct io *c_iop)
 {
 	LIST_HEAD(head);
 	struct list_head *p, *q;
+	__u64 d_time = (__u64)-1;
+	FILE *pit_fp = c_iop->dip->pit_fp;
 
 	update_blks(c_iop);
 	update_cregion(&all_regions, c_iop->t.time);
@@ -77,6 +79,8 @@ static void handle_complete(struct io *c_iop)
 			update_d2c(q_iop, d2c);
 			latency_d2c(q_iop->dip, c_iop->t.time, d2c);
 			iostat_complete(q_iop, c_iop);
+
+			d_time = q_iop->d_time;
 		}
 
 		if (per_io_ofp) {
@@ -86,6 +90,12 @@ static void handle_complete(struct io *c_iop)
 			display_io_track(per_io_ofp, q_iop);
 		}
 
+		if (q_iop->dip->pit_fp) {
+			fprintf(pit_fp, "%d.%09lu ",
+				(int)SECONDS(q_iop->t.time),
+				(unsigned long)NANO_SECONDS(q_iop->t.time));
+		}
+
 		list_del(&q_iop->f_head);
 		io_release(q_iop);
 	}
@@ -93,6 +103,14 @@ static void handle_complete(struct io *c_iop)
 	if (per_io_ofp)
 		fprintf(per_io_ofp,
 			"-----------------------------------------\n");
+
+	if (c_iop->dip->pit_fp) {
+		fprintf(pit_fp, "| %d.%09lu | %d.%09lu\n",
+			(int)SECONDS(d_time),
+			(unsigned long)NANO_SECONDS(d_time),
+			(int)SECONDS(c_iop->t.time),
+			(unsigned long)NANO_SECONDS(c_iop->t.time));
+	}
 }
 
 void trace_complete(struct io *c_iop)
