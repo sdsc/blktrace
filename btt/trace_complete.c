@@ -42,7 +42,7 @@ static void display_io_track(FILE *ofp, struct io *iop)
 	if (iop->i_time != (__u64)-1)
 		__out(ofp, iop->i_time, IOP_I, iop->t.sector, t_sec(&iop->t),1);
 	if (iop->m_time != (__u64)-1)
-		__out(ofp, iop->i_time, IOP_M, iop->t.sector, t_sec(&iop->t),1);
+		__out(ofp, iop->m_time, IOP_M, iop->t.sector, t_sec(&iop->t),1);
 
 	__out(ofp, iop->d_time, IOP_D, iop->d_sec, iop->d_nsec, 1);
 	__out(ofp, iop->c_time, IOP_C, iop->c_sec, iop->c_nsec, 1);
@@ -89,6 +89,10 @@ static void handle_complete(struct io *c_iop)
 		list_del(&q_iop->f_head);
 		io_release(q_iop);
 	}
+
+	if (per_io_ofp)
+		fprintf(per_io_ofp,
+			"-----------------------------------------\n");
 }
 
 void trace_complete(struct io *c_iop)
