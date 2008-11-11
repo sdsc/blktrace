@@ -65,19 +65,23 @@ void aqd_clean(void)
 
 void aqd_issue(void *info, double ts)
 {
-	struct aqd_info *ap = info;
+	if (info) {
+		struct aqd_info *ap = info;
 
-	fprintf(ap->fp, "%lf %d\n%lf %d\n", ts, ap->na, ts, ap->na + 1);
-
-	ap->na += 1;
+		fprintf(ap->fp, "%lf %d\n%lf %d\n", ts, ap->na, ts, ap->na + 1);
+		ap->na += 1;
+	}
 }
 
 void aqd_complete(void *info, double ts)
 {
-	struct aqd_info *ap = info;
+	if (info) {
+		struct aqd_info *ap = info;
 
-	if (ap->na > 0) {
-		fprintf(ap->fp, "%lf %d\n%lf %d\n", ts, ap->na, ts, ap->na - 1);
-		ap->na -= 1;
+		if (ap->na > 0) {
+			fprintf(ap->fp, "%lf %d\n%lf %d\n",
+					ts, ap->na, ts, ap->na - 1);
+			ap->na -= 1;
+		}
 	}
 }
