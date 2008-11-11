@@ -799,7 +799,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.06
+Usage: btt 2.07 
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -815,6 +815,7 @@ Usage: btt 2.06
 [ -M <dev map>     | --dev-maps=<dev map>
 [ -o <output name> | --output-file=<output name> ]
 [ -p <output name> | --per-io-dump=<output name> ]
+[ -P <output name> | --per-io-trees=<output name> ]
 [ -q <output name> | --q2c-latencies=<output name> ]
 [ -Q <output name> | --active-queue-depth=<output name> ]
 [ -s <output name> | --seeks=<output name> ]
@@ -942,6 +943,12 @@ Usage: btt 2.06
 
   This option tells \texttt{btt} to generate the per IO dump file as
   discussed in section~\ref{sec:per-io}.
+
+\subsection{\label{sec:o-P}\texttt{--per-io-tress}/\texttt{-P}}
+
+The \texttt{-P} option will generate a file that contains a list of all IO
+"sequences" - showing only the Q, D \& C operation times. The D \& C
+time values are separated from the Q time values with a vertical bar.
 
 \subsection{\label{sec:o-q}\texttt{--q2c-latencies}/\texttt{-q}}
 

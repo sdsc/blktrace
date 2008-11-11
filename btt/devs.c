@@ -93,6 +93,8 @@ void dip_exit(void)
 		unplug_hist_exit(dip->unplug_hist_handle);
 		if (output_all_data)
 			q2d_release(dip->q2d_priv);
+		if (dip->pit_fp)
+			fclose(dip->pit_fp);
 		free(dip);
 	}
 }
@@ -104,6 +106,16 @@ static inline char *mkhandle(char *str, __u32 device, char *post)
 
 	sprintf(str, "%03d,%03d%s", mjr, mnr, post);
 	return str;
+}
+
+static inline FILE *open_pit(char *str)
+{
+	FILE *fp = fopen(str, "w");
+
+	if (fp == NULL)
+		perror(str);
+
+	return fp;
 }
 
 struct d_info *dip_add(__u32 device, struct io *iop)
@@ -139,6 +151,9 @@ struct d_info *dip_add(__u32 device, struct io *iop)
 		if (output_all_data)
 			dip->q2d_priv = q2d_init();
 		n_devs++;
+		if (per_io_trees)
+			dip->pit_fp = open_pit(mkhandle(per_io_trees,
+							  device, "_pit.dat"));
 	}
 
 	if (dip->pre_culling) {

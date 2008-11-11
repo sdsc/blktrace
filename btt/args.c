@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:q:Q:s:S:t:T:u:VvXz:"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:P:q:Q:s:S:t:T:u:VvXz:"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -122,6 +122,12 @@ static struct option l_opts[] = {
 		.val = 'p'
 	},
 	{
+		.name = "per-io-trees",
+		.has_arg = required_argument,
+		.flag = NULL,
+		.val = 'P'
+	},
+	{
 		.name = "q2c-latencies",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -208,6 +214,7 @@ static char usage_str[] = \
 	"[ -M <dev map>     | --dev-maps=<dev map>\n" \
 	"[ -o <output name> | --output-file=<output name> ]\n" \
 	"[ -p <output name> | --per-io-dump=<output name> ]\n" \
+	"[ -P <output name> | --per-io-trees=<output name> ]\n" \
 	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
 	"[ -Q <output name> | --active-queue-depth=<output name> ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
@@ -307,6 +314,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'p':
 			per_io_name = strdup(optarg);
+			break;
+		case 'P':
+			per_io_trees = strdup(optarg);
 			break;
 		case 'q':
 			q2c_name = strdup(optarg);
