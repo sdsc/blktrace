@@ -54,7 +54,7 @@ ai_pip_t pip_d2c_avg(struct p_info *pip) { return &pip->avgs.d2c; }
 void output_section_hdr(FILE *ofp, char *hdr)
 {
 	fprintf(ofp, "==================== ");
-	fprintf(ofp, hdr);
+	fprintf(ofp, "%s", hdr);
 	fprintf(ofp, " ====================\n\n");
 }
 
@@ -493,7 +493,7 @@ void __output_pip_avg(struct p_info *pip, void *arg)
 
 	if (ap->n > 0) {
 		char proc_name[15];
-		snprintf(proc_name, 15, pip->name);
+		snprintf(proc_name, 15, "%s", pip->name);
 
 		ap->avg = BIT_TIME(ap->total) / (double)ap->n;
 		__output_avg(opap->ofp, proc_name, ap, 0);
