@@ -104,7 +104,6 @@ static struct per_process_info *ppi_hash_table[PPI_HASH_SIZE];
 static struct per_process_info *ppi_list;
 static int ppi_list_entries;
 
-#define S_OPTS  "a:A:b:D:d:f:F:hi:o:Oqstw:vV"
 static struct option l_opts[] = {
  	{
 		.name = "act-mask",
@@ -159,6 +158,12 @@ static struct option l_opts[] = {
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'i'
+	},
+	{
+		.name = "no-msgs",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'M'
 	},
 	{
 		.name = "output",
@@ -270,6 +275,7 @@ static int ppi_hash_by_pid = 1;
 static int verbose;
 static unsigned int act_mask = -1U;
 static int stats_printed;
+static int bin_output_msgs = 1;
 int data_is_native = -1;
 
 static FILE *dump_fp;
@@ -1612,7 +1618,10 @@ static void dump_trace(struct blk_io_trace *t, struct per_cpu_info *pci,
 
 	pdi->events++;
 
-	output_binary(t, sizeof(*t) + t->pdu_len);
+	if (bin_output_msgs ||
+			    !(t->action & BLK_TC_ACT(BLK_TC_NOTIFY) &&
+			      t->action == BLK_TN_MESSAGE))
+		output_binary(t, sizeof(*t) + t->pdu_len);
 }
 
 /*
@@ -2645,7 +2654,7 @@ static int is_pipe(const char *str)
 	return 0;
 }
 
-#define S_OPTS  "a:A:b:D:d:f:F:hi:o:Oqstw:vV"
+#define S_OPTS  "a:A:b:D:d:f:F:hi:o:Oqstw:vVM"
 static char usage_str[] =    "\n\n" \
 	"-i <file>           | --input=<file>\n" \
 	"[ -a <action field> | --act-mask=<action field> ]\n" \
@@ -2662,6 +2671,7 @@ static char usage_str[] =    "\n\n" \
 	"[ -s                | --per-program-stats ]\n" \
 	"[ -t                | --track-ios ]\n" \
 	"[ -w <time>         | --stopwatch=<time> ]\n" \
+	"[ -M                | --no-msgs\n" \
 	"[ -v                | --verbose ]\n" \
 	"[ -V                | --version ]\n\n" \
 	"\t-b stdin read batching\n" \
@@ -2680,6 +2690,7 @@ static char usage_str[] =    "\n\n" \
 	"\t   to get queued, to get dispatched, and to get completed\n" \
 	"\t-w Only parse data between the given time interval in seconds.\n" \
 	"\t   If 'start' isn't given, blkparse defaults the start time to 0\n" \
+	"\t-M Do not output messages to binary file\n" \
 	"\t-v More verbose for marginal errors\n" \
 	"\t-V Print program version info\n\n";
 
@@ -2769,6 +2780,9 @@ int main(int argc, char *argv[])
 			return 0;
 		case 'd':
 			dump_binary = optarg;
+			break;
+		case 'M':
+			bin_output_msgs = 0;
 			break;
 		default:
 			usage(argv[0]);
