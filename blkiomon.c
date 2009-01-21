@@ -168,7 +168,7 @@ static struct dstat *blkiomon_alloc_dstat(void)
 		return NULL;
 	}
 
-	memset(dstat, 0, sizeof(*dstat));
+	blkiomon_stat_init(&dstat->msg.stat);
 	return dstat;
 }
 
@@ -211,10 +211,6 @@ static struct dstat *blkiomon_get_dstat(__u32 device)
 		goto out;
 
 	dstat->msg.stat.device = device;
-	dstat->msg.stat.size_r.min = -1ULL;
-	dstat->msg.stat.size_w.min = -1ULL;
-	dstat->msg.stat.d2c_r.min = -1ULL;
-	dstat->msg.stat.d2c_w.min = -1ULL;
 
 	rb_link_node(&dstat->node, search.parent, search.node_ptr);
 	rb_insert_color(&dstat->node, &dstat_tree[dstat_curr]);
