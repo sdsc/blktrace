@@ -43,6 +43,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/sendfile.h>
+#include <sys/resource.h>
 
 #include "blktrace.h"
 #include "barrier.h"
@@ -346,6 +347,51 @@ static int cl_hosts;
 static int net_connects;
 
 static int *net_out_fd;
+
+/*
+ * For large(-ish) systems, we run into real issues in our
+ * N(devs) X N(cpus) algorithms if we are being limited by arbitrary
+ * resource constraints.
+ *
+ * We try to set our limits to infinity, if that fails, we guestimate a max
+ * needed and try that.
+ */
+static int increase_limit(int r, rlim_t val)
+{
+	struct rlimit rlim;
+
+	rlim.rlim_cur = rlim.rlim_max = RLIM_INFINITY;
+	if (setrlimit(r, &rlim) < 0) {
+		rlim.rlim_cur = rlim.rlim_max = val;
+		if (setrlimit(r, &rlim) < 0) {
+			perror(r == RLIMIT_NOFILE ? "NOFILE" : "MEMLOCK");
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ *
+ * For the number of files: we need N(devs) X N(cpus) for:
+ *	o  ioctl's
+ *	o  read from /sys/kernel/debug/...
+ *	o  write to blktrace output file
+ *	o  Add some misc. extras - we'll muliply by 4 instead of 3
+ *
+ * For the memory locked, we know we need at least
+ *		N(devs) X N(cpus) X N(buffers) X buffer-size
+ * 	we double that for misc. extras
+ */
+static int increase_limits(void)
+{
+	rlim_t nofile_lim = 4 * ndevs * ncpus;
+	rlim_t memlock_lim = 2 * ndevs * ncpus * buf_nr * buf_size;
+
+	return increase_limit(RLIMIT_NOFILE, nofile_lim) != 0 ||
+	       increase_limit(RLIMIT_MEMLOCK, memlock_lim) != 0;
+}
 
 static void handle_sigint(__attribute__((__unused__)) int sig)
 {
@@ -659,7 +705,9 @@ static void tip_ftrunc_final(struct thread_information *tip)
 		if (tip->fs_buf)
 			munmap(tip->fs_buf, tip->fs_buf_len);
 
-		ftruncate(ofd, tip->fs_size);
+		if (ftruncate(ofd, tip->fs_size) < 0)
+			fprintf(stderr, "Ignoring error: ftruncate:  %d/%s\n",
+				errno, strerror(errno));
 	}
 }
 
@@ -1924,6 +1972,15 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
+	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+	if (ncpus < 0) {
+		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
+		return 1;
+	}
+
+	if (increase_limits() != 0)
+		return 1;
+
 	if (act_mask_tmp != 0)
 		act_mask = act_mask_tmp;
 
@@ -1947,12 +2004,6 @@ int main(int argc, char *argv[])
 	if (kill_running_trace) {
 		stop_all_traces();
 		return 0;
-	}
-
-	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
-	if (ncpus < 0) {
-		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed\n");
-		return 1;
 	}
 
 	signal(SIGINT, handle_sigint);
