@@ -37,7 +37,7 @@ static FILE *bno_dump_open(__u32 device, char rwc)
 
 	oname = malloc(strlen(bno_dump_name) + 32);
 	sprintf(oname, "%s_%03d,%03d_%c.dat", bno_dump_name, mjr, mnr, rwc);
-	if ((fp = fopen(oname, "w")) == NULL)
+	if ((fp = my_fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
 		add_file(&bno_dump_files, fp, oname);

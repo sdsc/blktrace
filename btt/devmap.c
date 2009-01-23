@@ -59,7 +59,7 @@ int dev_map_read(char *fname)
 {
 	char line[256];
 	struct devmap dm;
-	FILE *fp = fopen(fname, "r");
+	FILE *fp = my_fopen(fname, "r");
 
 	if (!fp) {
 		perror(fname);

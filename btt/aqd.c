@@ -43,7 +43,7 @@ void *aqd_init(char *str)
 
 	oname = malloc(strlen(aqd_name) + strlen(str) + 32);
 	sprintf(oname, "%s_%s.dat", aqd_name, str);
-	if ((ap->fp = fopen(oname, "w")) == NULL) {
+	if ((ap->fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
 		return NULL;
 	}

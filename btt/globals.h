@@ -262,6 +262,7 @@ void clean_files(struct file_info **fipp);
 void add_buf(void *buf);
 void clean_bufs(void);
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens);
+FILE *my_fopen(const char *path, const char *mode);
 void dbg_ping(void);
 
 /* mmap.c */

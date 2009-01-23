@@ -41,7 +41,7 @@ FILE *latency_open(__u32 device, char *name, char *post)
 
 	oname = malloc(strlen(name)+32);
 	sprintf(oname, "%s_%03d,%03d_%s.dat", name, mjr, mnr, post);
-	if ((fp = fopen(oname, "w")) == NULL)
+	if ((fp = my_fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
 		add_file(&all_files, fp, oname);

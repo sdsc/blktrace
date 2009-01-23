@@ -240,7 +240,7 @@ static FILE *setup_ofile(char *fname)
 {
 	if (fname) {
 		char *buf;
-		FILE *ofp = fopen(fname, "w");
+		FILE *ofp = my_fopen(fname, "w");
 
 		if (!ofp) {
 			perror(fname);
@@ -382,7 +382,7 @@ void handle_args(int argc, char *argv[])
 		char *fname = malloc(strlen(output_name) + 32);
 
 		sprintf(fname, "%s.dat", output_name);
-		ranges_ofp = fopen(fname, "w");
+		ranges_ofp = my_fopen(fname, "w");
 		if (ranges_ofp == NULL) {
 			perror(fname);
 			exit(1);
@@ -391,7 +391,7 @@ void handle_args(int argc, char *argv[])
 			printf("Sending range data to %s\n", fname);
 
 		sprintf(fname, "%s.avg", output_name);
-		avgs_ofp = fopen(fname, "w");
+		avgs_ofp = my_fopen(fname, "w");
 		if (avgs_ofp == NULL) {
 			perror(fname);
 			exit(1);
@@ -400,7 +400,7 @@ void handle_args(int argc, char *argv[])
 			printf("Sending stats data to %s\n", fname);
 
 		sprintf(fname, "%s.msg", output_name);
-		msgs_ofp = fopen(fname, "w");
+		msgs_ofp = my_fopen(fname, "w");
 		if (msgs_ofp == NULL) {
 			perror(fname);
 			exit(1);
@@ -410,7 +410,7 @@ void handle_args(int argc, char *argv[])
 
 		if (easy_parse_avgs) {
 			sprintf(fname, "%s.xvg", output_name);
-			xavgs_ofp = fopen(fname, "w");
+			xavgs_ofp = my_fopen(fname, "w");
 			if (avgs_ofp == NULL) {
 				perror(fname);
 				exit(1);

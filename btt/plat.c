@@ -42,7 +42,7 @@ void *plat_init(char *str)
 
 	oname = malloc(strlen(str) + 32);
 	sprintf(oname, "%s.dat", str);
-	if ((pp->fp = fopen(oname, "w")) == NULL) {
+	if ((pp->fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
 		return NULL;
 	}

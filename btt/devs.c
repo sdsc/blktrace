@@ -110,7 +110,7 @@ static inline char *mkhandle(char *str, __u32 device, char *post)
 
 static inline FILE *open_pit(char *str)
 {
-	FILE *fp = fopen(str, "w");
+	FILE *fp = my_fopen(str, "w");
 
 	if (fp == NULL)
 		perror(str);

@@ -678,7 +678,7 @@ void output_histos(void)
 	if (output_name == NULL) return;
 
 	sprintf(fname, "%s_qhist.dat", output_name);
-	ofp = fopen(fname, "w");
+	ofp = my_fopen(fname, "w");
 	if (!ofp) {
 		perror(fname);
 		return;
@@ -693,7 +693,7 @@ void output_histos(void)
 	fclose(ofp);
 
 	sprintf(fname, "%s_dhist.dat", output_name);
-	ofp = fopen(fname, "w");
+	ofp = my_fopen(fname, "w");
 	if (!ofp) {
 		perror(fname);
 		return;

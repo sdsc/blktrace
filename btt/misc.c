@@ -18,11 +18,14 @@
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  *
  */
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <unistd.h>
+#include <sys/time.h>
+#include <sys/resource.h>
 
 #define INLINE_DECLARE
 #include "globals.h"
@@ -114,6 +117,47 @@ char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
 		snprintf(pad, len, "%s", dip->map->device);
 
 	return pad;
+}
+
+/*
+ * Due to the N(devs) parts of a lot of the output features provided
+ * by btt, it will fail opens on large(ish) systems. Here we try to
+ * keep bumping our open file limits, and if those fail, we return NULL.
+ *
+ * Root users will probably be OK with this, others...
+ */
+FILE *my_fopen(const char *path, const char *mode)
+{
+	FILE *fp;
+
+	fp = fopen(path, mode);
+	while (fp == NULL) {
+		if (errno == ENFILE || errno == EMFILE) {
+			struct rlimit rlim;
+
+			if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
+				perror("get: RLIMIT_NOFILE");
+				return NULL;
+			}
+
+			rlim.rlim_cur++;
+			if (rlim.rlim_cur >= rlim.rlim_max)
+				rlim.rlim_max++;
+
+			if (setrlimit(RLIMIT_NOFILE, &rlim) < 0) {
+				perror("set: RLIMIT_NOFILE");
+				return NULL;
+			}
+		}
+		else {
+			perror(path);
+			return NULL;
+		}
+
+		fp = fopen(path, mode);
+	}
+
+	return fp;
 }
 
 void dbg_ping(void) {}
