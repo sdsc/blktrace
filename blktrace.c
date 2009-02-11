@@ -294,6 +294,7 @@ static volatile int dp_entries;
 /*
  * network cmd line params
  */
+static struct sockaddr_in hostname_addr;
 static char hostname[MAXHOSTNAMELEN];
 static int net_port = TRACE_NET_PORT;
 static int net_use_sendfile = 1;
@@ -807,25 +808,47 @@ static int net_get_header(struct cl_conn *nc, struct blktrace_net_hdr *bnh)
 	return -1;
 }
 
-static int net_setup_client(void)
+static int net_setup_addr(void)
 {
-	int fd;
-	struct sockaddr_in addr;
+	struct sockaddr_in *addr = &hostname_addr;
 
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(net_port);
+	memset(addr, 0, sizeof(*addr));
+	addr->sin_family = AF_INET;
+	addr->sin_port = htons(net_port);
 
-	if (inet_aton(hostname, &addr.sin_addr) != 1) {
-		struct hostent *hent = gethostbyname(hostname);
+	if (inet_aton(hostname, &addr->sin_addr) != 1) {
+		struct hostent *hent;
+retry:
+		hent = gethostbyname(hostname);
 		if (!hent) {
-			perror("gethostbyname");
+			if (h_errno == TRY_AGAIN) {
+				usleep(100);
+				goto retry;
+			} else if (h_errno == NO_RECOVERY) {
+				fprintf(stderr, "gethostbyname(%s)"
+					"non-recoverable error encountered\n",
+					hostname);
+			} else {
+				/*
+				 * HOST_NOT_FOUND, NO_ADDRESS or NO_DATA
+				 */
+				fprintf(stderr, "Host %s not found\n",
+					hostname);
+			}
 			return 1;
 		}
 
-		memcpy(&addr.sin_addr, hent->h_addr, 4);
+		memcpy(&addr->sin_addr, hent->h_addr, 4);
 		strcpy(hostname, hent->h_name);
 	}
+
+	return 0;
+}
+
+static int net_setup_client(void)
+{
+	int fd;
+	struct sockaddr_in *addr = &hostname_addr;
 
 	fd = my_socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0) {
@@ -833,7 +856,7 @@ static int net_setup_client(void)
 		return -1;
 	}
 
-	if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+	if (connect(fd, (struct sockaddr *)addr, sizeof(*addr)) < 0) {
 		if (errno == ECONNREFUSED)
 			fprintf(stderr,
 				"\nclient: Connection to %s refused, "
@@ -2011,6 +2034,9 @@ static int handle_args(int argc, char *argv[])
 
 	if (act_mask_tmp != 0)
 		act_mask = act_mask_tmp;
+
+	if (net_mode == Net_client && net_setup_addr())
+		return 1;
 
 	/*
 	 * Set up for appropriate PFD handler based upon output name.
