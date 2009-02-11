@@ -287,9 +287,21 @@ static FILE *pfp;
 static int piped_output;
 static int ntracers;
 
+/*
+ * tracer threads add entries, the main thread takes them off and processes
+ * them. These protect the dp_entries variable.
+ */
 static pthread_cond_t dp_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t dp_mutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile int dp_entries;
+
+/*
+ * This synchronizes the starting of trace gathering amongst all tracer
+ * threads.
+ */
+static pthread_cond_t ub_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t ub_mutex = PTHREAD_MUTEX_INITIALIZER;
+static volatile int unblock_tracers;
 
 /*
  * network cmd line params
@@ -1677,6 +1689,11 @@ static void *thread_main(void *arg)
 	else
 		to_val = 500;		/* 1/2 second intervals */
 
+	pthread_mutex_lock(&ub_mutex);
+	while (!tp->is_done && !unblock_tracers)
+		pthread_cond_wait(&ub_cond, &ub_mutex);
+	pthread_mutex_unlock(&ub_mutex);
+
 	while (!tp->is_done) {
 		ndone = poll(tp->pfds, ndevs, to_val);
 		if (ndone || piped_output)
@@ -2532,8 +2549,17 @@ int main(int argc, char *argv[])
 		if (ntracers != ncpus)
 			stop_tracers();
 		else {
+			/*
+			 * Let tracers go
+			 */
+			pthread_mutex_lock(&ub_mutex);
+			unblock_tracers = 1;
+			pthread_cond_broadcast(&ub_cond);
+			pthread_mutex_unlock(&ub_mutex);
+
 			if (net_mode == Net_client)
 				printf("blktrace: connected!\n");
+
 			if (stop_watch)
 				alarm(stop_watch);
 		}
