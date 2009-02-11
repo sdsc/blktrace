@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "blktrace.h"
+#include "globals.h"
 
 #define DEF_LEN	(16 * 1024 * 1024)
 
@@ -102,7 +103,7 @@ void setup_ifile(char *fname)
 
 	pgsz = sysconf(_SC_PAGESIZE);
 
-	fd = open(fname, O_RDONLY);
+	fd = my_open(fname, O_RDONLY);
 	if (fd < 0) {
 		perror(fname);
 		exit(1);

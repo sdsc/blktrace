@@ -263,6 +263,7 @@ void add_buf(void *buf);
 void clean_bufs(void);
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens);
 FILE *my_fopen(const char *path, const char *mode);
+int my_open(const char *path, int flags);
 void dbg_ping(void);
 
 /* mmap.c */

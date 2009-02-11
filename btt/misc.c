@@ -26,6 +26,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <fcntl.h>
 
 #define INLINE_DECLARE
 #include "globals.h"
@@ -126,38 +127,51 @@ char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
  *
  * Root users will probably be OK with this, others...
  */
+static int increase_limit(int resource, rlim_t increase)
+{
+	struct rlimit rlim;
+	int save_errno = errno;
+
+	if (!getrlimit(resource, &rlim)) {
+		rlim.rlim_cur += increase;
+		if (rlim.rlim_cur >= rlim.rlim_max)
+			rlim.rlim_max = rlim.rlim_cur + increase;
+
+		if (!setrlimit(resource, &rlim))
+			return 1;
+	}
+
+	errno = save_errno;
+	return 0;
+}
+
+static int handle_open_failure(void)
+{
+	if (errno == ENFILE || errno == EMFILE)
+		return increase_limit(RLIMIT_NOFILE, 16);
+	return 0;
+}
+
 FILE *my_fopen(const char *path, const char *mode)
 {
 	FILE *fp;
 
-	fp = fopen(path, mode);
-	while (fp == NULL) {
-		if (errno == ENFILE || errno == EMFILE) {
-			struct rlimit rlim;
-
-			if (getrlimit(RLIMIT_NOFILE, &rlim) < 0) {
-				perror("get: RLIMIT_NOFILE");
-				return NULL;
-			}
-
-			rlim.rlim_cur++;
-			if (rlim.rlim_cur >= rlim.rlim_max)
-				rlim.rlim_max++;
-
-			if (setrlimit(RLIMIT_NOFILE, &rlim) < 0) {
-				perror("set: RLIMIT_NOFILE");
-				return NULL;
-			}
-		}
-		else {
-			perror(path);
-			return NULL;
-		}
-
+	do {
 		fp = fopen(path, mode);
-	}
+	} while (fp == NULL && handle_open_failure());
 
 	return fp;
+}
+
+int my_open(const char *path, int flags)
+{
+	int fd;
+
+	do {
+		fd = open(path, flags);
+	} while (fd < 0 && handle_open_failure());
+
+	return fd;
 }
 
 void dbg_ping(void) {}
