@@ -599,6 +599,17 @@ static int my_socket(int domain, int type, int protocol)
 	return fd;
 }
 
+static int my_accept(int sockfd, struct sockaddr *addr, socklen_t *addrlen)
+{
+	int fd;
+
+	do {
+		fd = accept(sockfd, addr, addrlen);
+	} while (fd < 0 && handle_open_failure());
+
+	return fd;
+}
+
 static void *my_mmap(void *addr, size_t length, int prot, int flags, int fd,
 		     off_t offset)
 {
@@ -2133,7 +2144,7 @@ static void net_add_connection(struct net_server_s *ns)
 	struct cl_host *ch;
 	socklen_t socklen = sizeof(ns->addr);
 
-	fd = accept(ns->listen_fd, (struct sockaddr *)&ns->addr, &socklen);
+	fd = my_accept(ns->listen_fd, (struct sockaddr *)&ns->addr, &socklen);
 	if (fd < 0) {
 		/*
 		 * This is OK: we just won't accept this connection,
