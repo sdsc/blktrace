@@ -933,19 +933,29 @@ static void setup_buts(void)
 		if (ioctl(dpp->fd, BLKTRACESETUP, &buts) < 0) {
 			fprintf(stderr, "BLKTRACESETUP(2) %s failed: %d/%s\n",
 				dpp->path, errno, strerror(errno));
-			continue;
-		} else if (ioctl(dpp->fd, BLKTRACESTART) < 0) {
+		}
+		else {
+			dpp->ncpus = ncpus;
+			dpp->buts_name = strdup(buts.name);
+			if (dpp->stats)
+				free(dpp->stats);
+			dpp->stats = calloc(dpp->ncpus, sizeof(*dpp->stats));
+			memset(dpp->stats, 0, dpp->ncpus * sizeof(*dpp->stats));
+		}
+	}
+}
+
+static void start_buts(void)
+{
+	struct list_head *p;
+
+	__list_for_each(p, &devpaths) {
+		struct devpath *dpp = list_entry(p, struct devpath, head);
+
+		if (ioctl(dpp->fd, BLKTRACESTART) < 0) {
 			fprintf(stderr, "BLKTRACESTART %s failed: %d/%s\n",
 				dpp->path, errno, strerror(errno));
-			continue;
 		}
-
-		dpp->ncpus = ncpus;
-		dpp->buts_name = strdup(buts.name);
-		if (dpp->stats)
-			free(dpp->stats);
-		dpp->stats = calloc(dpp->ncpus, sizeof(*dpp->stats));
-		memset(dpp->stats, 0, dpp->ncpus * sizeof(*dpp->stats));
 	}
 }
 
@@ -2556,6 +2566,8 @@ int main(int argc, char *argv[])
 			unblock_tracers = 1;
 			pthread_cond_broadcast(&ub_cond);
 			pthread_mutex_unlock(&ub_mutex);
+
+			start_buts();
 
 			if (net_mode == Net_client)
 				printf("blktrace: connected!\n");
