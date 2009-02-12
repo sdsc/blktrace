@@ -273,22 +273,27 @@ static char blktrace_version[] = "2.0.0";
  */
 int data_is_native = -1;
 
+static int ndevs;
 static int ncpus;
 static int pagesize;
 static int act_mask = ~0U;
+static int kill_running_trace;
+static int stop_watch;
+static int piped_output;
+
 static char *debugfs_path = "/sys/kernel/debug";
 static char *output_name;
 static char *output_dir;
-static int kill_running_trace;
-static int stop_watch;
+
 static unsigned long buf_size = BUF_SIZE;
 static unsigned long buf_nr = BUF_NR;
+
+static FILE *pfp;
+
 static LIST_HEAD(devpaths);
 static LIST_HEAD(tracers);
-static int ndevs;
+
 static volatile int done;
-static FILE *pfp;
-static int piped_output;
 
 /*
  * tracer threads add entries, the main thread takes them off and processes
@@ -712,6 +717,39 @@ static int my_mlock(const void *addr, size_t len)
 	return ret;
 }
 
+static int setup_mmap(int fd, unsigned int maxlen, struct mmap_info *mip)
+{
+	if (mip->fs_off + maxlen > mip->fs_buf_len) {
+		unsigned long nr = max(16, mip->buf_nr);
+
+		if (mip->fs_buf) {
+			munlock(mip->fs_buf, mip->fs_buf_len);
+			munmap(mip->fs_buf, mip->fs_buf_len);
+			mip->fs_buf = NULL;
+		}
+
+		mip->fs_off = mip->fs_size & (mip->pagesize - 1);
+		mip->fs_buf_len = (nr * mip->buf_size) - mip->fs_off;
+		mip->fs_max_size += mip->fs_buf_len;
+
+		if (ftruncate(fd, mip->fs_max_size) < 0) {
+			perror("setup_mmap: ftruncate");
+			return 1;
+		}
+
+		mip->fs_buf = my_mmap(NULL, mip->fs_buf_len, PROT_WRITE,
+				      MAP_SHARED, fd,
+				      mip->fs_size - mip->fs_off);
+		if (mip->fs_buf == MAP_FAILED) {
+			perror("setup_mmap: mmap");
+			return 1;
+		}
+		my_mlock(mip->fs_buf, mip->fs_buf_len);
+	}
+
+	return 0;
+}
+
 static int __stop_trace(int fd)
 {
 	/*
@@ -761,11 +799,9 @@ static int __net_recv_data(int fd, void *buf, unsigned int len)
 		if (ret == 0)
 			break;
 		else if (ret < 0) {
-			if (errno != EAGAIN) {
+			if (errno != EAGAIN)
 				perror("server: net_recv_data: recv failed");
-				break;
-			} else
-				break;
+			break;
 		} else {
 			buf += ret;
 			bytes_left -= ret;
@@ -866,9 +902,9 @@ static void net_send_drops(int fd)
 
 /*
  * Returns:
- * 	 0: "EOF"
- * 	 1: OK
- * 	-1: Error
+ *	 0: "EOF"
+ *	 1: OK
+ *	-1: Error
  */
 static int net_get_header(struct cl_conn *nc, struct blktrace_net_hdr *bnh)
 {
@@ -883,7 +919,8 @@ static int net_get_header(struct cl_conn *nc, struct blktrace_net_hdr *bnh)
 		return 1;
 	else if (bytes_read == 0)
 		return 0;
-	return -1;
+	else
+		return -1;
 }
 
 static int net_setup_addr(void)
@@ -942,6 +979,7 @@ static int net_setup_client(void)
 				hostname);
 		else
 			perror("client: connect");
+
 		close(fd);
 		return -1;
 	}
@@ -996,18 +1034,16 @@ static void setup_buts(void)
 		buts.buf_nr = buf_nr;
 		buts.act_mask = act_mask;
 
-		if (ioctl(dpp->fd, BLKTRACESETUP, &buts) < 0) {
-			fprintf(stderr, "BLKTRACESETUP(2) %s failed: %d/%s\n",
-				dpp->path, errno, strerror(errno));
-		}
-		else {
+		if (ioctl(dpp->fd, BLKTRACESETUP, &buts) >= 0) {
 			dpp->ncpus = ncpus;
 			dpp->buts_name = strdup(buts.name);
 			if (dpp->stats)
 				free(dpp->stats);
 			dpp->stats = calloc(dpp->ncpus, sizeof(*dpp->stats));
 			memset(dpp->stats, 0, dpp->ncpus * sizeof(*dpp->stats));
-		}
+		} else
+			fprintf(stderr, "BLKTRACESETUP(2) %s failed: %d/%s\n",
+				dpp->path, errno, strerror(errno));
 	}
 }
 
@@ -1059,6 +1095,7 @@ static void get_all_drops(void)
 
 	__list_for_each(p, &devpaths) {
 		struct devpath *dpp = list_entry(p, struct devpath, head);
+
 		dpp->drops = get_drops(dpp);
 	}
 }
@@ -1085,6 +1122,7 @@ static void free_tracer_heads(struct devpath *dpp)
 	for (cpu = 0, hd = dpp->heads; cpu < ncpus; cpu++, hd++) {
 		if (hd->prev)
 			free(hd->prev);
+
 		pthread_mutex_destroy(&hd->mutex);
 	}
 	free(dpp->heads);
@@ -1138,6 +1176,23 @@ static inline void incr_entries(int entries_handled)
 	pthread_mutex_unlock(&dp_mutex);
 }
 
+static void decr_entries(int handled)
+{
+	pthread_mutex_lock(&dp_mutex);
+	dp_entries -= handled;
+	pthread_mutex_unlock(&dp_mutex);
+}
+
+static int wait_empty_entries(void)
+{
+	pthread_mutex_lock(&dp_mutex);
+	while (!done && dp_entries == 0)
+		t_pthread_cond_wait(&dp_cond, &dp_mutex);
+	pthread_mutex_unlock(&dp_mutex);
+
+	return !done;
+}
+
 static int add_devpath(char *path)
 {
 	int fd;
@@ -1189,8 +1244,7 @@ static int flush_subbuf_net(struct trace_buf *tbp)
 
 	if (net_send_header(fd, tbp->cpu, dpp->buts_name, tbp->len))
 		return 1;
-
-	if (net_send_data(fd, tbp->buf, tbp->len) != tbp->len)
+	else if (net_send_data(fd, tbp->buf, tbp->len) != tbp->len)
 		return 1;
 
 	return 0;
@@ -1223,6 +1277,34 @@ handle_list_net(__attribute__((__unused__))struct tracer_devpath_head *hd,
 	return entries_handled;
 }
 
+/*
+ * Tack 'tbp's buf onto the tail of 'prev's buf
+ */
+static struct trace_buf *tb_combine(struct trace_buf *prev,
+				    struct trace_buf *tbp)
+{
+	unsigned long tot_len;
+
+	tot_len = prev->len + tbp->len;
+	if (tot_len > buf_size) {
+		/*
+		 * tbp->head isn't connected (it was 'prev'
+		 * so it had been taken off of the list
+		 * before). Therefore, we can realloc
+		 * the whole structures, as the other fields
+		 * are "static".
+		 */
+		prev = realloc(prev->buf, sizeof(*prev) + tot_len);
+		prev->buf = (void *)(prev + 1);
+	}
+
+	memcpy(prev->buf + prev->len, tbp->buf, tbp->len);
+	prev->len = tot_len;
+
+	free(tbp);
+	return prev;
+}
+
 static int handle_list_file(struct tracer_devpath_head *hd,
 			    struct list_head *list)
 {
@@ -1242,31 +1324,8 @@ static int handle_list_file(struct tracer_devpath_head *hd,
 		 * If there was some leftover before, tack this new
 		 * entry onto the tail of the previous one.
 		 */
-		if (prev) {
-			unsigned long tot_len;
-			struct trace_buf *tmp = tbp;
-
-			tbp = prev;
-			prev = NULL;
-
-			tot_len = tbp->len + tmp->len;
-			if (tot_len > buf_size) {
-				/*
-				 * tbp->head isn't connected (it was 'prev'
-				 * so it had been taken off of the list
-				 * before). Therefore, we can realloc
-				 * the whole structures, as the other fields
-				 * are "static".
-				 */
-				tbp = realloc(tbp->buf, sizeof(*tbp) + tot_len);
-				tbp->buf = (void *)(tbp + 1);
-			}
-
-			memcpy(tbp->buf + tbp->len, tmp->buf, tmp->len);
-			tbp->len = tot_len;
-
-			free(tmp);
-		}
+		if (prev)
+			tbp = tb_combine(prev, tbp);
 
 		/*
 		 * See how many whole traces there are - send them
@@ -1291,8 +1350,10 @@ static int handle_list_file(struct tracer_devpath_head *hd,
 		 * for the next pass.
 		 */
 		if (off) {
-			if (write_data(tbp->buf, off) || off == tbp->len)
+			if (write_data(tbp->buf, off) || off == tbp->len) {
 				free(tbp);
+				prev = NULL;
+			}
 			else {
 				/*
 				 * Move valid data to beginning of buffer
@@ -1334,23 +1395,14 @@ static void __process_trace_bufs(void)
 		}
 	}
 
-	if (handled) {
-		pthread_mutex_lock(&dp_mutex);
-		dp_entries -= handled;
-		pthread_mutex_unlock(&dp_mutex);
-	}
+	if (handled)
+		decr_entries(handled);
 }
 
 static void process_trace_bufs(void)
 {
-	while (!done) {
-		pthread_mutex_lock(&dp_mutex);
-		while (!done && dp_entries == 0)
-			t_pthread_cond_wait(&dp_cond, &dp_mutex);
-		pthread_mutex_unlock(&dp_mutex);
-
+	while (wait_empty_entries())
 		__process_trace_bufs();
-	}
 }
 
 static void clean_trace_bufs(void)
@@ -1394,78 +1446,6 @@ static inline int net_sendfile_data(struct tracer *tp, struct io_info *iop)
 	if (net_send_header(iop->ofd, tp->cpu, dpp->buts_name, iop->ready))
 		return 1;
 	return net_sendfile(iop);
-}
-
-static int handle_pfds_netclient(struct tracer *tp, int nevs, int force_read)
-{
-	struct stat sb;
-	int i, nentries = 0;
-	struct pdc_stats *sp;
-	struct pollfd *pfd = tp->pfds;
-	struct io_info *iop = tp->ios;
-
-	for (i = 0; nevs > 0 && i < ndevs; i++, pfd++, iop++, sp++) {
-		if (pfd->revents & POLLIN || force_read) {
-			if (fstat(iop->ifd, &sb) < 0) {
-				perror(iop->ifn);
-				pfd->events = 0;
-			} else if (sb.st_size > (off_t)iop->data_queued) {
-				iop->ready = sb.st_size - iop->data_queued;
-				iop->data_queued = sb.st_size;
-				if (!net_sendfile_data(tp, iop)) {
-					pdc_dr_update(iop->dpp, tp->cpu,
-						      iop->ready);
-					nentries++;
-				} else
-					clear_events(pfd);
-			}
-			nevs--;
-		}
-	}
-
-	if (nentries)
-		incr_entries(nentries);
-
-	return nentries;
-}
-
-static int handle_pfds_entries(struct tracer *tp, int nevs, int force_read)
-{
-	int i, nentries = 0;
-	struct trace_buf *tbp;
-	struct pollfd *pfd = tp->pfds;
-	struct io_info *iop = tp->ios;
-
-	tbp = alloc_trace_buf(tp->cpu, buf_size);
-	for (i = 0; i < ndevs; i++, pfd++, iop++) {
-		if (pfd->revents & POLLIN || force_read) {
-			tbp->len = read(iop->ifd, tbp->buf, buf_size);
-			if (tbp->len > 0) {
-				pdc_dr_update(iop->dpp, tp->cpu, tbp->len);
-				add_trace_buf(iop->dpp, tp->cpu, &tbp);
-				nentries++;
-			} else if (tbp->len == 0) {
-				/*
-				 * Short reads after we're done stop us
-				 * from trying reads.
-				 */
-				if (tp->is_done)
-					clear_events(pfd);
-			} else {
-				read_err(tp->cpu, iop->ifn);
-				if (errno != EAGAIN || tp->is_done)
-					clear_events(pfd);
-			}
-			if (!piped_output && --nevs == 0)
-				break;
-		}
-	}
-	free(tbp);
-
-	if (nentries)
-		incr_entries(nentries);
-
-	return nentries;
 }
 
 static int fill_ofname(struct io_info *iop, int cpu)
@@ -1538,6 +1518,7 @@ static int iop_open(struct io_info *iop, int cpu)
 			iop->ofn, errno, strerror(errno));
 		return 1;
 	}
+
 	if (set_vbuf(iop, _IOLBF, FILE_VBUF_SIZE)) {
 		fprintf(stderr, "set_vbuf for file %s failed: %d/%s\n",
 			iop->ofn, errno, strerror(errno));
@@ -1600,9 +1581,9 @@ static int open_ios(struct tracer *tp)
 	struct list_head *p;
 
 	tp->ios = calloc(ndevs, sizeof(struct io_info));
-	tp->pfds = calloc(ndevs, sizeof(struct pollfd));
-
 	memset(tp->ios, 0, ndevs * sizeof(struct io_info));
+
+	tp->pfds = calloc(ndevs, sizeof(struct pollfd));
 	memset(tp->pfds, 0, ndevs * sizeof(struct pollfd));
 
 	tp->nios = 0;
@@ -1659,39 +1640,6 @@ err:
 	return 1;
 }
 
-static int setup_mmap(int fd, unsigned int maxlen, struct mmap_info *mip)
-{
-	if (mip->fs_off + maxlen > mip->fs_buf_len) {
-		unsigned long nr = max(16, mip->buf_nr);
-
-		if (mip->fs_buf) {
-			munlock(mip->fs_buf, mip->fs_buf_len);
-			munmap(mip->fs_buf, mip->fs_buf_len);
-			mip->fs_buf = NULL;
-		}
-
-		mip->fs_off = mip->fs_size & (mip->pagesize - 1);
-		mip->fs_buf_len = (nr * mip->buf_size) - mip->fs_off;
-		mip->fs_max_size += mip->fs_buf_len;
-
-		if (ftruncate(fd, mip->fs_max_size) < 0) {
-			perror("__setup_mmap: ftruncate");
-			return 1;
-		}
-
-		mip->fs_buf = my_mmap(NULL, mip->fs_buf_len, PROT_WRITE,
-				      MAP_SHARED, fd,
-				      mip->fs_size - mip->fs_off);
-		if (mip->fs_buf == MAP_FAILED) {
-			perror("__setup_mmap: mmap");
-			return 1;
-		}
-		my_mlock(mip->fs_buf, mip->fs_buf_len);
-	}
-
-	return 0;
-}
-
 static int handle_pfds_file(struct tracer *tp, int nevs, int force_read)
 {
 	struct mmap_info *mip;
@@ -1735,6 +1683,80 @@ static int handle_pfds_file(struct tracer *tp, int nevs, int force_read)
 	return nentries;
 }
 
+static int handle_pfds_netclient(struct tracer *tp, int nevs, int force_read)
+{
+	struct stat sb;
+	int i, nentries = 0;
+	struct pdc_stats *sp;
+	struct pollfd *pfd = tp->pfds;
+	struct io_info *iop = tp->ios;
+
+	for (i = 0; i < ndevs; i++, pfd++, iop++, sp++) {
+		if (pfd->revents & POLLIN || force_read) {
+			if (fstat(iop->ifd, &sb) < 0) {
+				perror(iop->ifn);
+				pfd->events = 0;
+			} else if (sb.st_size > (off_t)iop->data_queued) {
+				iop->ready = sb.st_size - iop->data_queued;
+				iop->data_queued = sb.st_size;
+
+				if (!net_sendfile_data(tp, iop)) {
+					pdc_dr_update(iop->dpp, tp->cpu,
+						      iop->ready);
+					nentries++;
+				} else
+					clear_events(pfd);
+			}
+			if (--nevs == 0)
+				break;
+		}
+	}
+
+	if (nentries)
+		incr_entries(nentries);
+
+	return nentries;
+}
+
+static int handle_pfds_entries(struct tracer *tp, int nevs, int force_read)
+{
+	int i, nentries = 0;
+	struct trace_buf *tbp;
+	struct pollfd *pfd = tp->pfds;
+	struct io_info *iop = tp->ios;
+
+	tbp = alloc_trace_buf(tp->cpu, buf_size);
+	for (i = 0; i < ndevs; i++, pfd++, iop++) {
+		if (pfd->revents & POLLIN || force_read) {
+			tbp->len = read(iop->ifd, tbp->buf, buf_size);
+			if (tbp->len > 0) {
+				pdc_dr_update(iop->dpp, tp->cpu, tbp->len);
+				add_trace_buf(iop->dpp, tp->cpu, &tbp);
+				nentries++;
+			} else if (tbp->len == 0) {
+				/*
+				 * Short reads after we're done stop us
+				 * from trying reads.
+				 */
+				if (tp->is_done)
+					clear_events(pfd);
+			} else {
+				read_err(tp->cpu, iop->ifn);
+				if (errno != EAGAIN || tp->is_done)
+					clear_events(pfd);
+			}
+			if (!piped_output && --nevs == 0)
+				break;
+		}
+	}
+	free(tbp);
+
+	if (nentries)
+		incr_entries(nentries);
+
+	return nentries;
+}
+
 static void *thread_main(void *arg)
 {
 	int ret, ndone, to_val;
@@ -1771,6 +1793,7 @@ static void *thread_main(void *arg)
 	 */
 	while (handle_pfds(tp, ndevs, 1) > 0)
 		;
+
 	close_ios(tp);
 	tracer_signal_ready(tp, Th_leaving, 0);
 	return NULL;
@@ -2531,6 +2554,45 @@ out:
 	return ret;
 }
 
+static int run_tracers(void)
+{
+	atexit(exit_tracing);
+	if (net_mode == Net_client)
+		printf("blktrace: connecting to %s\n", hostname);
+
+	setup_buts();
+
+	if (use_tracer_devpaths()) {
+		if (setup_tracer_devpaths())
+			return 1;
+
+		if (piped_output)
+			handle_list = handle_list_file;
+		else
+			handle_list = handle_list_net;
+	}
+
+	start_tracers();
+	if (nthreads_running == ncpus) {
+		unblock_tracers();
+		start_buts();
+		if (net_mode == Net_client)
+			printf("blktrace: connected!\n");
+		if (stop_watch)
+			alarm(stop_watch);
+	} else
+		stop_tracers();
+
+	wait_tracers();
+	if (nthreads_running == ncpus)
+		show_stats(&devpaths);
+	if (net_client_use_send())
+		close_client_connections();
+	del_tracers();
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret = 0;
@@ -2543,9 +2605,7 @@ int main(int argc, char *argv[])
 			errno, strerror(errno));
 		ret = 1;
 		goto out;
-	}
-
-	if (handle_args(argc, argv)) {
+	} else if (handle_args(argc, argv)) {
 		ret = 1;
 		goto out;
 	}
@@ -2573,47 +2633,9 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "-o ignored in server mode\n");
 			output_name = NULL;
 		}
-
 		ret = net_server();
-	} else {
-		atexit(exit_tracing);
-
-		if (net_mode == Net_client)
-			printf("blktrace: connecting to %s\n", hostname);
-
-		setup_buts();
-
-		if (use_tracer_devpaths()) {
-			if (setup_tracer_devpaths())
-				goto out;
-
-			if (piped_output)
-				handle_list = handle_list_file;
-			else
-				handle_list = handle_list_net;
-		}
-
-		start_tracers();
-		if (nthreads_running == ncpus) {
-			unblock_tracers();
-			start_buts();
-
-			if (net_mode == Net_client)
-				printf("blktrace: connected!\n");
-
-			if (stop_watch)
-				alarm(stop_watch);
-		} else
-			stop_tracers();
-
-		wait_tracers();
-		if (nthreads_running == ncpus)
-			show_stats(&devpaths);
-
-		if (net_client_use_send())
-			close_client_connections();
-		del_tracers();
-	}
+	} else
+		ret = run_tracers();
 
 out:
 	if (pfp)
