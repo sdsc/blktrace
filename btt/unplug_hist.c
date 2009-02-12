@@ -71,7 +71,7 @@ void unplug_hist_exit(void *arg)
 		char *oname = malloc(strlen(unplug_hist_name) + 32);
 
 		sprintf(oname, "%s_%03d,%03d.dat", unplug_hist_name, mjr, mnr);
-		if ((fp = fopen(oname, "w")) != NULL) {
+		if ((fp = my_fopen(oname, "w")) != NULL) {
 			int i;
 
 			for (i = 0; i < NBKTS; i++)
