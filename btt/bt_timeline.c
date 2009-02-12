@@ -117,6 +117,8 @@ int process(void)
 	io_release(iop);
 	gettimeofday(&tve, NULL);
 
+	dip_cleanup();
+
 	if (verbose) {
 		double tps, dt_input = tv2dbl(&tve) - tv2dbl(&tvs);
 

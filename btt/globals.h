@@ -230,6 +230,7 @@ void dip_plug(__u32 dev, double cur_time);
 void dip_unplug(__u32 dev, double cur_time, __u64 nio_ups);
 void dip_unplug_tm(__u32 dev, __u64 nio_ups);
 void dip_exit(void);
+void dip_cleanup(void);
 
 /* dip_rb.c */
 int rb_insert(struct rb_root *root, struct io *iop);

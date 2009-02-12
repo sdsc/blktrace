@@ -73,29 +73,33 @@ struct d_info *__dip_find(__u32 device)
 	return NULL;
 }
 
+void __dip_exit(struct d_info *dip)
+{
+	list_del(&dip->all_head);
+	__destroy_heads(dip->heads);
+	region_exit(&dip->regions);
+	seeki_exit(dip->seek_handle);
+	seeki_exit(dip->q2q_handle);
+	aqd_exit(dip->aqd_handle);
+	plat_exit(dip->q2d_plat_handle);
+	plat_exit(dip->q2c_plat_handle);
+	plat_exit(dip->d2c_plat_handle);
+	bno_dump_exit(dip->bno_dump_handle);
+	unplug_hist_exit(dip->unplug_hist_handle);
+	if (output_all_data)
+		q2d_release(dip->q2d_priv);
+	if (dip->pit_fp)
+		fclose(dip->pit_fp);
+	free(dip);
+}
+
 void dip_exit(void)
 {
-	struct d_info *dip;
 	struct list_head *p, *q;
 
 	list_for_each_safe(p, q, &all_devs) {
-		dip = list_entry(p, struct d_info, all_head);
-
-		__destroy_heads(dip->heads);
-		region_exit(&dip->regions);
-		seeki_exit(dip->seek_handle);
-		seeki_exit(dip->q2q_handle);
-		aqd_exit(dip->aqd_handle);
-		plat_exit(dip->q2d_plat_handle);
-		plat_exit(dip->q2c_plat_handle);
-		plat_exit(dip->d2c_plat_handle);
-		bno_dump_exit(dip->bno_dump_handle);
-		unplug_hist_exit(dip->unplug_hist_handle);
-		if (output_all_data)
-			q2d_release(dip->q2d_priv);
-		if (dip->pit_fp)
-			fclose(dip->pit_fp);
-		free(dip);
+		struct d_info *dip = list_entry(p, struct d_info, all_head);
+		__dip_exit(dip);
 	}
 }
 
@@ -258,5 +262,17 @@ void dip_unplug_tm(__u32 dev, __u64 nios_up)
 		dip->n_timer_unplugs++;
 		dip->nios_upt += nios_up;
 		dip->nplugs_t++;
+	}
+}
+
+void dip_cleanup(void)
+{
+	struct list_head *p, *q;
+
+	list_for_each_safe(p, q, &all_devs) {
+		struct d_info *dip = list_entry(p, struct d_info, all_head);
+
+		if (dip->n_qs == 0 && dip->n_ds == 0)
+			__dip_exit(dip);
 	}
 }
