@@ -25,14 +25,14 @@
 #include <time.h>
 #include "globals.h"
 
-char bt_timeline_version[] = "2.07";
+char bt_timeline_version[] = "2.08";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
 char *sps_name, *aqd_name, *q2d_name, *per_io_trees;
 FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
-int easy_parse_avgs;
+int easy_parse_avgs, ignore_remaps;
 double t_astart, t_aend;
 unsigned long n_traces;
 struct avgs_info all_avgs;

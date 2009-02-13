@@ -799,7 +799,7 @@ Device:       rrqm/s   wrqm/s     r/s     w/s    rsec/s    wsec/s
 \newpage\section{\label{sec:cmd-line}Command Line}
 
 \begin{verbatim}
-Usage: btt 2.07 
+Usage: btt 2.08
 [ -a               | --seek-absolute ]
 [ -A               | --all-data ]
 [ -B <output name> | --dump-blocknos=<output name> ]
@@ -818,6 +818,7 @@ Usage: btt 2.07
 [ -P <output name> | --per-io-trees=<output name> ]
 [ -q <output name> | --q2c-latencies=<output name> ]
 [ -Q <output name> | --active-queue-depth=<output name> ]
+[ -r               | --no-remaps ]
 [ -s <output name> | --seeks=<output name> ]
 [ -S <interval>    | --iostat-interval=<interval> ]
 [ -t <sec>         | --time-start=<sec> ]
@@ -962,6 +963,10 @@ time values are separated from the Q time values with a vertical bar.
   and then the number of \emph{active} requests issued to the device
   driver. (The value is incremented when an \emph{issue} is performend,
   and decremented when a \emph{complete} is performed.
+
+\subsection{\label{sec:o-r}\texttt{--no-remaps}/\texttt{-r}}
+
+  Ignore remap traces; older kernels did not implement the full remap PDU.
 
 \subsection{\label{sec:o-s}\texttt{--seeks}/\texttt{-s}}
 

@@ -41,6 +41,8 @@ btt \- analyse block i/o traces produces by blktrace
 .br
 [ \-Q <\fIoutput name\fR> | \-\-active\-queue\-depth=<\fIoutput name\fR> ]
 .br
+[ \-r               | \-\-no\-remaps ]
+.br
 [ \-s <\fIoutput name\fR> | \-\-seeks=<\fIoutput name\fR> ]
 .br
 [ \-S <\fIinterval\fR>    | \-\-iostat\-interval=<\fIinterval\fR> ]
@@ -243,6 +245,14 @@ name for each device.
 .RS 4
 The \-Q option allows one to output data files showing the time stamp
 and the depth of active commands (those issued but not completed).
+.RE
+
+.B \-r
+.br
+.B \-\-no\-remaps
+.RS 4
+Ignore remap traces; older kernels did not implement the full remap
+PDU.
 .RE
 
 .B \-s <\fIoutput name\fR>

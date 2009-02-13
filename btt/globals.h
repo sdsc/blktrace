@@ -174,7 +174,7 @@ extern double range_delta, plat_freq;
 extern FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
-extern int easy_parse_avgs;
+extern int easy_parse_avgs, ignore_remaps;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
 extern struct list_head all_devs, all_procs;

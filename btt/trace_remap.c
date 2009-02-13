@@ -35,8 +35,12 @@ void trace_remap(struct io *a_iop)
 {
 	struct io *q_iop;
 	struct d_info *q_dip;
-	struct blk_io_trace_remap *rp = a_iop->pdu;
+	struct blk_io_trace_remap *rp;
 
+	if (ignore_remaps)
+		goto out;
+
+	rp = a_iop->pdu;
 	cvt_pdu_remap(rp);
 
 	a_iop->t.device = rp->device_from;

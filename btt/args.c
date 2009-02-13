@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:P:q:Q:s:S:t:T:u:VvXz:"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:P:q:Q:rs:S:t:T:u:VvXz:"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -140,6 +140,12 @@ static struct option l_opts[] = {
 		.val = 'Q'
 	},
 	{
+		.name = "no-remaps",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'r'
+	},
+	{
 		.name = "seeks",
 		.has_arg = required_argument,
 		.flag = NULL,
@@ -217,6 +223,7 @@ static char usage_str[] = \
 	"[ -P <output name> | --per-io-trees=<output name> ]\n" \
 	"[ -q <output name> | --q2c-latencies=<output name> ]\n" \
 	"[ -Q <output name> | --active-queue-depth=<output name> ]\n" \
+	"[ -r               | --no-remaps ]\n" \
 	"[ -s <output name> | --seeks=<output name> ]\n" \
 	"[ -S <interval>    | --iostat-interval=<interval> ]\n" \
 	"[ -t <sec>         | --time-start=<sec> ]\n" \
@@ -335,6 +342,9 @@ void handle_args(int argc, char *argv[])
 		case 'Q':
 			aqd_name = optarg;
 			break;
+		case 'r':
+			ignore_remaps = 1;
+			break;
 		case 's':
 			seek_name = optarg;
 			break;
@@ -390,12 +400,12 @@ void handle_args(int argc, char *argv[])
 		rngs_ofp = avgs_ofp = msgs_ofp = stdout;
 		easy_parse_avgs = 0;
 	} else {
-		rngs_ofp = std_open(output_name, ".dat", "range data");
-		avgs_ofp = std_open(output_name, ".avg", "stats data");
-		msgs_ofp = std_open(output_name, ".msg", "K messages");
+		rngs_ofp = std_open(output_name, "dat", "range data");
+		avgs_ofp = std_open(output_name, "avg", "stats data");
+		msgs_ofp = std_open(output_name, "msg", "K messages");
 		if (easy_parse_avgs) {
-			xavgs_ofp = std_open(output_name, ".xvg",
-					     "X stats data");
+			xavgs_ofp = std_open(output_name, "xvg",
+					     "EZ stats data");
 		}
 	}
 
