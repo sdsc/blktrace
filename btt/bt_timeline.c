@@ -30,7 +30,7 @@ char bt_timeline_version[] = "2.07";
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
 char *sps_name, *aqd_name, *q2d_name, *per_io_trees;
-FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
+FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
 int easy_parse_avgs;
 double t_astart, t_aend;
@@ -62,7 +62,7 @@ int main(int argc, char *argv[])
 
 	init_dev_heads();
 	iostat_init();
-	if (process() || output_avgs(avgs_ofp) || output_ranges(ranges_ofp))
+	if (process() || output_avgs(avgs_ofp) || output_ranges(rngs_ofp))
 		return 1;
 
 	if (iostat_ofp) {
@@ -72,26 +72,20 @@ int main(int argc, char *argv[])
 
 	if (msgs_ofp != stdout)
 		fclose(msgs_ofp);
-	if (ranges_ofp != stdout)
-		fclose(ranges_ofp);
+	if (rngs_ofp != stdout)
+		fclose(rngs_ofp);
 	if (avgs_ofp != stdout)
 		fclose(avgs_ofp);
+	if (xavgs_ofp)
+		fclose(xavgs_ofp);
 
-	latency_clean();
-	bno_dump_clean();
+	dip_cleanup();
 	dev_map_exit();
 	dip_exit();
-	seek_clean();
 	pip_exit();
-	aqd_clean();
 	io_free_all();
 	region_exit(&all_regions);
-
-	free(input_name);
-	if (output_name) free(output_name);
-
-	clean_args();
-	clean_bufs();
+	clean_allocs();
 
 	return 0;
 }
@@ -116,8 +110,6 @@ int process(void)
 
 	io_release(iop);
 	gettimeofday(&tve, NULL);
-
-	dip_cleanup();
 
 	if (verbose) {
 		double tps, dt_input = tv2dbl(&tve) - tv2dbl(&tvs);

@@ -27,9 +27,7 @@ struct plat_info {
 	double first_ts, last_ts, tl;
 };
 
-static struct file_info *plat_files = NULL;
-
-void *plat_init(char *str)
+void *plat_alloc(char *str)
 {
 	char *oname;
 	struct plat_info *pp;
@@ -46,12 +44,12 @@ void *plat_init(char *str)
 		perror(oname);
 		return NULL;
 	}
-	add_file(&plat_files, pp->fp, oname);
+	add_file(pp->fp, oname);
 
 	return pp;
 }
 
-void plat_exit(void *info)
+void plat_free(void *info)
 {
 	struct plat_info *pp = info;
 
@@ -66,11 +64,6 @@ void plat_exit(void *info)
 	free(info);
 }
 
-void plat_clean(void)
-{
-	clean_files(&plat_files);
-}
-
 void plat_x2c(void *info, __u64 ts, __u64 latency)
 {
 	double now = TO_SEC(ts);
@@ -83,8 +76,7 @@ void plat_x2c(void *info, __u64 ts, __u64 latency)
 		pp->first_ts = pp->last_ts = now;
 		pp->nl = 1;
 		pp->tl = lat;
-	}
-	else if ((now - pp->first_ts) >= plat_freq) {
+	} else if ((now - pp->first_ts) >= plat_freq) {
 		double delta = pp->last_ts - pp->first_ts;
 
 		fprintf(pp->fp, "%lf %lf\n",
@@ -93,8 +85,7 @@ void plat_x2c(void *info, __u64 ts, __u64 latency)
 		pp->first_ts = pp->last_ts = now;
 		pp->nl = 1;
 		pp->tl = lat;
-	}
-	else {
+	} else {
 		pp->last_ts = now;
 		pp->nl += 1;
 		pp->tl += lat;

@@ -30,7 +30,7 @@ struct hist_bkt {
 	int hist[NBKTS * sizeof(int)];
 };
 
-void *unplug_hist_init(__u32 device)
+void *unplug_hist_alloc(__u32 device)
 {
 	struct hist_bkt *hbp;
 
@@ -48,10 +48,10 @@ void unplug_hist_add(struct io *u_iop)
 	struct d_info *dip;
 
 	dip = __dip_find(u_iop->t.device);
-	if (dip && dip->unplug_hist_handle) {
+	if (dip && dip->up_hist_handle) {
 		__u64 *val = u_iop->pdu;
 		int idx, n_unplugs = be64_to_cpu(*val);
-		struct hist_bkt *hbp = dip->unplug_hist_handle;
+		struct hist_bkt *hbp = dip->up_hist_handle;
 
 		idx = (n_unplugs / BKT_WIDTH);
 		if (idx > EXCESS_BKT)
@@ -61,7 +61,7 @@ void unplug_hist_add(struct io *u_iop)
 	}
 }
 
-void unplug_hist_exit(void *arg)
+void unplug_hist_free(void *arg)
 {
 	if (arg) {
 		FILE *fp;
@@ -78,8 +78,7 @@ void unplug_hist_exit(void *arg)
 				fprintf(fp, "%d %d\n", i, hbp->hist[i]);
 			fclose(fp);
 
-		}
-		else
+		} else
 			perror(oname);
 
 		free(oname);

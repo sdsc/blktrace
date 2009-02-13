@@ -33,6 +33,16 @@ struct pn_info {
 
 struct rb_root root_pid, root_name;
 
+static void __foreach(struct rb_node *n, void (*f)(struct p_info *, void *),
+			void *arg)
+{
+	if (n) {
+		__foreach(n->rb_left, f, arg);
+		f(rb_entry(n, struct pn_info, rb_node)->pip, arg);
+		__foreach(n->rb_right, f, arg);
+	}
+}
+
 static void __destroy(struct rb_node *n, int free_name, int free_pip)
 {
 	if (n) {
@@ -41,7 +51,8 @@ static void __destroy(struct rb_node *n, int free_name, int free_pip)
 		__destroy(n->rb_left, free_name, free_pip);
 		__destroy(n->rb_right, free_name, free_pip);
 
-		if (free_name) free(pnp->u.name);
+		if (free_name)
+			free(pnp->u.name);
 		if (free_pip) {
 			free(pnp->pip->name);
 			region_exit(&pnp->pip->regions);
@@ -186,14 +197,14 @@ struct p_info *find_process(__u32 pid, char *name)
 
 		name = alloca(256);
 		sprintf(name, "pid%09u", pid);
-		add_process(pid, name);
+		process_alloc(pid, name);
 		return __find_process_pid(pid);
 	}
 
 	return __find_process_name(name);
 }
 
-void add_process(__u32 pid, char *name)
+void process_alloc(__u32 pid, char *name)
 {
 	struct p_info *pip = find_process(pid, name);
 
@@ -204,7 +215,7 @@ void add_process(__u32 pid, char *name)
 		pip->last_q = (__u64)-1;
 		pip->name = strdup(name);
 
-	 	insert(pip);
+		insert(pip);
 	}
 }
 
@@ -218,15 +229,6 @@ void pip_update_q(struct io *iop)
 			update_lq(&iop->pip->last_q, &iop->pip->avgs.q2q,
 								iop->t.time);
 		update_qregion(&iop->pip->regions, iop->t.time);
-	}
-}
-
-void __foreach(struct rb_node *n, void (*f)(struct p_info *, void *), void *arg)
-{
-	if (n) {
-		__foreach(n->rb_left, f, arg);
-		f(rb_entry(n, struct pn_info, rb_node)->pip, arg);
-		__foreach(n->rb_right, f, arg);
 	}
 }
 
@@ -244,8 +246,7 @@ void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg)
 			if ((next = strchr(exes_save, ',')) != NULL) {
 				*next = '\0';
 				exes_save = next+1;
-			}
-			else
+			} else
 				exes_save = NULL;
 
 			pip = __find_process_name(exe);

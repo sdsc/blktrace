@@ -24,14 +24,12 @@
 
 #include "globals.h"
 
-static struct file_info *aqd_files = NULL;
-
 struct aqd_info {
 	FILE *fp;
 	int na;		/* # active */
 };
 
-void *aqd_init(char *str)
+void *aqd_alloc(char *str)
 {
 	char *oname;
 	struct aqd_info *ap;
@@ -47,20 +45,15 @@ void *aqd_init(char *str)
 		perror(oname);
 		return NULL;
 	}
-	add_file(&aqd_files, ap->fp, oname);
+	add_file(ap->fp, oname);
 
 	return ap;
 
 }
 
-void aqd_exit(void *info)
+void aqd_free(void *info)
 {
 	free(info);
-}
-
-void aqd_clean(void)
-{
-	clean_files(&aqd_files);
 }
 
 void aqd_issue(void *info, double ts)

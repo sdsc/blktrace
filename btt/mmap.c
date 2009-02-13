@@ -41,7 +41,10 @@ static long pgsz;
 
 int data_is_native = -1;
 
-static inline size_t min_len(size_t a, size_t b) { return a < b ? a : b; }
+static inline size_t min_len(size_t a, size_t b)
+{
+	return a < b ? a : b;
+}
 
 static inline size_t convert_to_cpu(struct blk_io_trace *t,
                                     struct blk_io_trace *tp,
@@ -69,8 +72,7 @@ static inline size_t convert_to_cpu(struct blk_io_trace *t,
 	if (tp->pdu_len) {
 		*pdu = malloc(tp->pdu_len);
 		memcpy(*pdu, t+1, tp->pdu_len);
-	}
-	else
+	} else
 		*pdu = NULL;
 
 	return sizeof(*tp) + tp->pdu_len;
@@ -130,8 +132,10 @@ int next_trace(struct blk_io_trace *t, void **pdu)
 	size_t this_len;
 
 	if ((cur + 512) > cur_max)
-		if (!move_map())
+		if (!move_map()) {
+			cleanup_ifile();
 			return 0;
+		}
 
 	next_t = cur_map + (cur - cur_min);
 	this_len = convert_to_cpu(next_t, t, pdu);

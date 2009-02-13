@@ -21,8 +21,6 @@
 #include <float.h>
 #include "globals.h"
 
-static struct file_info *seek_files = NULL;
-
 struct seek_bkt {
 	struct rb_node rb_node;
 	long long sectors;
@@ -56,7 +54,7 @@ static FILE *seek_open(char *str, char rw)
 	if ((fp = my_fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
-		add_file(&seek_files, fp, oname);
+		add_file(fp, oname);
 
 	return fp;
 }
@@ -108,8 +106,7 @@ static void sps_emit(struct seeki *sip)
 	if ((sps->nseeks == 1) || (delta < DBL_EPSILON)) {
 		s_p_s = (double)(sps->nseeks);
 		tstamp = sps->t_start;
-	}
-	else {
+	} else {
 
 		s_p_s = (double)(sps->nseeks) / delta;
 		tstamp = sps->t_start + (delta / 2);
@@ -133,15 +130,55 @@ static void sps_add(struct seeki *sip, double t)
 		if (sps->nseeks == 0) {
 			sps->t_start = t;
 			sps->nseeks = 1;
-		}
-		else
+		} else
 			sps->nseeks++;
 	}
 }
 
-void seek_clean(void)
+static int __median(struct rb_node *n, long long sofar, long long target,
+		    long long *rvp)
 {
-	clean_files(&seek_files);
+	struct seek_bkt *sbp;
+
+	sbp = rb_entry(n, struct seek_bkt, rb_node);
+	if ((sofar + sbp->nseeks) >= target) {
+		*rvp = sbp->sectors;
+		return 1;
+	}
+
+	if (n->rb_left && __median(n->rb_left, sofar, target, rvp))
+		return 1;
+
+	if (n->rb_right && __median(n->rb_right, sofar, target, rvp))
+		return 1;
+
+	return 0;
+
+}
+
+static void __mode(struct rb_node *n, struct mode *mp)
+{
+	struct seek_bkt *sbp;
+
+	if (n->rb_left)
+		__mode(n->rb_left, mp);
+	if (n->rb_right)
+		__mode(n->rb_right, mp);
+
+	sbp = rb_entry(n, struct seek_bkt, rb_node);
+	if (mp->modes == NULL) {
+		mp->modes = malloc(sizeof(long long));
+		mp->nmds = 0;
+	} else if (sbp->nseeks > mp->most_seeks)
+		mp->nmds = 0;
+	else if (sbp->nseeks == mp->most_seeks)
+		mp->modes = realloc(mp->modes, (mp->nmds + 1) *
+							sizeof(long long));
+	else
+		return;
+
+	mp->most_seeks = sbp->nseeks;
+	mp->modes[mp->nmds++] = sbp->sectors;
 }
 
 long long seek_dist(struct seeki *sip, struct io *iop)
@@ -168,7 +205,7 @@ long long seek_dist(struct seeki *sip, struct io *iop)
 	return dist;
 }
 
-void *seeki_init(char *str)
+void *seeki_alloc(char *str)
 {
 	struct seeki *sip = malloc(sizeof(struct seeki));
 
@@ -190,15 +227,14 @@ void *seeki_init(char *str)
 		if ((sip->sps_fp = my_fopen(oname, "w")) == NULL)
 			perror(oname);
 		else
-			add_file(&seek_files, sip->sps_fp, oname);
-	}
-	else
+			add_file(sip->sps_fp, oname);
+	} else
 		sip->sps_fp = NULL;
 
 	return sip;
 }
 
-void seeki_exit(void *param)
+void seeki_free(void *param)
 {
 	struct seeki *sip = param;
 
@@ -244,27 +280,6 @@ double seeki_mean(void *handle)
 	return sip->total_sectors / sip->tot_seeks;
 }
 
-int __median(struct rb_node *n, long long sofar, long long target, long
-		   long *rvp)
-{
-	struct seek_bkt *sbp;
-
-	sbp = rb_entry(n, struct seek_bkt, rb_node);
-	if ((sofar + sbp->nseeks) >= target) {
-		*rvp = sbp->sectors;
-		return 1;
-	}
-
-	if (n->rb_left && __median(n->rb_left, sofar, target, rvp))
-		return 1;
-
-	if (n->rb_right && __median(n->rb_right, sofar, target, rvp))
-		return 1;
-
-	return 0;
-
-}
-
 long long seeki_median(void *handle)
 {
 	long long rval = 0LL;
@@ -275,30 +290,6 @@ long long seeki_median(void *handle)
 			       &rval);
 
 	return rval;
-}
-
-void __mode(struct rb_node *n, struct mode *mp)
-{
-	struct seek_bkt *sbp;
-
-	if (n->rb_left) __mode(n->rb_left, mp);
-	if (n->rb_right) __mode(n->rb_right, mp);
-
-	sbp = rb_entry(n, struct seek_bkt, rb_node);
-	if (mp->modes == NULL) {
-		mp->modes = malloc(sizeof(long long));
-		mp->nmds = 0;
-	}
-	else if (sbp->nseeks > mp->most_seeks)
-		mp->nmds = 0;
-	else if (sbp->nseeks == mp->most_seeks)
-		mp->modes = realloc(mp->modes, (mp->nmds + 1) *
-							sizeof(long long));
-	else
-		return;
-
-	mp->most_seeks = sbp->nseeks;
-	mp->modes[mp->nmds++] = sbp->sectors;
 }
 
 int seeki_mode(void *handle, struct mode *mp)

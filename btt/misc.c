@@ -31,93 +31,49 @@
 #define INLINE_DECLARE
 #include "globals.h"
 
-int in_devices(struct blk_io_trace *t)
+struct file_info {
+	struct list_head head;
+	FILE *ofp;
+	char *oname;
+};
+
+struct buf_info {
+	struct list_head head;
+	void *buf;
+};
+
+LIST_HEAD(files_to_clean);
+LIST_HEAD(all_bufs);
+
+static void clean_files(void)
 {
-	int i;
-	unsigned int mjr, mnr;
-	char *p = devices;
+	struct list_head *p, *q;
 
-	if (p == NULL) return 1;	/* Allow anything */
-
-	for (;;) {
-		i = sscanf(p, "%u,%u;", &mjr, &mnr);
-		if ((mjr == MAJOR(t->device) && (mnr == MINOR(t->device))))
-			return 1;
-
-		p = strchr(p, ';');
-		if (!p)
-			break;
-		p++;
-	}
-
-	return 0;
-}
-
-void add_file(struct file_info **fipp, FILE *fp, char *oname)
-{
-	struct file_info *fip = malloc(sizeof(*fip));
-
-	fip->ofp = fp;
-	fip->oname = oname;
-	fip->next = *fipp;
-	*fipp = fip;
-}
-
-void clean_files(struct file_info **fipp)
-{
-	struct stat buf;
-	struct file_info *fip;
-
-	while ((fip = *fipp) != NULL) {
-		*fipp = fip->next;
+	list_for_each_safe(p, q, &files_to_clean) {
+		struct stat buf;
+		struct file_info *fip = list_entry(p, struct file_info, head);
 
 		fclose(fip->ofp);
 		if (!stat(fip->oname, &buf) && (buf.st_size == 0))
 			unlink(fip->oname);
 
+		list_del(&fip->head);
 		free(fip->oname);
 		free(fip);
 	}
 }
 
-struct buf_info {
-	struct buf_info *next;
-	void *buf;
-} *all_bufs;
-void add_buf(void *buf)
+static void clean_bufs(void)
 {
-	struct buf_info *bip = malloc(sizeof(*bip));
+	struct list_head *p, *q;
 
-	bip->buf = buf;
-	bip->next = all_bufs;
-	all_bufs = bip;
-}
+	list_for_each_safe(p, q, &all_bufs) {
+		struct buf_info *bip = list_entry(p, struct buf_info, head);
 
-void clean_bufs(void)
-{
-	struct buf_info *bip;
-
-	while ((bip = all_bufs) != NULL) {
-		all_bufs = bip->next;
+		list_del(&bip->head);
 		free(bip->buf);
 		free(bip);
 	}
-}
-
-char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
-{
-	if (dip->map == NULL) {
-		if (add_parens)
-			snprintf(pad, len, "(%3d,%3d)",
-				 MAJOR(dip->device), MINOR(dip->device));
-		else
-			snprintf(pad, len, "%d,%d",
-				 MAJOR(dip->device), MINOR(dip->device));
-	}
-	else
-		snprintf(pad, len, "%s", dip->map->device);
-
-	return pad;
 }
 
 /*
@@ -149,7 +105,45 @@ static int handle_open_failure(void)
 {
 	if (errno == ENFILE || errno == EMFILE)
 		return increase_limit(RLIMIT_NOFILE, 16);
+
 	return 0;
+}
+
+void add_file(FILE *fp, char *oname)
+{
+	struct file_info *fip = malloc(sizeof(*fip));
+
+	fip->ofp = fp;
+	fip->oname = oname;
+	list_add_tail(&fip->head, &files_to_clean);
+}
+
+void add_buf(void *buf)
+{
+	struct buf_info *bip = malloc(sizeof(*bip));
+
+	bip->buf = buf;
+	list_add_tail(&bip->head, &all_bufs);
+}
+
+void clean_allocs(void)
+{
+	clean_files();
+	clean_bufs();
+}
+
+char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
+{
+	if (dip->devmap)
+		snprintf(pad, len, "%s", dip->devmap);
+	else if (add_parens)
+		snprintf(pad, len, "(%3d,%3d)",
+			 MAJOR(dip->device), MINOR(dip->device));
+	else
+		snprintf(pad, len, "%d,%d",
+			 MAJOR(dip->device), MINOR(dip->device));
+
+	return pad;
 }
 
 FILE *my_fopen(const char *path, const char *mode)

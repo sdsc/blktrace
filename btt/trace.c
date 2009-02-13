@@ -76,28 +76,25 @@ void add_trace(struct io *iop)
 	if (iop->t.action & BLK_TC_ACT(BLK_TC_NOTIFY)) {
 		if (iop->t.action == BLK_TN_PROCESS) {
 			if (iop->t.pid == 0)
-				add_process(0, "kernel");
+				process_alloc(0, "kernel");
 			else {
 				char *slash = strchr(iop->pdu, '/');
 				if (slash)
 					*slash = '\0';
 
-				add_process(iop->t.pid, iop->pdu);
+				process_alloc(iop->t.pid, iop->pdu);
 			}
-		}
-		else if (iop->t.action == BLK_TN_MESSAGE)
+		} else if (iop->t.action == BLK_TN_MESSAGE)
 			trace_message(iop);
 		io_release(iop);
-	}
-	else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC))
+	} else if (iop->t.action & BLK_TC_ACT(BLK_TC_PC)) {
 		io_release(iop);
-	else {
+	} else {
 		if (time_bounded) {
 			if (BIT_TIME(iop->t.time) < t_astart) {
 				io_release(iop);
 				return;
-			}
-			else if (BIT_TIME(iop->t.time) > t_aend) {
+			} else if (BIT_TIME(iop->t.time) > t_aend) {
 				io_release(iop);
 				done = 1;
 				return;

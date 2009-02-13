@@ -60,12 +60,6 @@ enum iop_type {
 };
 #define N_IOP_TYPES	(IOP_S + 1)
 
-struct file_info {
-	struct file_info *next;
-	FILE *ofp;
-	char *oname;
-};
-
 struct mode {
 	int most_seeks, nmds;
 	long long *modes;
@@ -121,13 +115,6 @@ struct p_info {
 	char *name;
 };
 
-struct devmap {
-	struct devmap *next;
-	unsigned int host, bus, target, lun, irq, cpu;
-	char model[64];
-	char device[32], node[32], pci[32], devno[32];
-};
-
 struct stats {
 	__u64 rqm[2], ios[2], sec[2], wait, svctm;
 	double last_qu_change, last_dev_change, tot_qusz, idle_time;
@@ -144,8 +131,8 @@ struct d_info {
 	struct list_head all_head, hash_head;
 	void *heads;
 	struct region_info regions;
-	struct devmap *map;
-	void *q2q_handle, *seek_handle, *bno_dump_handle, *unplug_hist_handle;
+	char *devmap;
+	void *q2q_handle, *seek_handle, *bno_dump_handle, *up_hist_handle;
 	void *q2d_priv, *aqd_handle;
 	void *q2d_plat_handle, *q2c_plat_handle, *d2c_plat_handle;
 	FILE *q2d_ofp, *d2c_ofp, *q2c_ofp, *pit_fp;
@@ -184,7 +171,7 @@ extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern char *bno_dump_name, *unplug_hist_name, *sps_name, *aqd_name, *q2d_name;
 extern char *per_io_trees;
 extern double range_delta, plat_freq;
-extern FILE *ranges_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
+extern FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
 extern int easy_parse_avgs;
@@ -205,21 +192,21 @@ void handle_args(int argc, char *argv[]);
 void clean_args();
 
 /* aqd.c */
-void *aqd_init(char *str);
-void aqd_exit(void *info);
+void *aqd_alloc(char *str);
+void aqd_free(void *info);
 void aqd_clean(void);
 void aqd_issue(void *info, double ts);
 void aqd_complete(void *info, double ts);
 
 /* devmap.c */
 int dev_map_read(char *fname);
-struct devmap *dev_map_find(__u32 device);
+char *dev_map_find(__u32 device);
 void dev_map_exit(void);
 
 /* devs.c */
 void init_dev_heads(void);
-struct d_info *dip_add(__u32 device, struct io *iop);
-void dip_rem(struct io *iop);
+struct d_info *dip_alloc(__u32 device, struct io *iop);
+void iop_rem_dip(struct io *iop);
 struct d_info *__dip_find(__u32 device);
 void dip_foreach_list(struct io *iop, enum iop_type type, struct list_head *hd);
 void dip_foreach(struct io *iop, enum iop_type type,
@@ -244,28 +231,25 @@ void iostat_init(void);
 void iostat_getrq(struct io *iop);
 void iostat_merge(struct io *iop);
 void iostat_issue(struct io *iop);
-void iostat_unissue(struct io *iop);
 void iostat_complete(struct io *d_iop, struct io *c_iop);
 void iostat_check_time(__u64 stamp);
 void iostat_dump_stats(__u64 stamp, int all);
 
 /* latency.c */
-void latency_init(struct d_info *dip);
+void latency_alloc(struct d_info *dip);
 void latency_clean(void);
 void latency_q2d(struct d_info *dip, __u64 tstamp, __u64 latency);
 void latency_d2c(struct d_info *dip, __u64 tstamp, __u64 latency);
 void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
 
 /* misc.c */
-int in_devices(struct blk_io_trace *t);
-void add_file(struct file_info **fipp, FILE *fp, char *oname);
-void clean_files(struct file_info **fipp);
+void add_file(FILE *fp, char *oname);
 void add_buf(void *buf);
-void clean_bufs(void);
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens);
 FILE *my_fopen(const char *path, const char *mode);
 int my_open(const char *path, int flags);
 void dbg_ping(void);
+void clean_allocs(void);
 
 /* mmap.c */
 void setup_ifile(char *fname);
@@ -278,28 +262,28 @@ int output_avgs(FILE *ofp);
 int output_ranges(FILE *ofp);
 
 /* proc.c */
-void add_process(__u32 pid, char *name);
+void process_alloc(__u32 pid, char *name);
 struct p_info *find_process(__u32 pid, char *name);
 void pip_update_q(struct io *iop);
 void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg);
 void pip_exit(void);
 
 /* bno_dump.c */
-void *bno_dump_init(__u32 device);
-void bno_dump_exit(void *param);
+void *bno_dump_alloc(__u32 device);
+void bno_dump_free(void *param);
 void bno_dump_add(void *handle, struct io *iop);
 void bno_dump_clean(void);
 
 /* plat.c */
-void *plat_init(char *str);
-void plat_exit(void *info);
+void *plat_alloc(char *str);
+void plat_free(void *info);
 void plat_clean(void);
 void plat_x2c(void *info, __u64 ts, __u64 latency);
 
 /* q2d.c */
 void q2d_histo_add(void *priv, __u64 q2d);
-void *q2d_init(void);
-void q2d_release(void *priv);
+void *q2d_alloc(void);
+void q2d_free(void *priv);
 void q2d_display_header(FILE *fp);
 void q2d_display_dashes(FILE *fp);
 void q2d_display(FILE *fp, void *priv);
@@ -307,8 +291,8 @@ int q2d_ok(void *priv);
 void q2d_acc(void *a1, void *a2);
 
 /* seek.c */
-void *seeki_init(char *str);
-void seeki_exit(void *param);
+void *seeki_alloc(char *str);
+void seeki_free(void *param);
 void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
 double seeki_mean(void *handle);
@@ -338,7 +322,6 @@ int ready_issue(struct io *d_iop, struct io *c_iop);
 void trace_issue(struct io *d_iop);
 
 /* trace_plug.c */
-__u64 get_nio_up(struct io *u_iop);
 void trace_plug(struct io *p_iop);
 void trace_unplug_io(struct io *u_iop);
 void trace_unplug_timer(struct io *u_iop);
@@ -357,8 +340,8 @@ void trace_remap(struct io *a_iop);
 void trace_requeue(struct io *r_iop);
 
 /* unplug_hist.c */
-void *unplug_hist_init(__u32 device);
-void unplug_hist_exit(void *arg);
+void *unplug_hist_alloc(__u32 device);
+void unplug_hist_free(void *arg);
 void unplug_hist_add(struct io *u_iop);
 
 #include "inlines.h"

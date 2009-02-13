@@ -139,7 +139,7 @@ void output_q2d_histo(FILE *ofp)
 {
 	struct __q2d __q2d = {
 		.ofp = ofp,
-		.q2d_all = q2d_init(),
+		.q2d_all = q2d_alloc(),
 		.n = 0
 	};
 
@@ -156,6 +156,8 @@ void output_q2d_histo(FILE *ofp)
 		q2d_display(ofp, __q2d.q2d_all);
 		fprintf(ofp, "\n");
 	}
+
+	q2d_free(__q2d.q2d_all);
 }
 
 int n_merges = 0;

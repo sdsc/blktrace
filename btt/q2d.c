@@ -54,14 +54,14 @@ void q2d_histo_add(void *priv, __u64 q2d_in)
 	q2dp->nhistos++;
 }
 
-void *q2d_init(void)
+void *q2d_alloc(void)
 {
 	struct q2d_info *q2dp = malloc(sizeof(*q2dp));
 
 	return memset(q2dp, 0, sizeof(*q2dp));
 }
 
-void q2d_release(void *priv)
+void q2d_free(void *priv)
 {
 	free(priv);
 }

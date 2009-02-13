@@ -24,8 +24,6 @@ struct bno_dump {
 	FILE *rfp, *wfp, *cfp;
 };
 
-static struct file_info *bno_dump_files = NULL;
-
 static FILE *bno_dump_open(__u32 device, char rwc)
 {
 	FILE *fp;
@@ -40,11 +38,17 @@ static FILE *bno_dump_open(__u32 device, char rwc)
 	if ((fp = my_fopen(oname, "w")) == NULL)
 		perror(oname);
 	else
-		add_file(&bno_dump_files, fp, oname);
+		add_file(fp, oname);
 	return fp;
 }
 
-void *bno_dump_init(__u32 device)
+static inline void bno_dump_write(FILE *fp, struct io *iop)
+{
+	fprintf(fp, "%15.9lf %lld %lld\n", BIT_TIME(iop->t.time),
+		(long long)BIT_START(iop), (long long)BIT_END(iop));
+}
+
+void *bno_dump_alloc(__u32 device)
 {
 	struct bno_dump *bdp;
 
@@ -58,35 +62,21 @@ void *bno_dump_init(__u32 device)
 	return bdp;
 }
 
-void bno_dump_exit(void *param)
+void bno_dump_free(void *param)
 {
-	/*
-	 * Associated files will be auto-cleaned by bno_dump_clean
-	 */
 	free(param);
-}
-
-static inline void bno_dump_write(FILE *fp, struct io *iop)
-{
-	fprintf(fp, "%15.9lf %lld %lld\n",
-	        BIT_TIME(iop->t.time),
-		(long long)BIT_START(iop), (long long)BIT_END(iop));
 }
 
 void bno_dump_add(void *handle, struct io *iop)
 {
-#	define RW_FP(bdp, iop)	(IOP_READ(iop) ? bdp->rfp : bdp->wfp)
 	struct bno_dump *bdp = handle;
 
 	if (bdp) {
-		if (RW_FP(bdp, iop))
-			bno_dump_write(RW_FP(bdp, iop), iop);
+		FILE *fp = IOP_READ(iop) ? bdp->rfp : bdp->wfp;
+
+		if (fp)
+			bno_dump_write(fp, iop);
 		if (bdp->cfp)
 			bno_dump_write(bdp->cfp, iop);
 	}
-}
-
-void bno_dump_clean(void)
-{
-	clean_files(&bno_dump_files);
 }

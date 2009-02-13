@@ -228,8 +228,6 @@ static char usage_str[] = \
 	"[ -z <output name> | --q2d-latencies=<output name> ]\n" \
 	"\n";
 
-static struct file_info *arg_files = NULL;
-
 static void usage(char *prog)
 {
 	fprintf(stderr, "Usage: %s %s %s", prog, bt_timeline_version,
@@ -248,19 +246,32 @@ static FILE *setup_ofile(char *fname)
 		}
 
 		buf = malloc(SETBUFFER_SIZE);
-
 		setbuffer(ofp, buf, SETBUFFER_SIZE);
-		add_file(&arg_files, ofp, fname);
+
+		add_file(ofp, fname);
 		add_buf(buf);
+
 		return ofp;
 	}
 
 	return NULL;
 }
 
-void clean_args(void)
+static FILE *std_open(char *output_name, char *sfx, char *msg)
 {
-	clean_files(&arg_files);
+	FILE *fp;
+	char fname[strlen(output_name) + 32];
+
+	sprintf(fname, "%s.%s", output_name, sfx);
+	fp = my_fopen(fname, "w");
+	if (fp == NULL) {
+		perror(fname);
+		exit(1);
+	}
+	if (verbose)
+		printf("Sending %s to %s\n", msg, fname);
+
+	return fp;
 }
 
 void handle_args(int argc, char *argv[])
@@ -276,25 +287,25 @@ void handle_args(int argc, char *argv[])
 			output_all_data = 1;
 			break;
 		case 'B':
-			bno_dump_name = strdup(optarg);
+			bno_dump_name = optarg;
 			break;
 		case 'd':
 			sscanf(optarg, "%lf", &range_delta);
 			break;
 		case 'D':
-			devices = strdup(optarg);
+			devices = optarg;
 			break;
 		case 'e':
-			exes = strdup(optarg);
+			exes = optarg;
 			break;
 		case 'h':
 			usage(argv[0]);
 			exit(0);
 		case 'i':
-			input_name = strdup(optarg);
+			input_name = optarg;
 			break;
 		case 'l':
-			d2c_name = strdup(optarg);
+			d2c_name = optarg;
 			break;
 		case 'L':
 			plat_freq = atof(optarg);
@@ -303,32 +314,33 @@ void handle_args(int argc, char *argv[])
 			iostat_name = strdup(optarg);
 			break;
 		case 'm':
-			sps_name = strdup(optarg);
+			sps_name = optarg;
 			break;
 		case 'M':
 			if (dev_map_read(optarg))
 				exit(1);
 			break;
 		case 'o':
-			output_name = strdup(optarg);
+			output_name = optarg;
 			break;
 		case 'p':
 			per_io_name = strdup(optarg);
 			break;
 		case 'P':
-			per_io_trees = strdup(optarg);
+			per_io_trees = optarg;
 			break;
 		case 'q':
-			q2c_name = strdup(optarg);
+			q2c_name = optarg;
 			break;
 		case 'Q':
-			aqd_name = strdup(optarg);
+			aqd_name = optarg;
 			break;
 		case 's':
-			seek_name = strdup(optarg);
+			seek_name = optarg;
 			break;
 		case 'S': {
 			unsigned int interval;
+
 			sscanf(optarg, "%u", &interval);
 			iostat_interval = (__u64)interval * 1000000000LL;
 			break;
@@ -342,7 +354,7 @@ void handle_args(int argc, char *argv[])
 			time_bounded = 1;
 			break;
 		case 'u':
-			unplug_hist_name = strdup(optarg);
+			unplug_hist_name = optarg;
 			break;
 		case 'v':
 			verbose = 1;
@@ -354,7 +366,7 @@ void handle_args(int argc, char *argv[])
 			easy_parse_avgs++;
 			break;
 		case 'z':
-			q2d_name = strdup(optarg);
+			q2d_name = optarg;
 			break;
 		default:
 			usage(argv[0]);
@@ -375,51 +387,16 @@ void handle_args(int argc, char *argv[])
 	setup_ifile(input_name);
 
 	if (output_name == NULL) {
-		ranges_ofp = avgs_ofp = msgs_ofp = stdout;
+		rngs_ofp = avgs_ofp = msgs_ofp = stdout;
 		easy_parse_avgs = 0;
-	}
-	else {
-		char *fname = malloc(strlen(output_name) + 32);
-
-		sprintf(fname, "%s.dat", output_name);
-		ranges_ofp = my_fopen(fname, "w");
-		if (ranges_ofp == NULL) {
-			perror(fname);
-			exit(1);
-		}
-		if (verbose)
-			printf("Sending range data to %s\n", fname);
-
-		sprintf(fname, "%s.avg", output_name);
-		avgs_ofp = my_fopen(fname, "w");
-		if (avgs_ofp == NULL) {
-			perror(fname);
-			exit(1);
-		}
-		if (verbose)
-			printf("Sending stats data to %s\n", fname);
-
-		sprintf(fname, "%s.msg", output_name);
-		msgs_ofp = my_fopen(fname, "w");
-		if (msgs_ofp == NULL) {
-			perror(fname);
-			exit(1);
-		}
-		if (verbose)
-			printf("Sending K messages to %s\n", fname);
-
+	} else {
+		rngs_ofp = std_open(output_name, ".dat", "range data");
+		avgs_ofp = std_open(output_name, ".avg", "stats data");
+		msgs_ofp = std_open(output_name, ".msg", "K messages");
 		if (easy_parse_avgs) {
-			sprintf(fname, "%s.xvg", output_name);
-			xavgs_ofp = my_fopen(fname, "w");
-			if (avgs_ofp == NULL) {
-				perror(fname);
-				exit(1);
-			}
-			if (verbose)
-				printf("Sending X stats data to %s\n", fname);
+			xavgs_ofp = std_open(output_name, ".xvg",
+					     "X stats data");
 		}
-
-		free(fname);
 	}
 
 	iostat_ofp = setup_ofile(iostat_name);

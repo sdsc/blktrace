@@ -20,8 +20,6 @@
  */
 #include "globals.h"
 
-static struct file_info *all_files = NULL;
-
 static inline void latency_out(FILE *ofp, __u64 tstamp, __u64 latency)
 {
 	if (ofp)
@@ -30,35 +28,30 @@ static inline void latency_out(FILE *ofp, __u64 tstamp, __u64 latency)
 
 FILE *latency_open(__u32 device, char *name, char *post)
 {
-	FILE *fp;
-	char *oname;
-	int mjr, mnr;
+	FILE *fp = NULL;
 
-	if (name == NULL) return NULL;
+	if (name) {
+		int mjr, mnr;
+		char oname[strlen(name) + 32];
 
-	mjr = device >> MINORBITS;
-	mnr = device & ((1 << MINORBITS) - 1);
+		mjr = device >> MINORBITS;
+		mnr = device & ((1 << MINORBITS) - 1);
 
-	oname = malloc(strlen(name)+32);
-	sprintf(oname, "%s_%03d,%03d_%s.dat", name, mjr, mnr, post);
-	if ((fp = my_fopen(oname, "w")) == NULL)
-		perror(oname);
-	else
-		add_file(&all_files, fp, oname);
+		sprintf(oname, "%s_%03d,%03d_%s.dat", name, mjr, mnr, post);
+		if ((fp = my_fopen(oname, "w")) == NULL)
+			perror(oname);
+		else
+			add_file(fp, strdup(oname));
+	}
 
 	return fp;
 }
 
-void latency_init(struct d_info *dip)
+void latency_alloc(struct d_info *dip)
 {
 	dip->q2d_ofp = latency_open(dip->device, q2d_name, "q2d");
 	dip->d2c_ofp = latency_open(dip->device, d2c_name, "d2c");
 	dip->q2c_ofp = latency_open(dip->device, q2c_name, "q2c");
-}
-
-void latency_clean(void)
-{
-	clean_files(&all_files);
 }
 
 void latency_q2d(struct d_info *dip, __u64 tstamp, __u64 latency)

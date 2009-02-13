@@ -97,8 +97,7 @@ static inline void avg_update_n(struct avg_info *ap, __u64 t, int n)
         if (ap->n == 0) {
                 ap->min = ap->max = t;
 		ap->total = (n * t);
-	}
-        else {
+	} else {
                 if (t < ap->min)
                         ap->min = t;
                 else if (t > ap->max)
@@ -161,7 +160,7 @@ static inline void io_free_all(void)
 static inline int io_setup(struct io *iop, enum iop_type type)
 {
 	iop->type = type;
-	iop->dip = dip_add(iop->t.device, iop);
+	iop->dip = dip_alloc(iop->t.device, iop);
 	if (iop->linked) {
 		iop->pip = find_process(iop->t.pid, NULL);
 		iop->bytes_left = iop->t.bytes;
@@ -173,7 +172,7 @@ static inline int io_setup(struct io *iop, enum iop_type type)
 static inline void io_release(struct io *iop)
 {
 	if (iop->linked)
-		dip_rem(iop);
+		iop_rem_dip(iop);
 	if (iop->pdu)
 		free(iop->pdu);
 

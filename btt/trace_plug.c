@@ -20,7 +20,7 @@
  */
 #include "globals.h"
 
-__u64 get_nio_up(struct io *u_iop)
+static __u64 get_nio_up(struct io *u_iop)
 {
 	__u64 *val = u_iop->pdu;
 	return be64_to_cpu(*val);

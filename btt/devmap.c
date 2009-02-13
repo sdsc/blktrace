@@ -21,44 +21,49 @@
 #include <stdio.h>
 #include "globals.h"
 
-struct devmap *all_devmaps = NULL;
+struct devmap {
+	struct list_head head;
+	char device[32], devno[32];
+};
 
-void dev_map_exit(void)
+LIST_HEAD(all_devmaps);
+
+static int dev_map_add(char *line)
 {
 	struct devmap *dmp;
 
-	while ((dmp = all_devmaps) != NULL) {
-		all_devmaps = dmp->next;
+	if (strstr(line, "Device") != NULL)
+		return 1;
+
+	dmp = malloc(sizeof(struct devmap));
+	if (sscanf(line, "%s %s", dmp->device, dmp->devno) != 2) {
 		free(dmp);
+		return 1;
 	}
+
+	list_add_tail(&dmp->head, &all_devmaps);
+	return 0;
 }
 
-void dev_map_add(struct devmap *dmp)
-{
-	struct devmap *this = malloc(sizeof(struct devmap));
-
-	*this = *dmp;
-	this->next = all_devmaps;
-	all_devmaps = this;
-}
-
-struct devmap *dev_map_find(__u32 device)
+char *dev_map_find(__u32 device)
 {
 	char this[128];
-	struct devmap *dmp;
+	struct list_head *p;
 
 	sprintf(this, "%u,%u", MAJOR(device), MINOR(device));
-	for (dmp = all_devmaps; dmp != NULL; dmp = dmp->next)
-		if (!strcmp(this, dmp->devno))
-			break;
+	__list_for_each(p, &all_devmaps) {
+		struct devmap *dmp = list_entry(p, struct devmap, head);
 
-	return dmp;
+		if (!strcmp(this, dmp->devno))
+			return dmp->device;
+	}
+
+	return NULL;
 }
 
 int dev_map_read(char *fname)
 {
 	char line[256];
-	struct devmap dm;
 	FILE *fp = my_fopen(fname, "r");
 
 	if (!fp) {
@@ -67,14 +72,21 @@ int dev_map_read(char *fname)
 	}
 
 	while (fscanf(fp, "%255[a-zA-Z0-9 :.,/_-]\n", line) == 1) {
-		if (strstr(line, "Device") != NULL) continue;
-		if (sscanf(line, "%s %s %u %u %u %u %s %s %u %u %s",
-				&dm.device[0], &dm.model[0], &dm.host, &dm.bus,
-				&dm.target, &dm.lun, &dm.node[0], &dm.pci[0],
-				&dm.irq, &dm.cpu, &dm.devno[0]) != 11)
+		if (dev_map_add(line))
 			break;
-		dev_map_add(&dm);
 	}
 
 	return 0;
+}
+
+void dev_map_exit(void)
+{
+	struct list_head *p, *q;
+
+	list_for_each_safe(p, q, &all_devmaps) {
+		struct devmap *dmp = list_entry(p, struct devmap, head);
+
+		list_del(&dmp->head);
+		free(dmp);
+	}
 }
