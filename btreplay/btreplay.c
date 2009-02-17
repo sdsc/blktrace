@@ -1317,11 +1317,18 @@ static void *replay_sub(void *arg)
 	char path[MAXPATHLEN];
 	struct io_bunch bunch;
 	struct thr_info *tip = arg;
+	int oflags;
 
 	pin_to_cpu(tip);
 
 	sprintf(path, "/dev/%s", map_dev(tip->devnm));
-	tip->ofd = open(path, O_RDWR | O_DIRECT | O_NOATIME);
+
+#ifdef O_NOATIME
+	oflags = O_NOATIME;
+#else
+	oflags = 0;
+#endif
+	tip->ofd = open(path, O_RDWR | O_DIRECT | oflags);
 	if (tip->ofd < 0) {
 		fatal(path, ERR_SYSCALL, "Failed device open\n");
 		/*NOTREACHED*/
