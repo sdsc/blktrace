@@ -799,8 +799,11 @@ static int __net_recv_data(int fd, void *buf, unsigned int len)
 		if (ret == 0)
 			break;
 		else if (ret < 0) {
-			if (errno != EAGAIN)
-				perror("server: net_recv_data: recv failed");
+			if (errno == EAGAIN) {
+				usleep(50);
+				continue;
+			}
+			perror("server: net_recv_data: recv failed");
 			break;
 		} else {
 			buf += ret;
