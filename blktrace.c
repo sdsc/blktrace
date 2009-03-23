@@ -610,7 +610,7 @@ static int lock_on_cpu(int cpu)
 
 	CPU_ZERO(&cpu_mask);
 	CPU_SET(cpu, &cpu_mask);
-	if (sched_setaffinity(getpid(), sizeof(cpu_mask), &cpu_mask) < 0)
+	if (sched_setaffinity(0, sizeof(cpu_mask), &cpu_mask) < 0)
 		return errno;
 
 	return 0;
