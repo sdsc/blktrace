@@ -252,11 +252,12 @@ void dip_unplug(__u32 dev, double cur_time, __u64 nios_up)
 	}
 }
 
-void dip_unplug_tm(__u32 dev, __u64 nios_up)
+void dip_unplug_tm(__u32 dev, double cur_time, __u64 nios_up)
 {
 	struct d_info *dip = __dip_find(dev);
 
 	if (dip && dip->is_plugged) {
+		dip->plugged_time += (cur_time - dip->last_plug);
 		dip->n_timer_unplugs++;
 		dip->nios_upt += nios_up;
 		dip->nplugs_t++;

@@ -35,7 +35,8 @@ void trace_unplug_io(struct io *u_iop)
 
 void trace_unplug_timer(struct io *ut_iop)
 {
-	dip_unplug_tm(ut_iop->t.device, get_nio_up(ut_iop));
+	dip_unplug_tm(ut_iop->t.device, BIT_TIME(ut_iop->t.time),
+			get_nio_up(ut_iop));
 	io_release(ut_iop);
 }
 
