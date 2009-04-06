@@ -143,7 +143,7 @@ struct d_info {
 	__u32 device;
 
 	int pre_culling;
-	int is_plugged, nplugs, nplugs_t, n_timer_unplugs;
+	int is_plugged, nplugs, nplugs_t;
 	__u64 nios_up, nios_upt;
 	double start_time, last_plug, plugged_time, end_time;
 };
