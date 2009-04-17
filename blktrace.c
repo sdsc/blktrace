@@ -1477,7 +1477,12 @@ static int fill_ofname(struct io_info *iop, int cpu)
 				iop->ofn, errno, strerror(errno));
 			return 1;
 		}
-		if (mkdir(iop->ofn, 0755) < 0) {
+		/*
+		 * There is no synchronization between multiple threads
+		 * trying to create the directory at once.  It's harmless
+		 * to let them try, so just detect the problem and move on.
+		 */
+		if (mkdir(iop->ofn, 0755) < 0 && errno != EEXIST) {
 			fprintf(stderr,
 				"Destination dir %s can't be made: %d/%s\n",
 				iop->ofn, errno, strerror(errno));
