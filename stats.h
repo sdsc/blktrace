@@ -124,7 +124,7 @@ static inline void histlog2_merge(struct histlog2 *h, __u32 *dst, __u32 *src)
 {
 	int i;
 
-	for (i = 0; i < h->num - 1; i++)
+	for (i = 0; i < h->num; i++)
 		dst[i] += src[i];
 }
 
@@ -132,7 +132,7 @@ static inline void histlog2_to_be(__u32 a[], struct histlog2 *h)
 {
 	int i;
 
-	for (i = 0; i < h->num - 1; i++)
+	for (i = 0; i < h->num; i++)
 		a[i] = cpu_to_be32(a[i]);
 }
 
