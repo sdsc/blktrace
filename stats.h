@@ -23,7 +23,7 @@
 #define STATS_H
 
 #include <linux/types.h>
-#include "endian.h"
+#include "blktrace.h"
 
 struct minmax {
 	__u64 min;
