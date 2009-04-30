@@ -152,7 +152,7 @@ static struct option l_opts[] = {
 		.val = 'm'
 	},
 	{
-		.name = "max_pkts",
+		.name = "max-pkts",
 		.has_arg = required_argument,
 		.flag = NULL,
 		.val = 'M'
