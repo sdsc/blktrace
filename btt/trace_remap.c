@@ -22,9 +22,9 @@
 
 static inline void cvt_pdu_remap(struct blk_io_trace_remap *rp)
 {
-	rp->device = be32_to_cpu(rp->device);
 	rp->device_from = be32_to_cpu(rp->device_from);
-	rp->sector = be64_to_cpu(rp->sector);
+	rp->device_to   = be32_to_cpu(rp->device_to);
+	rp->sector_from = be64_to_cpu(rp->sector_from);
 }
 
 /*
@@ -43,15 +43,14 @@ void trace_remap(struct io *a_iop)
 	rp = a_iop->pdu;
 	cvt_pdu_remap(rp);
 
-	a_iop->t.device = rp->device_from;
 	if (!io_setup(a_iop, IOP_A))
 		goto out;
 
-	q_dip = __dip_find(rp->device);
+	q_dip = __dip_find(rp->device_from);
 	if (!q_dip)
 		goto out;
 
-	q_iop = dip_find_sec(q_dip, IOP_Q, rp->sector);
+	q_iop = dip_find_sec(q_dip, IOP_Q, rp->sector_from);
 	if (q_iop)
 		update_q2a(q_iop, tdelta(q_iop->t.time, a_iop->t.time));
 
