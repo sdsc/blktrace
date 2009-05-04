@@ -6,9 +6,7 @@ btreplay \- recreate IO loads recorded by blktrace
 
 
 .SH SYNOPSIS
-.B Usage: 
-
-btreplay [ \fIoptions\fR ] <\fIdev\fR...>
+.B btreplay [ \fIoptions\fR ] <\fIdev\fR...>
 
 
 .SH DESCRIPTION
@@ -128,7 +126,7 @@ to run through the input files. The default value is 1
 \-\-map\-devs=<\fIfilename\fR>
 .RS
 Specify device mappings.  
-This option requires a single paramter which specifies the name of a
+This option requires a single parameter which specifies the name of a
 file contain device mappings. The file must be very simply managed, with
 just two pieces of data per line:
 
@@ -199,8 +197,8 @@ Show version number and exit.
 \-\-write-enable
 .RS
 Enable writing during replay.
-As a precautionary measure, by default \texttt{btreplay} will not
-process \fBwrite requests. In order to enable \fIbtreplay\fR to
+As a precautionary measure, by default \fIbtreplay\fR will not
+process \fBwrite\fR requests. In order to enable \fIbtreplay\fR to
 actually \fBwrite\fR to devices one must explicitly specify the
 \fI\-W\fR option.
 .RE

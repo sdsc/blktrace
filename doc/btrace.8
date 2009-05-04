@@ -2,19 +2,19 @@
 
 
 .SH NAME
-btrace \- verifies an output file produced by blkparse
+btrace \- perform live tracing for block devices
 
 
 .SH SYNOPSIS
-.B Usage: btrace [\-s] [\-t] [\-w \fIN\fN] [\-n \fIN\fR] [\-b \fIN\fR]  [\-a <\fItrace\fR>...] <\fIdev\fR>...
+.B btrace [\-s] [\-t] [\-w \fIN\fN] [\-n \fIN\fR] [\-b \fIN\fR]  [\-a <\fItrace\fR>...] <\fIdev\fR>...
 .br
 
 
 .SH DESCRIPTION
 
-The \fIbtrace\fR script provides a quick and easy way to to live tracing of
-block devices.  All it does is calling \fIblktrace\fR on the specified devices
-and piping its output through \fIblkparse\fR for formatting.  See blktrace (8)
+The \fIbtrace\fR script provides a quick and easy way to do live tracing of
+block devices.  It calls \fIblktrace\fR on the specified devices
+and pipes the output through \fIblkparse\fR for formatting.  See blktrace (8)
 for more in-depth information about how \fIblktrace\fR works.  
 
 .SH OPTIONS
@@ -25,7 +25,7 @@ Displays data sorted by program (see \fIblkparse\fR (1)).
 
 .HP 4
 .B \-t 
-Display time deltas per IO (see \fIblkparse\fR (1)).
+Displays time deltas per IO (see \fIblkparse\fR (1)).
 
 .HP 4
 .B \-w \fIN\fR
@@ -42,7 +42,7 @@ Specifies buffer size for event extraction (scaled by 1024) (see
 
 .HP 4
 .B \-a <\fItrace\fR>...
-Add mask to current filter (see \fIblktrace\fR (8)).
+Adds mask to current filter (see \fIblktrace\fR (8)).
 
 .HP 4
 .B <\fIdev\fR>
@@ -52,7 +52,7 @@ Specifies the device to trace.
 .SH EXAMPLE
 Simply running
 
-    % blktrace /dev/sda
+    % btrace /dev/sda
 
 will show a trace of the device \fI/dev/sda\fR.
 
