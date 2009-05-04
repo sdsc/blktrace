@@ -600,7 +600,7 @@ static char usage_str[] = "\n\nblkiomon " \
 	"[ -h <file>         | --human-readable=<file> ]\n" \
 	"[ -b <file>         | --binary=<file> ]\n" \
 	"[ -D <file>         | --debug=<file> ]\n" \
-	"[ -Q <path name>    | --msg-queue-name=<path name>]\n" \
+	"[ -Q <path name>    | --msg-queue=<path name>]\n" \
 	"[ -q <msg queue id> | --msg-queue-id=<msg queue id>]\n" \
 	"[ -m <msg id>       | --msg-id=<msg id>]\n" \
 	"[ -V                | --version ]\n\n" \
