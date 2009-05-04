@@ -6,7 +6,7 @@ btrace \- perform live tracing for block devices
 
 
 .SH SYNOPSIS
-.B btrace [\-s] [\-t] [\-w \fIN\fN] [\-n \fIN\fR] [\-b \fIN\fR]  [\-a <\fItrace\fR>...] <\fIdev\fR>...
+.B btrace [\-s] [\-t] [\-w \fIN\fN] [\-n \fIN\fR] [\-b \fIN\fR] [\-r \fI<dbg mnt>\fR] [\-a <\fItrace\fR>...] <\fIdev\fR>...
 .br
 
 
@@ -39,6 +39,10 @@ Specifies the number of buffers to use (see \fIblktrace\fR (8)).
 .B \-b \fIN\fR
 Specifies buffer size for event extraction (scaled by 1024) (see
 \fIblktrace\fR (8)).
+
+.HP 4
+.B \-r \fI<dbg mnt>\fR
+Specifies the debugfs mountpoint.
 
 .HP 4
 .B \-a <\fItrace\fR>...

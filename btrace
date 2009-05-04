@@ -8,11 +8,10 @@
 
 TRACEOPTS=""
 PARSEOPTS="-b100000"
-SUMMARIZE=""
-USAGE="Usage: btrace [-s] [-t] [-S] [-w N] [-a <trace>...] [-r <dbg mnt]<dev>..."
+USAGE="Usage: btrace [-s] [-t] [-w N] [-n N] [-b N] [-a <trace>...] [-r <dbg mnt>] <dev>..."
 DIRNAME=`dirname $0`
 
-while getopts "a:r:stSw:hv" c
+while getopts "a:w:n:b:r:sthv" c
 do
 	case $c in
 	a)	TRACEOPTS=$TRACEOPTS" -a "$OPTARG" ";;
@@ -24,13 +23,11 @@ do
 	t)	PARSEOPTS=$PARSEOPTS" -t";;
 	h)	PARSEOPTS=$PARSEOPTS" -h";;
 	v)	PARSEOPTS=$PARSEOPTS" -v";;
-	S)	SUMMARIZE="";;
 	\?)	echo $USAGE 1>&2
 		exit 2
 		;;
 	esac
 done
-PARSEOPTS="${PARSEOPTS} ${SUMMARIZE}"
 
 shift `expr $OPTIND - 1`
 if [ $# -eq 0 ]; then
