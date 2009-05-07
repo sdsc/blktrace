@@ -296,8 +296,14 @@ int main(int argc, char *argv[])
 		printf("Verifying %s\n", devname); fflush(stdout);
 		for (cpu = 0; ; cpu++) {
 			sprintf(fname, "%s.blktrace.%d", devname, cpu);
-			if (stat(fname, &st) < 0)
+			if (stat(fname, &st) < 0) {
+				if (cpu == 0) {
+					fprintf(stderr, "No tracefiles found for %s\n",
+						devname);
+					rval = 1;
+				}
 				break;
+			}
 			printf("    CPU %d ", cpu); fflush(stdout);
 			nbad = process(&ofp, devname, fname, cpu);
 			if (nbad) {
