@@ -71,7 +71,7 @@ struct output {
 	int pipe;
 };
 
-static char blkiomon_version[] = "0.2";
+static char blkiomon_version[] = "0.3";
 
 static FILE *ifp;
 static int interval = -1;

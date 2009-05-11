@@ -34,6 +34,7 @@ struct blkiomon_stat {
 	__u64 time;
 	__u32 size_hist[BLKIOMON_SIZE_BUCKETS];
 	__u32 d2c_hist[BLKIOMON_D2C_BUCKETS];
+	__u32 device;
 	struct minmax size_r;
 	struct minmax size_w;
 	struct minmax d2c_r;
@@ -41,8 +42,7 @@ struct blkiomon_stat {
 	struct minmax thrput_r;
 	struct minmax thrput_w;
 	__u64 bidir;
-	__u32 device;
-} __attribute__ ((packed));
+};
 
 static struct histlog2 size_hist = {
 	.first = 0,
