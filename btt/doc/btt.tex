@@ -22,7 +22,7 @@
 
 \title{\texttt{btt} User Guide}
 \author{Alan D. Brunelle (Alan.Brunelle@hp.com)}
-\date{30 October 2008}
+\date{14 August 2009}
 
 \begin{document}
 \maketitle
@@ -425,7 +425,7 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
 
 \newpage\section{\label{sec:data-files}Data Files Output}
 
-  Besides the averages output by default, the following 3 files are also
+  Besides the averages output by default, the following 5(+) files are also
   created with data points which may be plotted.
 
 \begin{description}
@@ -439,6 +439,14 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
   \item[\emph{file}\_dhist.dat] Provides histogram data for the size
   of IO requests submitted to lower layer drivers, for more information
   see section~\ref{sec:dhist}.
+
+  \item[\emph{file}\_mbps\_fp.dat] Provides a set of data for
+  mb-per-second values each second
+  - for more information see section~\ref{sec:rstat}.
+
+  \item[\emph{file}\_iops\_fp.dat] Provides a set of data for
+  I/Os-per-second values each second
+  - for more information see section~\ref{sec:rstat}.
 
 \end{description}
 
@@ -593,6 +601,43 @@ pdflush       0.000000790 0.000006752 0.247231307  179791
   \leavevmode\centering
   \epsfig{file=dhist.eps,width=4.5in}
   \caption{\label{fig:dhist}D Histogram}
+  \end{figure}
+
+\newpage\section{\label{sec:rstat}Running Stats Files}
+
+There are two files produced for each of all devices being traced
+(prefixed with \emph{sys\_}) and per-device (prefixed with the device
+identifier).
+
+The two files are for reporting I/O rate (I/Os per second - name ends
+with \texttt{iops\_fp.dat}) and throughput (MiB per second - name ends
+with \texttt{mbps\_fp.dat}).
+
+The data in the files has two columns:\smallskip
+
+\begin{tabular}{lll}
+\textbf{File Type} & \textbf{X values} & \textbf{Y values}\\\hline
+\textbf{iops} & Runtime (seconds) & I/Os per second\\\hline
+\textbf{mbps} & Runtime (seconds) & MiB per second\\\hline
+\end{tabular}
+
+As an example:
+
+\begin{verbatim}
+# ls *fp.dat
+008,064_iops_fp.dat
+008,064_mbps_fp.dat
+sys_iops_fp.dat
+sys_mbps_fp.dat
+\end{verbatim}
+
+These can be plotted using various tools (e.g., xmgrace as in
+figure~\ref{fig:rstats}).
+
+  \begin{figure}[b!]
+  \leavevmode\centering
+  \epsfig{file=rstats.eps,width=4.5in}
+  \caption{\label{fig:rstats}Running Stats}
   \end{figure}
 
 \newpage\section{\label{sec:iostat}iostat Data File}
