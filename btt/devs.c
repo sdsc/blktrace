@@ -86,6 +86,7 @@ void __dip_exit(struct d_info *dip)
 	plat_free(dip->d2c_plat_handle);
 	bno_dump_free(dip->bno_dump_handle);
 	unplug_hist_free(dip->up_hist_handle);
+	rstat_free(dip->rstat_handle);
 	if (output_all_data)
 		q2d_free(dip->q2d_priv);
 	if (dip->pit_fp)
@@ -152,6 +153,7 @@ struct d_info *dip_alloc(__u32 device, struct io *iop)
 		list_add_tail(&dip->all_head, &all_devs);
 		dip->start_time = BIT_TIME(iop->t.time);
 		dip->pre_culling = 1;
+		dip->rstat_handle = rstat_alloc(mkhandle(str, device, ""));
 		if (output_all_data)
 			dip->q2d_priv = q2d_alloc();
 		n_devs++;

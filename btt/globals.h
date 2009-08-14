@@ -133,7 +133,7 @@ struct d_info {
 	struct region_info regions;
 	char *devmap;
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *up_hist_handle;
-	void *q2d_priv, *aqd_handle;
+	void *q2d_priv, *aqd_handle, *rstat_handle;
 	void *q2d_plat_handle, *q2c_plat_handle, *d2c_plat_handle;
 	FILE *q2d_ofp, *d2c_ofp, *q2c_ofp, *pit_fp;
 	struct avgs_info avgs;
@@ -170,7 +170,7 @@ extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
 extern char *seek_name, *iostat_name, *d2c_name, *q2c_name, *per_io_name;
 extern char *bno_dump_name, *unplug_hist_name, *sps_name, *aqd_name, *q2d_name;
 extern char *per_io_trees;
-extern double range_delta, plat_freq;
+extern double range_delta, plat_freq, last_t_seen;
 extern FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
@@ -289,6 +289,13 @@ void q2d_display_dashes(FILE *fp);
 void q2d_display(FILE *fp, void *priv);
 int q2d_ok(void *priv);
 void q2d_acc(void *a1, void *a2);
+
+/* rstats.c */
+void *rstat_alloc(char *bn);
+void rstat_free(void *ptr);
+void rstat_add(void *ptr, double cur, unsigned long long nblks);
+int rstat_init(void);
+void rstat_exit(void);
 
 /* seek.c */
 void *seeki_alloc(char *str);
