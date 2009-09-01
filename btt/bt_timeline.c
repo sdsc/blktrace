@@ -33,7 +33,7 @@ char *sps_name, *aqd_name, *q2d_name, *per_io_trees;
 FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
 int easy_parse_avgs, ignore_remaps;
-double t_astart, t_aend;
+double t_astart, t_aend, last_t_seen;
 unsigned long n_traces;
 struct avgs_info all_avgs;
 unsigned int n_devs;
@@ -62,6 +62,9 @@ int main(int argc, char *argv[])
 
 	init_dev_heads();
 	iostat_init();
+	if (!rstat_init())
+		return 1;
+
 	if (process() || output_avgs(avgs_ofp) || output_ranges(rngs_ofp))
 		return 1;
 
@@ -82,6 +85,7 @@ int main(int argc, char *argv[])
 	dip_cleanup();
 	dev_map_exit();
 	dip_exit();
+	rstat_exit();
 	pip_exit();
 	io_free_all();
 	region_exit(&all_regions);
