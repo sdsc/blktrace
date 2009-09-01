@@ -2840,11 +2840,15 @@ int main(int argc, char *argv[])
 	}
 
 	if (dump_binary) {
-		dump_fp = fopen(dump_binary, "w");
-		if (!dump_fp) {
-			perror(dump_binary);
-			dump_binary = NULL;
-			return 1;
+		if (!strcmp(dump_binary, "-"))
+			dump_fp = stdout;
+		else {
+			dump_fp = fopen(dump_binary, "w");
+			if (!dump_fp) {
+				perror(dump_binary);
+				dump_binary = NULL;
+				return 1;
+			}
 		}
 		bin_ofp_buffer = malloc(128 * 1024);
 		if (setvbuf(dump_fp, bin_ofp_buffer, _IOFBF, 128 * 1024)) {
