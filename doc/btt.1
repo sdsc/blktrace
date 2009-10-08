@@ -59,6 +59,8 @@ btt \- analyse block i/o traces produces by blktrace
 [ \-V               | \-\-version ]
 .br
 [ \-z <\fIoutput name\fR> | \-\-q2d\-latencies=<\fIoutput name\fR> ]
+.br
+[ \-Z               | \-\-do\-active ]
 
 
 .SH DESCRIPTION
@@ -337,6 +339,14 @@ Requests a more verbose output.
 The \-z option allows one to output per\-IO Q2D latencies
 respectively. The supplied argument provides the basis for the output
 name for each device.
+.RE
+
+.B \-Z
+.br
+.B \-\-do\-active
+.RS 4
+The \-Z will output files containing data which can be plotted showing
+per\-device (and total system) I/O activity.
 .RE
 
 

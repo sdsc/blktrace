@@ -29,7 +29,7 @@
 
 #define SETBUFFER_SIZE	(64 * 1024)
 
-#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:P:q:Q:rs:S:t:T:u:VvXz:"
+#define S_OPTS	"aAB:d:D:e:hi:I:l:L:m:M:o:p:P:q:Q:rs:S:t:T:u:VvXz:Z"
 static struct option l_opts[] = {
 	{
 		.name = "seek-absolute",
@@ -188,6 +188,12 @@ static struct option l_opts[] = {
 		.val = 'v'
 	},
 	{
+		.name = "do-active",
+		.has_arg = no_argument,
+		.flag = NULL,
+		.val = 'z'
+	},
+	{
 		.name = "easy-parse-avgs",
 		.has_arg = no_argument,
 		.flag = NULL,
@@ -233,6 +239,7 @@ static char usage_str[] = \
 	"[ -v               | --verbose ]\n" \
 	"[ -X               | --easy-parse-avgs ]\n" \
 	"[ -z <output name> | --q2d-latencies=<output name> ]\n" \
+	"[ -Z               | --do-active\n" \
 	"\n";
 
 static void usage(char *prog)
@@ -377,6 +384,9 @@ void handle_args(int argc, char *argv[])
 			break;
 		case 'z':
 			q2d_name = optarg;
+			break;
+		case 'Z':
+			do_p_live = 1;
 			break;
 		default:
 			usage(argv[0]);

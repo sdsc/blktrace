@@ -133,7 +133,7 @@ struct d_info {
 	struct region_info regions;
 	char *devmap, dip_name[256];
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *up_hist_handle;
-	void *q2d_priv, *aqd_handle, *rstat_handle;
+	void *q2d_priv, *aqd_handle, *rstat_handle, *p_live_handle;
 	void *q2d_plat_handle, *q2c_plat_handle, *d2c_plat_handle;
 	FILE *q2d_ofp, *d2c_ofp, *q2c_ofp, *pit_fp;
 	struct avgs_info avgs;
@@ -164,6 +164,11 @@ struct io {
 	enum iop_type type;
 };
 
+struct p_live_info {
+	unsigned long nlives;
+	double avg_live, avg_lull, p_live;
+};
+
 /* bt_timeline.c */
 
 extern char bt_timeline_version[], *devices, *exes, *input_name, *output_name;
@@ -174,7 +179,7 @@ extern double range_delta, plat_freq, last_t_seen;
 extern FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *iostat_ofp, *per_io_ofp;
 extern FILE *msgs_ofp;
 extern int verbose, done, time_bounded, output_all_data, seek_absolute;
-extern int easy_parse_avgs, ignore_remaps;
+extern int easy_parse_avgs, ignore_remaps, do_p_live;
 extern unsigned int n_devs;
 extern unsigned long n_traces;
 extern struct list_head all_devs, all_procs;
@@ -280,6 +285,13 @@ void *plat_alloc(struct d_info *dip, char *post);
 void plat_free(void *info);
 void plat_clean(void);
 void plat_x2c(void *info, __u64 ts, __u64 latency);
+
+/* p_live.c */
+void *p_live_alloc(void);
+void p_live_free(void *p);
+void p_live_add(struct d_info *dip, __u64 dt, __u64 ct);
+void p_live_exit(void);
+struct p_live_info *p_live_get(struct d_info *dip, int base_y);
 
 /* q2d.c */
 void q2d_histo_add(void *priv, __u64 q2d);

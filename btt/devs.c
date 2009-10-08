@@ -84,6 +84,7 @@ void __dip_exit(struct d_info *dip)
 	plat_free(dip->q2d_plat_handle);
 	plat_free(dip->q2c_plat_handle);
 	plat_free(dip->d2c_plat_handle);
+	p_live_free(dip->p_live_handle);
 	bno_dump_free(dip->bno_dump_handle);
 	unplug_hist_free(dip->up_hist_handle);
 	rstat_free(dip->rstat_handle);
@@ -143,6 +144,7 @@ struct d_info *dip_alloc(__u32 device, struct io *iop)
 		dip->q2c_plat_handle = plat_alloc(dip, "_q2c");
 		dip->d2c_plat_handle = plat_alloc(dip, "_d2c");
 		dip->rstat_handle = rstat_alloc(dip);
+		dip->p_live_handle = p_live_alloc();
 
 		if (per_io_trees)
 			dip->pit_fp = open_pit(dip);

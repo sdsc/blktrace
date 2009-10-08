@@ -25,14 +25,14 @@
 #include <time.h>
 #include "globals.h"
 
-char bt_timeline_version[] = "2.08";
+char bt_timeline_version[] = "2.09";
 
 char *devices, *exes, *input_name, *output_name, *seek_name, *bno_dump_name;
 char *d2c_name, *q2c_name, *per_io_name, *unplug_hist_name;
 char *sps_name, *aqd_name, *q2d_name, *per_io_trees;
 FILE *rngs_ofp, *avgs_ofp, *xavgs_ofp, *per_io_ofp, *msgs_ofp;
 int verbose, done, time_bounded, output_all_data, seek_absolute;
-int easy_parse_avgs, ignore_remaps;
+int easy_parse_avgs, ignore_remaps, do_p_live;
 double t_astart, t_aend, last_t_seen;
 unsigned long n_traces;
 struct avgs_info all_avgs;
@@ -89,6 +89,7 @@ int main(int argc, char *argv[])
 	pip_exit();
 	io_free_all();
 	region_exit(&all_regions);
+	p_live_exit();
 	clean_allocs();
 
 	return 0;
