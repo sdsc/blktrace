@@ -205,10 +205,12 @@ long long seek_dist(struct seeki *sip, struct io *iop)
 	return dist;
 }
 
-void *seeki_alloc(char *str)
+void *seeki_alloc(struct d_info *dip, char *post)
 {
+	char str[256];
 	struct seeki *sip = malloc(sizeof(struct seeki));
 
+	sprintf(str, "%s%s", dip->dip_name, post);
 	sip->rfp = seek_open(str, 'r');
 	sip->wfp = seek_open(str, 'w');
 	sip->cfp = seek_open(str, 'c');
@@ -222,8 +224,8 @@ void *seeki_alloc(char *str)
 
 		memset(&sip->sps, 0, sizeof(sip->sps));
 
-		oname = malloc(strlen(sps_name) + strlen(str) + 32);
-		sprintf(oname, "%s_%s.dat", sps_name, str);
+		oname = malloc(strlen(sps_name) + strlen(dip->dip_name) + 32);
+		sprintf(oname, "%s_%s.dat", sps_name, dip->dip_name);
 		if ((sip->sps_fp = my_fopen(oname, "w")) == NULL)
 			perror(oname);
 		else

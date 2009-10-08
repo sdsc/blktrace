@@ -131,7 +131,7 @@ struct d_info {
 	struct list_head all_head, hash_head;
 	void *heads;
 	struct region_info regions;
-	char *devmap;
+	char *devmap, dip_name[256];
 	void *q2q_handle, *seek_handle, *bno_dump_handle, *up_hist_handle;
 	void *q2d_priv, *aqd_handle, *rstat_handle;
 	void *q2d_plat_handle, *q2c_plat_handle, *d2c_plat_handle;
@@ -192,7 +192,7 @@ void handle_args(int argc, char *argv[]);
 void clean_args();
 
 /* aqd.c */
-void *aqd_alloc(char *str);
+void *aqd_alloc(struct d_info *dip);
 void aqd_free(void *info);
 void aqd_clean(void);
 void aqd_issue(void *info, double ts);
@@ -246,6 +246,7 @@ void latency_q2c(struct d_info *dip, __u64 tstamp, __u64 latency);
 void add_file(FILE *fp, char *oname);
 void add_buf(void *buf);
 char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens);
+char *mkhandle(struct d_info *dip, char *str, size_t len);
 FILE *my_fopen(const char *path, const char *mode);
 int my_open(const char *path, int flags);
 void dbg_ping(void);
@@ -269,13 +270,13 @@ void pip_foreach_out(void (*f)(struct p_info *, void *), void *arg);
 void pip_exit(void);
 
 /* bno_dump.c */
-void *bno_dump_alloc(__u32 device);
+void *bno_dump_alloc(struct d_info *dip);
 void bno_dump_free(void *param);
 void bno_dump_add(void *handle, struct io *iop);
 void bno_dump_clean(void);
 
 /* plat.c */
-void *plat_alloc(char *str);
+void *plat_alloc(struct d_info *dip, char *post);
 void plat_free(void *info);
 void plat_clean(void);
 void plat_x2c(void *info, __u64 ts, __u64 latency);
@@ -291,14 +292,14 @@ int q2d_ok(void *priv);
 void q2d_acc(void *a1, void *a2);
 
 /* rstats.c */
-void *rstat_alloc(char *bn);
+void *rstat_alloc(struct d_info *dip);
 void rstat_free(void *ptr);
 void rstat_add(void *ptr, double cur, unsigned long long nblks);
 int rstat_init(void);
 void rstat_exit(void);
 
 /* seek.c */
-void *seeki_alloc(char *str);
+void *seeki_alloc(struct d_info *dip, char *post);
 void seeki_free(void *param);
 void seek_clean(void);
 void seeki_add(void *handle, struct io *iop);
@@ -347,7 +348,7 @@ void trace_remap(struct io *a_iop);
 void trace_requeue(struct io *r_iop);
 
 /* unplug_hist.c */
-void *unplug_hist_alloc(__u32 device);
+void *unplug_hist_alloc(struct d_info *dip);
 void unplug_hist_free(void *arg);
 void unplug_hist_add(struct io *u_iop);
 
