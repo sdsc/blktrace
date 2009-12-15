@@ -1314,6 +1314,8 @@ static void reset_input_file(struct thr_info *tip)
  */
 static void *replay_sub(void *arg)
 {
+        int i;
+	char *mdev;
 	char path[MAXPATHLEN];
 	struct io_bunch bunch;
 	struct thr_info *tip = arg;
@@ -1321,8 +1323,15 @@ static void *replay_sub(void *arg)
 
 	pin_to_cpu(tip);
 
-	sprintf(path, "/dev/%s", map_dev(tip->devnm));
-
+	mdev = map_dev(tip->devnm);
+	sprintf(path, "/dev/%s", mdev);
+	/*
+	 * convert underscores to slashes to
+	 * restore device names that have larger paths
+	 */
+	for (i = 0; i < strlen(mdev); i++)
+	        if (path[strlen("/dev/") + i] == '_')
+		        path[strlen("/dev/") + i] = '/';
 #ifdef O_NOATIME
 	oflags = O_NOATIME;
 #else
