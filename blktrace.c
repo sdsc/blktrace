@@ -1200,7 +1200,16 @@ static int add_devpath(char *path)
 {
 	int fd;
 	struct devpath *dpp;
+	struct list_head *p;
 
+	/*
+	 * Verify device is not duplicated
+	 */
+	__list_for_each(p, &devpaths) {
+	       struct devpath *tmp = list_entry(p, struct devpath, head);
+	       if (!strcmp(tmp->path, path))
+		        return 0;
+	}
 	/*
 	 * Verify device is valid before going too far
 	 */
