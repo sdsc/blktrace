@@ -493,7 +493,7 @@ static inline void pdc_nev_update(struct devpath *dpp, int cpu, int nevents)
 
 static void show_usage(char *prog)
 {
-	fprintf(stderr, "Usage: %s %s %s", prog, blktrace_version, usage_str);
+	fprintf(stderr, "Usage: %s %s", prog, usage_str);
 }
 
 /*

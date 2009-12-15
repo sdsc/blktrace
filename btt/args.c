@@ -244,8 +244,7 @@ static char usage_str[] = \
 
 static void usage(char *prog)
 {
-	fprintf(stderr, "Usage: %s %s %s", prog, bt_timeline_version,
-		usage_str);
+	fprintf(stderr, "Usage: %s %s", prog, usage_str);
 }
 
 static FILE *setup_ofile(char *fname)
