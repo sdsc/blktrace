@@ -38,7 +38,7 @@ static LIST_HEAD(rstats);
 
 static int do_open(struct files *fip, char *bn, char *pn)
 {
-	fip->nm = malloc(sizeof(bn) + 16);
+	fip->nm = malloc(strlen(bn) + 16);
 	sprintf(fip->nm, "%s_%s.dat", bn, pn);
 
 	fip->fp = my_fopen(fip->nm, "w");
@@ -55,6 +55,7 @@ static int init_rsip(struct rstat *rsip, struct d_info *dip)
 {
 	char *nm = dip ? dip->dip_name : "sys";
 
+	rsip->base_sec = -1;
 	rsip->ios = rsip->nblks = 0;
 	if (do_open(&rsip->files[0], nm, "iops_fp") ||
 			    do_open(&rsip->files[1], nm, "mbps_fp"))
