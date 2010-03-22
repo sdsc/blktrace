@@ -86,6 +86,7 @@ static void __p_live_add(struct rb_root *root, __u64 dt, __u64 ct)
 			list_del(&plp->head);
 			rb_erase(&plp->rb_node, root);
 			__p_live_add(root, min(plp->dt, dt), max(plp->ct, ct));
+			free(plp);
 			return;
 		}
 
