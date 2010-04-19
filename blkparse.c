@@ -2518,6 +2518,12 @@ static int do_file(void)
 
 		for (cpu = 0; setup_file(pdi, cpu); cpu++)
 			;
+
+		if (!cpu) {
+			fprintf(stderr,"No input files found for %s\n",
+				pdi->name);
+			return 1;
+		}
 	}
 
 	/*
