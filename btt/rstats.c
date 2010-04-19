@@ -38,7 +38,7 @@ static LIST_HEAD(rstats);
 
 static int do_open(struct files *fip, char *bn, char *pn)
 {
-	fip->nm = malloc(sizeof(bn) + 16);
+	fip->nm = malloc(strlen(bn) + 16);
 	sprintf(fip->nm, "%s_%s.dat", bn, pn);
 
 	fip->fp = my_fopen(fip->nm, "w");
@@ -51,11 +51,14 @@ static int do_open(struct files *fip, char *bn, char *pn)
 	return -1;
 }
 
-static int init_rsip(struct rstat *rsip, char *bn)
+static int init_rsip(struct rstat *rsip, struct d_info *dip)
 {
+	char *nm = dip ? dip->dip_name : "sys";
+
+	rsip->base_sec = -1;
 	rsip->ios = rsip->nblks = 0;
-	if (do_open(&rsip->files[0], bn, "iops_fp") ||
-			    do_open(&rsip->files[1], bn, "mbps_fp"))
+	if (do_open(&rsip->files[0], nm, "iops_fp") ||
+			    do_open(&rsip->files[1], nm, "mbps_fp"))
 		return -1;
 
 	list_add_tail(&rsip->head, &rstats);
@@ -92,11 +95,11 @@ static void __add(struct rstat *rsip, double cur, unsigned long long nblks)
 	rsip->nblks += nblks;
 }
 
-void *rstat_alloc(char *bn)
+void *rstat_alloc(struct d_info *dip)
 {
 	struct rstat *rsip = malloc(sizeof(*rsip));
 
-	if (!init_rsip(rsip, bn))
+	if (!init_rsip(rsip, dip))
 		return rsip;
 
 	free(rsip);
@@ -121,7 +124,7 @@ void rstat_add(void *ptr, double cur, unsigned long long nblks)
 
 int rstat_init(void)
 {
-	sys_info = rstat_alloc("sys");
+	sys_info = rstat_alloc(NULL);
 	return sys_info != NULL;
 }
 

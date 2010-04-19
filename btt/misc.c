@@ -146,6 +146,11 @@ char *make_dev_hdr(char *pad, size_t len, struct d_info *dip, int add_parens)
 	return pad;
 }
 
+char *mkhandle(struct d_info *dip, char *str, size_t len)
+{
+	return make_dev_hdr(str, len, dip, 0);
+}
+
 FILE *my_fopen(const char *path, const char *mode)
 {
 	FILE *fp;
