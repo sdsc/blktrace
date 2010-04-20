@@ -66,19 +66,10 @@ blktrace may also be run concurrently with blkparse to produce
 .TP 2
 \- 
 The default behaviour for blktrace is to run forever until explicitly
-killed by the user (via a control-C, or kill utility invocation).
-There are two ways to modify this:
-
-.TP 5
-  1. 
-You may utilise the blktrace utility itself to kill
-a running trace -- via the \fB\-k\fR option.
-
-.TP 5
-  2.
-You can specify a run-time duration for blktrace via the
-\fB\-w\fR option -- then blktrace will run for the specified number
-of seconds, and then halt.
+killed by the user (via a control-C, or sending SIGINT signal to the
+process via invocation the kill (1) utility). Also you can specify a
+run-time duration for blktrace via the \fB\-w\fR option -- then
+blktrace will run for the specified number of seconds, and then halt.
 
 
 .SH OPTIONS
@@ -117,13 +108,6 @@ Adds \fIdev\fR as a device to trace
 \-\-input-devs=\fIfile\fR 
 .RS
 Adds the devices found in \fIfile\fR as devices to trace
-.RE
-
-\-k 
-.br
-\-\-kill 
-.RS
-Kill on-going trace  
 .RE
 
 \-n \fInum\-sub\fR 
