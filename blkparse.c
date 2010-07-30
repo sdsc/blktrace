@@ -2680,6 +2680,8 @@ static char usage_str[] =    "\n\n" \
 	"[ -M                | --no-msgs\n" \
 	"[ -v                | --verbose ]\n" \
 	"[ -V                | --version ]\n\n" \
+	"\t-a Only trace specified actions. See documentation\n" \
+	"\t-A Give trace mask as a single value. See documentation\n" \
 	"\t-b stdin read batching\n" \
 	"\t-d Output file. If specified, binary data is written to file\n" \
 	"\t-D Directory to prepend to input file names\n" \
