@@ -122,6 +122,9 @@ Specifies number of buffers to use. blktrace defaults to 4 sub buffers.
 \-\-output=\fIfile\fR        
 .RS
 Prepend \fIfile\fR to output file name(s)  
+
+This only works when supplying a single device, or when piping the output
+via "-o -" with multiple devices.
 .RE
 
 \-r \fIrel-path\fR

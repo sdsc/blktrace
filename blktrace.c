@@ -2626,6 +2626,12 @@ int main(int argc, char *argv[])
 		goto out;
 	}
 
+	if (ndevs > 1 && output_name && strcmp(output_name, "-") != 0) {
+		fprintf(stderr, "-o not supported with multiple devices\n");
+		ret = 1;
+		goto out;
+	}
+
 	signal(SIGINT, handle_sigint);
 	signal(SIGHUP, handle_sigint);
 	signal(SIGTERM, handle_sigint);
