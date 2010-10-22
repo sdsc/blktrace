@@ -105,23 +105,59 @@ Adds \fIdev\fR as a device to trace
 
 \-I \fIfile\fR
 .br
-\-\-input-devs=\fIfile\fR 
+\-\-input\-devs=\fIfile\fR
 .RS
 Adds the devices found in \fIfile\fR as devices to trace
 .RE
 
 \-n \fInum\-sub\fR 
 .br
-\-\-num\-sub=\fInum-sub\fR    
+\-\-num\-sub\-buffers=\fInum-sub\fR
 .RS
 Specifies number of buffers to use. blktrace defaults to 4 sub buffers.
 .RE
 
-\-o \fIfile\fR 
+\-l
 .br
-\-\-output=\fIfile\fR        
+\-\-listen
 .RS
-Prepend \fIfile\fR to output file name(s)  
+Run in network listen mode (blktrace server)
+.RE
+
+\-h \fIhostname\fR
+.br
+\-\-host=\fIhostname\fR
+.RS
+Run in network client mode, connecting to the given host
+.RE
+
+\-p \fInumber\fR
+.br
+\-\-port=\fInumber\fR
+.RS
+Network port to use (default 8462)
+.RE
+
+\-s
+.br
+\-\-no\-sendfile
+.RS
+Make the network client NOT use sendfile() to transfer data
+.RE
+
+\-o \fIbasename\fR
+.br
+\-\-output=\fIbasename\fR
+.RS
+Specifies base name for input files. Default is device.blktrace.cpu.
+Specifying -o - runs in live mode with blkparse (writing data to standard out).
+.RE
+
+\-D \fIdir\fR
+.br
+\-\-output\-dir=\fIdir\fR
+.RS
+Prepend \fIfile\fR to output file name(s)
 
 This only works when supplying a single device, or when piping the output
 via "-o -" with multiple devices.
@@ -134,9 +170,17 @@ via "-o -" with multiple devices.
 Specifies debugfs mount point  
 .RE
 
+\-v
+.br
+\-\-version
+.RS
+Outputs version
+.RE
+
 \-V               
 .br
-\-\-version                  
+\-\-version
+.RS
 Outputs version  
 .RE
 
