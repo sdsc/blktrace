@@ -1314,7 +1314,7 @@ static void reset_input_file(struct thr_info *tip)
  */
 static void *replay_sub(void *arg)
 {
-        int i;
+        unsigned int i;
 	char *mdev;
 	char path[MAXPATHLEN];
 	struct io_bunch bunch;
