@@ -2065,7 +2065,8 @@ static void show_entries_rb(int force)
 			break;
 		}
 
-		if (check_sequence(pdi, t, force))
+		if (!(bit->action == BLK_TN_MESSAGE) &&
+		    check_sequence(pdi, t, force))
 			break;
 
 		if (!force && bit->time > last_allowed_time)
@@ -2076,7 +2077,8 @@ static void show_entries_rb(int force)
 		if (!pci || pci->cpu != bit->cpu)
 			pci = get_cpu_info(pdi, bit->cpu);
 
-		pci->last_sequence = bit->sequence;
+		if (!(bit->action == BLK_TN_MESSAGE))
+			pci->last_sequence = bit->sequence;
 
 		pci->nelems++;
 
