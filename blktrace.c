@@ -435,9 +435,24 @@ static struct option l_opts[] = {
 	}
 };
 
-static char usage_str[] = \
-	"-d <dev> [ -r debugfs path ] [ -o <output> ] [-k ] [ -w time ]\n" \
-	"[ -a action ] [ -A action mask ] [ -I  <devs file> ] [ -v ]\n\n" \
+static char usage_str[] = "\n\n" \
+	"-d <dev>             | --dev=<dev>\n" \
+        "[ -r <debugfs path>  | --relay=<debugfs path> ]\n" \
+        "[ -o <file>          | --output=<file>]\n" \
+        "[ -D <dir>           | --output-dir=<dir>\n" \
+        "[ -w <time>          | --stopwatch=<time>]\n" \
+        "[ -a <action field>  | --act-mask=<action field>]\n" \
+        "[ -A <action mask>   | --set-mask=<action mask>]\n" \
+        "[ -b <size>          | --buffer-size]\n" \
+        "[ -n <number>        | --num-sub-buffers=<number>]\n" \
+        "[ -l                 | --listen]\n" \
+        "[ -h <hostname>      | --host=<hostname>]\n" \
+        "[ -p <port number>   | --port=<port number>]\n" \
+        "[ -s                 | --no-sendfile]\n" \
+        "[ -I <devs file>     | --input-devs=<devs file>]\n" \
+        "[ -v <version>       | --version]\n" \
+        "[ -V <version>       | --version]\n" \
+
 	"\t-d Use specified device. May also be given last after options\n" \
 	"\t-r Path to mounted debugfs, defaults to /sys/kernel/debug\n" \
 	"\t-o File(s) to send output to\n" \
@@ -452,6 +467,7 @@ static char usage_str[] = \
 	"\t-p Network port to use (default 8462)\n" \
 	"\t-s Make the network client NOT use sendfile() to transfer data\n" \
 	"\t-I Add devices found in <devs file>\n" \
+	"\t-v Print program version info\n" \
 	"\t-V Print program version info\n\n";
 
 static void clear_events(struct pollfd *pfd)

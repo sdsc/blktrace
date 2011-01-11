@@ -599,6 +599,7 @@ static char usage_str[] = "\n\nblkiomon " \
 	"-I <interval>       | --interval=<interval>\n" \
 	"[ -h <file>         | --human-readable=<file> ]\n" \
 	"[ -b <file>         | --binary=<file> ]\n" \
+	"[ -d <file>         | --dump-lldd=<file> ]\n" \
 	"[ -D <file>         | --debug=<file> ]\n" \
 	"[ -Q <path name>    | --msg-queue=<path name>]\n" \
 	"[ -q <msg queue id> | --msg-queue-id=<msg queue id>]\n" \

@@ -30,6 +30,8 @@ btt \- analyse block i/o traces produces by blktrace
 .br
 [ \-L <\fIfreq\fR>        | \-\-periodic\-latencies=<\fIfreq\fR> ]
 .br
+[ \-m <\fIoutput name\fR> | \-\-seeks\-per\-second=<\fIoutput name\fR> ]
+.br
 [ \-M <\fIdev map\fR>     | \-\-dev\-maps=<\fIdev map\fR>
 .br
 [ \-o <\fIoutput name\fR> | \-\-output\-file=<\fIoutput name\fR> ]
@@ -57,6 +59,8 @@ btt \- analyse block i/o traces produces by blktrace
 [ \-v               | \-\-verbose ]
 .br
 [ \-V               | \-\-version ]
+.br
+[ \-X               | \-\-easy\-parse\-avgs ]
 .br
 [ \-z <\fIoutput name\fR> | \-\-q2d\-latencies=<\fIoutput name\fR> ]
 .br
@@ -201,6 +205,15 @@ Q2C and D2C latencies. The frequency specified will regulate how often
 an average latency is output -- a floating point value expressing seconds.
 .RE
 
+.B \-m <\fIoutput name\fR>
+.br
+.B \-\-seeks\-per\-second=<\fIoutput name\fR>
+.RS 4
+Trigger btt to output seeks-per-second information. The first column will
+contain a time value (seconds), and the second column  will indicate the
+number of seeks per second at that point.
+.RE
+
 .B \-M <\fIdev map\fR>
 .br
 .B \-\-dev\-maps=<\fIdev map\fR>
@@ -330,6 +343,14 @@ Shows the version of btt.
 .B \-\-verbose
 .RS 4
 Requests a more verbose output.
+.RE
+
+.B \-X
+.br
+.B \-\-easy\-parse\-avgs
+.RS 4
+Provide data in an easy-to-parse form and write it to a file
+with .avg exentsion
 .RE
 
 .B \-z <\fIoutput name\fR>
