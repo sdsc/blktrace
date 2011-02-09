@@ -3,6 +3,9 @@
 blkparse
 blktrace
 blkrawverify
+blkiomon
+btreplay/btrecord
+btreplay/btreplay
 doc/.depend
 verify_blkparse
 btt/btt
