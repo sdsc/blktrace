@@ -93,7 +93,7 @@ struct devpath {
 	char *path;			/* path to device special file */
 	char *buts_name;		/* name returned from bt kernel code */
 	struct pdc_stats *stats;
-	int fd, idx, ncpus;
+	int fd, ncpus;
 	unsigned long long drops;
 
 	/*
@@ -1248,7 +1248,7 @@ static int add_devpath(char *path)
 	memset(dpp, 0, sizeof(*dpp));
 	dpp->path = strdup(path);
 	dpp->fd = fd;
-	dpp->idx = ndevs++;
+	ndevs++;
 	list_add_tail(&dpp->head, &devpaths);
 
 	return 0;
