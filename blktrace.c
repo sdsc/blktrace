@@ -721,18 +721,24 @@ static void *my_mmap(void *addr, size_t length, int prot, int flags, int fd,
 	return new;
 }
 
-static int my_mlock(const void *addr, size_t len)
+static int my_mlock(struct tracer *tp,
+		    const void *addr, size_t len)
 {
-	int ret;
+	int ret, retry = 0;
 
 	do {
 		ret = mlock(addr, len);
+		if ((retry >= 10) && tp && tp->is_done)
+			break;
+		retry++;
 	} while (ret < 0 && handle_mem_failure(len));
 
 	return ret;
 }
 
-static int setup_mmap(int fd, unsigned int maxlen, struct mmap_info *mip)
+static int setup_mmap(int fd, unsigned int maxlen,
+		      struct mmap_info *mip,
+		      struct tracer *tp)
 {
 	if (mip->fs_off + maxlen > mip->fs_buf_len) {
 		unsigned long nr = max(16, mip->buf_nr);
@@ -759,7 +765,10 @@ static int setup_mmap(int fd, unsigned int maxlen, struct mmap_info *mip)
 			perror("setup_mmap: mmap");
 			return 1;
 		}
-		my_mlock(mip->fs_buf, mip->fs_buf_len);
+		if (my_mlock(tp, mip->fs_buf, mip->fs_buf_len) < 0) {
+			perror("setup_mlock: mlock");
+			return 1;
+		}
 	}
 
 	return 0;
@@ -1683,7 +1692,7 @@ static int handle_pfds_file(struct tracer *tp, int nevs, int force_read)
 		if (pfd->revents & POLLIN || force_read) {
 			mip = &iop->mmap_info;
 
-			ret = setup_mmap(iop->ofd, buf_size, mip);
+			ret = setup_mmap(iop->ofd, buf_size, mip, tp);
 			if (ret < 0) {
 				pfd->events = 0;
 				break;
@@ -2381,7 +2390,7 @@ static void net_client_read_data(struct cl_conn *nc, struct devpath *dpp,
 	struct io_info *iop = &dpp->ios[bnh->cpu];
 	struct mmap_info *mip = &iop->mmap_info;
 
-	if (setup_mmap(iop->ofd, bnh->len, &iop->mmap_info)) {
+	if (setup_mmap(iop->ofd, bnh->len, &iop->mmap_info, NULL)) {
 		fprintf(stderr, "ncd(%s:%d): mmap failed\n",
 			nc->ch->hostname, nc->fd);
 		exit(1);
