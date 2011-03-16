@@ -460,8 +460,8 @@ static char usage_str[] = "\n\n" \
 	"\t-w Stop after defined time, in seconds\n" \
 	"\t-a Only trace specified actions. See documentation\n" \
 	"\t-A Give trace mask as a single value. See documentation\n" \
-	"\t-b Sub buffer size in KiB\n" \
-	"\t-n Number of sub buffers\n" \
+	"\t-b Sub buffer size in KiB (default 512)\n" \
+	"\t-n Number of sub buffers (default 4)\n" \
 	"\t-l Run in network listen mode (blktrace server)\n" \
 	"\t-h Run in network client mode, connecting to the given host\n" \
 	"\t-p Network port to use (default 8462)\n" \
