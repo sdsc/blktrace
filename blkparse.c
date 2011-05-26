@@ -2354,6 +2354,12 @@ static int ms_prime(struct ms_stream *msp)
 		if (verify_trace(bit))
 			goto err;
 
+		if (bit->cpu != pci->cpu) {
+			fprintf(stderr, "cpu %d trace info has error cpu %d\n",
+				pci->cpu, bit->cpu);
+			continue;
+		}
+
 		if (bit->action & BLK_TC_ACT(BLK_TC_NOTIFY) && bit->action != BLK_TN_MESSAGE) {
 			handle_notify(bit);
 			output_binary(bit, sizeof(*bit) + bit->pdu_len);
