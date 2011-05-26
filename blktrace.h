@@ -110,7 +110,7 @@ static inline void trace_to_cpu(struct blk_io_trace *t)
 	t->action	= be32_to_cpu(t->action);
 	t->pid		= be32_to_cpu(t->pid);
 	t->device	= be32_to_cpu(t->device);
-	t->cpu		= be16_to_cpu(t->cpu);
+	t->cpu		= be32_to_cpu(t->cpu);
 	t->error	= be16_to_cpu(t->error);
 	t->pdu_len	= be16_to_cpu(t->pdu_len);
 }
