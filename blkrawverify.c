@@ -39,7 +39,7 @@ int data_is_native = -1;
 static struct trace_info traces[] = {
 	TRACE_TO_STRING( BLK_TC_READ ),
 	TRACE_TO_STRING( BLK_TC_WRITE ),
-	TRACE_TO_STRING( BLK_TC_BARRIER ),
+	TRACE_TO_STRING( BLK_TC_FLUSH ),
 	TRACE_TO_STRING( BLK_TC_SYNC ),
 	TRACE_TO_STRING( BLK_TC_QUEUE ),
 	TRACE_TO_STRING( BLK_TC_REQUEUE ),
@@ -50,6 +50,7 @@ static struct trace_info traces[] = {
 	TRACE_TO_STRING( BLK_TC_AHEAD ),
 	TRACE_TO_STRING( BLK_TC_META ),
 	TRACE_TO_STRING( BLK_TC_DISCARD ),
+	TRACE_TO_STRING( BLK_TC_FUA ),
 };
 #define N_TRACES (sizeof(traces) / sizeof(struct trace_info))
 
