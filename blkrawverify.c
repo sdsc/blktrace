@@ -201,6 +201,7 @@ static int process(FILE **fp, char *devname, char *file, unsigned int cpu)
 			if (n == 0) {
 				INC_BAD("bad pdu");
 				nbad_seq++;
+				free(pdu_buf);
 				break;
 			}
 			free(pdu_buf);
