@@ -596,7 +596,7 @@ static void find_input_devs(char *idir)
 	}
 
 	while ((ent = readdir(dir)) != NULL) {
-		char *p, *dsf = malloc(256);
+		char *p, *dsf;
 
 		if (strstr(ent->d_name, ".replay.") == NULL)
 			continue;
