@@ -1962,6 +1962,7 @@ static int check_cpu_map(struct per_dev_info *pdi)
 	 * create a map of the cpus we have traces for
 	 */
 	cpu_map = malloc(pdi->cpu_map_max / sizeof(long));
+	memset(cpu_map, 0, sizeof(*cpu_map));
 	n = rb_first(&rb_sort_root);
 	while (n) {
 		__t = rb_entry(n, struct trace, rb_node);
