@@ -87,7 +87,7 @@ static char *act_to_str(__u32 action)
 	unsigned int act = action & 0xffff;
 	unsigned int trace = (action >> BLK_TC_SHIFT) & 0xffff;
 
-	if (act <= N_ACTS) {
+	if (act < N_ACTS) {
 		sprintf(buf, "%s ", acts[act].string);
 		for (i = 0; i < N_TRACES; i++)
 			if (trace & (1 << i)) {
