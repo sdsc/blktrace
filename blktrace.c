@@ -2183,7 +2183,10 @@ static int handle_args(int argc, char *argv[])
 		piped_output = 1;
 		handle_pfds = handle_pfds_entries;
 		pfp = stdout;
-		setvbuf(pfp, NULL, _IONBF, 0);
+		if (setvbuf(pfp, NULL, _IONBF, 0)) {
+			perror("setvbuf stdout");
+			return 1;
+		}
 	} else
 		handle_pfds = handle_pfds_file;
 	return 0;
