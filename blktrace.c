@@ -2076,9 +2076,13 @@ static int handle_args(int argc, char *argv[])
 				return 1;
 			}
 
-			while (fscanf(ifp, "%s\n", dev_line) == 1)
-				if (add_devpath(dev_line) != 0)
+			while (fscanf(ifp, "%s\n", dev_line) == 1) {
+				if (add_devpath(dev_line) != 0) {
+					fclose(ifp);
 					return 1;
+				}
+			}
+			fclose(ifp);
 			break;
 		}
 
