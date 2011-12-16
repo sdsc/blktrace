@@ -872,8 +872,9 @@ static int net_send_header(int fd, int cpu, char *buts_name, int len)
 	memset(&hdr, 0, sizeof(hdr));
 
 	hdr.magic = BLK_IO_TRACE_MAGIC;
+	memset(hdr.buts_name, 0, sizeof(hdr.buts_name));
 	strncpy(hdr.buts_name, buts_name, sizeof(hdr.buts_name));
-	hdr.buts_name[sizeof(hdr.buts_name)-1] = '\0';
+	hdr.buts_name[sizeof(hdr.buts_name) - 1] = '\0';
 	hdr.cpu = cpu;
 	hdr.max_cpus = ncpus;
 	hdr.len = len;
@@ -981,7 +982,9 @@ retry:
 		}
 
 		memcpy(&addr->sin_addr, hent->h_addr, 4);
-		strcpy(hostname, hent->h_name);
+		memset(hostname, 0, sizeof(hostname));
+		strncpy(hostname, hent->h_name, sizeof(hostname));
+		hostname[sizeof(hostname) - 1] = '\0';
 	}
 
 	return 0;
@@ -2131,7 +2134,9 @@ static int handle_args(int argc, char *argv[])
 			break;
 		case 'h':
 			net_mode = Net_client;
-			strcpy(hostname, optarg);
+			memset(hostname, 0, sizeof(hostname));
+			strncpy(hostname, optarg, sizeof(hostname));
+			hostname[sizeof(hostname) - 1] = '\0';
 			break;
 		case 'l':
 			net_mode = Net_server;

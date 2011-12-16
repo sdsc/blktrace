@@ -562,7 +562,9 @@ static struct process_pid_map *add_ppm_hash(pid_t pid, const char *name)
 		ppm = malloc(sizeof(*ppm));
 		memset(ppm, 0, sizeof(*ppm));
 		ppm->pid = pid;
-		strcpy(ppm->comm, name);
+		memset(ppm->comm, 0, sizeof(ppm->comm));
+		strncpy(ppm->comm, name, sizeof(ppm->comm));
+		ppm->comm[sizeof(ppm->comm) - 1] = '\0';
 		ppm->hash_next = ppm_hash_table[hash_idx];
 		ppm_hash_table[hash_idx] = ppm;
 	}
