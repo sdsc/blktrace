@@ -42,6 +42,8 @@ void *plat_alloc(struct d_info *dip, char *post)
 	sprintf(oname, "%s%s_plat.dat", dip->dip_name, post);
 	if ((pp->fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
+		free(oname);
+		free(pp);
 		return NULL;
 	}
 	add_file(pp->fp, oname);

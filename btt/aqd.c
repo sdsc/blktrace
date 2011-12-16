@@ -43,6 +43,8 @@ void *aqd_alloc(struct d_info *dip)
 	sprintf(oname, "%s_%s_aqd.dat", aqd_name, dip->dip_name);
 	if ((ap->fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
+		free(oname);
+		free(ap);
 		return NULL;
 	}
 	add_file(ap->fp, oname);

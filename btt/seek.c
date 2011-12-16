@@ -51,9 +51,10 @@ static FILE *seek_open(char *str, char rw)
 
 	oname = malloc(strlen(seek_name) + strlen(str) + 32);
 	sprintf(oname, "%s_%s_%c.dat", seek_name, str, rw);
-	if ((fp = my_fopen(oname, "w")) == NULL)
+	if ((fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
-	else
+		free(oname);
+	} else
 		add_file(fp, oname);
 
 	return fp;
@@ -226,9 +227,10 @@ void *seeki_alloc(struct d_info *dip, char *post)
 
 		oname = malloc(strlen(sps_name) + strlen(dip->dip_name) + 32);
 		sprintf(oname, "%s_%s.dat", sps_name, dip->dip_name);
-		if ((sip->sps_fp = my_fopen(oname, "w")) == NULL)
+		if ((sip->sps_fp = my_fopen(oname, "w")) == NULL) {
 			perror(oname);
-		else
+			free(oname);
+		} else
 			add_file(sip->sps_fp, oname);
 	} else
 		sip->sps_fp = NULL;

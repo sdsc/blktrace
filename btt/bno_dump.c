@@ -31,9 +31,10 @@ static FILE *bno_dump_open(struct d_info *dip, char rwc)
 
 	oname = malloc(strlen(bno_dump_name) + strlen(dip->dip_name) + 32);
 	sprintf(oname, "%s_%s_%c.dat", bno_dump_name, dip->dip_name, rwc);
-	if ((fp = my_fopen(oname, "w")) == NULL)
+	if ((fp = my_fopen(oname, "w")) == NULL) {
 		perror(oname);
-	else
+		free(oname);
+	} else
 		add_file(fp, oname);
 	return fp;
 }
