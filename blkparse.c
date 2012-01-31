@@ -36,7 +36,7 @@
 #include "rbtree.h"
 #include "jhash.h"
 
-static char blkparse_version[] = "1.0.2";
+static char blkparse_version[] = "1.0.3";
 
 struct skip_info {
 	unsigned long start, end;
@@ -1675,7 +1675,7 @@ static void dump_io_stats(struct per_dev_info *pdi, struct io_stats *ios,
 		fprintf(ofp, " PC Reads Req.:   %s\t\t", size_cnv(x, ios->rrqueue_pc, 0));
 		fprintf(ofp, " PC Writes Req.:   %s\n", size_cnv(x, ios->wrqueue_pc, 0));
 		fprintf(ofp, " PC Reads Compl.: %s\t\t", size_cnv(x, ios->creads_pc, 0));
-		fprintf(ofp, " PC Writes Compl.: %s\n", size_cnv(x, ios->cwrites, 0));
+		fprintf(ofp, " PC Writes Compl.: %s\n", size_cnv(x, ios->cwrites_pc, 0));
 	}
 	fprintf(ofp, " IO unplugs:      %'8lu%8c\t", ios->io_unplugs, ' ');
 	fprintf(ofp, " Timer unplugs:    %'8lu\n", ios->timer_unplugs);
