@@ -1330,7 +1330,7 @@ static struct trace_buf *tb_combine(struct trace_buf *prev,
 		 * the whole structures, as the other fields
 		 * are "static".
 		 */
-		prev = realloc(prev->buf, sizeof(*prev) + tot_len);
+		prev = realloc(prev, sizeof(*prev) + tot_len);
 		prev->buf = (void *)(prev + 1);
 	}
 
@@ -2155,9 +2155,14 @@ static int handle_args(int argc, char *argv[])
 		return 1;
 	}
 
-	if (statfs(debugfs_path, &st) < 0 || st.f_type != (long)DEBUGFS_TYPE) {
+	if (statfs(debugfs_path, &st) < 0) {
 		fprintf(stderr, "Invalid debug path %s: %d/%s\n",
 			debugfs_path, errno, strerror(errno));
+		return 1;
+	}
+
+	if (st.f_type != (long)DEBUGFS_TYPE) {
+		fprintf(stderr, "Debugfs is not mounted at %s\n", debugfs_path);
 		return 1;
 	}
 
