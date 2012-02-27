@@ -2839,7 +2839,7 @@ int main(int argc, char *argv[])
 			ofp = fdopen(STDOUT_FILENO, "w");
 			mode = _IOLBF;
 		} else {
-			char ofname[128];
+			char ofname[PATH_MAX];
 
 			snprintf(ofname, sizeof(ofname) - 1, "%s", output_name);
 			ofp = fopen(ofname, "w");

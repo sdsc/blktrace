@@ -2,6 +2,7 @@
 #define BLKTRACE_H
 
 #include <stdio.h>
+#include <limits.h>
 #include <byteswap.h>
 #include <endian.h>
 
@@ -44,7 +45,7 @@ struct per_cpu_info {
 
 	int fd;
 	int fdblock;
-	char fname[128];
+	char fname[PATH_MAX];
 
 	struct io_stats io_stats;
 
