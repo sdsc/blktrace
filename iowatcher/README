@@ -1,0 +1,62 @@
+iowatcher graphs the results of a blktrace run.  It has a few different modes:
+
+* Graph the result of an existing blktrace
+
+* Start a new blktrace
+
+* Start a new blktrace and a benchmark run
+
+The basic options:
+
+	-d controls which device you are string.  You can only trace one device
+	   at a time for now.  It is sent directly to blktrace
+
+	-t controls the name of the blktrace file.  iowatcher uses a dump from
+	   blkparse, so -t tries to guess the name of the corresponding
+	   per CPU blktrace data files if the dump file doesn't already exist.
+
+	   If you want more than one trace in a given graph, you can specify
+	   -t more than once.
+
+	-l Sets a label for a trace file.  The labels are added in the same
+	   order the trace files are added.
+
+	-T Set a title for the graph.  This goes at the top of the image.
+
+	-o output filename.  The default is trace.svg.  iowatcher is
+	   only able to create svg for now.
+
+	-r control the duration in seconds for the rolling average.
+	   iowatcher tries to smooth out bumpy graphs by averaging the
+	   current second with seconds from the past.  Longer numbers here
+	   give you flatter graphs.
+
+	-O add a single graph to the output.  By default all the graphs
+	   are included, but with -O you get only the graphs you ask for.
+	   -O may be used more than once.
+
+	-N remove a single graph from the output.  This may also be used more
+	   than once.
+
+	Choices for -O and -N are:
+	   io, tput, latency, queue_depth, iops
+
+Examples:
+	
+	# generate graph from the existing trace.dump
+	iowatcher -t trace.dump -o trace.svg
+	
+	# skip the IO graph
+	iowatcher -t trace.dump -o trace.svg -N io
+
+	# only graph tput and latency
+	iowatcher -t trace.dump -o trace.svg -O tput -O latency
+
+	# generate a graph from two runs, and label them
+	iowatcher -t ext4.dump -t xfs.dump -l Ext4 -l XFS -o trace.svg
+
+	# Run a fio benchmark and store the trace in trace.dump
+	# add a title to the top.  Use /dev/sda for blktrace
+	iowatcher -d /dev/sda -t trace.dump -T 'Fio Benchmark' -p 'fio some_job_file'
+
+Please email chris.mason@fusionio.com with any questions
