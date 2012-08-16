@@ -41,6 +41,13 @@ struct trace {
 	int found_issue;
 	int found_completion;
 	int found_queue;
+
+	char *mpstat_start;
+	char *mpstat_cur;
+	u64 mpstat_len;
+	int mpstat_fd;
+	int mpstat_seconds;
+	int mpstat_num_cpus;
 };
 
 static inline unsigned int MAJOR(unsigned int dev)

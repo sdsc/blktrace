@@ -58,10 +58,10 @@ int legend_y_off = -10;
 int legend_font_size = 15;
 int legend_width = 80;
 
+static int rolling_avg_secs = 0;
+
 static int line_len = 1024;
 static char line[1024];
-
-static int rolling_avg_secs = 0;
 
 struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
 {
@@ -647,11 +647,21 @@ void svg_alloc_legend(struct plot *plot, int num_lines)
 	plot->num_legend_lines = num_lines;
 }
 
-void svg_write_legend(struct plot *plot)
+void svg_free_legend(struct plot *plot)
 {
 	int i;
+	for (i = 0; i < plot->legend_index; i++)
+		free(plot->legend_lines[i]);
+	free(plot->legend_lines);
+	plot->legend_lines = NULL;
+	plot->legend_index = 0;
+}
+
+void svg_write_legend(struct plot *plot)
+{
 	int legend_line_x = axis_x_off(graph_width) + legend_x_off;
 	int legend_line_y = axis_y_off(graph_height) + legend_y_off;
+	int i;
 
 	if (plot->legend_index == 0)
 		return;
@@ -670,8 +680,8 @@ void svg_write_legend(struct plot *plot)
 		free(plot->legend_lines[i]);
 	}
 	free(plot->legend_lines);
+	plot->legend_lines = NULL;
 	plot->legend_index = 0;
-	plot->legend_lines = 0;
 }
 
 void svg_add_legend(struct plot *plot, char *text, char *extra, char *color)

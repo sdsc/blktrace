@@ -424,7 +424,7 @@ static char *find_trace_file(char *filename)
 		return strdup(filename);
 
 	snprintf(line, 1024, "%s.%s", filename, "dump");
-	ret = stat(filename, &st);
+	ret = stat(line, &st);
 	if (ret == 0)
 		return strdup(line);
 
@@ -468,7 +468,6 @@ struct trace *open_trace(char *filename)
 		fprintf(stderr, "Unable to find trace file %s\n", filename);
 		goto fail;
 	}
-	free(filename);
 	filename = found_filename;
 
 	fd = open(filename, O_RDONLY);

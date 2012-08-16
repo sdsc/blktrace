@@ -20,8 +20,10 @@
 int run_program(char *str);
 int stop_blktrace(void);
 int start_blktrace(char *device, char *trace_name, char *dest);
-void stop_all_tracers(int val);
+int start_mpstat(char *trace_name);
 int wait_for_tracers(void);
 int blktrace_to_dump(char *trace_name);
+int start_mpstat(char *trace_name);
+
 
 #endif

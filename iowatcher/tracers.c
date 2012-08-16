@@ -36,9 +36,14 @@
 #include "blkparse.h"
 #include "list.h"
 
+static int line_len = 1024;
+static char line[1024];
+
 static pid_t blktrace_pid = 0;
+static pid_t mpstat_pid = 0;
 
 char *blktrace_args[] = {
+	"blktrace",
 	"-d", NULL,
 	"-b", "16384",
 	"-o", "trace",
@@ -49,26 +54,31 @@ char *blktrace_args[] = {
 	NULL,
 };
 
-#define DEVICE_INDEX 1
-#define DEST_DIR_INDEX 7
-#define TRACE_NAME_INDEX 5
+char *mpstat_args[] = {
+	"mpstat",
+	"-P", "ALL", "1",
+	NULL,
+};
 
-int stop_blktrace(void)
+#define DEVICE_INDEX 2
+#define DEST_DIR_INDEX 8
+#define TRACE_NAME_INDEX 6
+
+int stop_tracer(pid_t *tracer_pid)
 {
 	int ret;
-	pid_t pid;
+	pid_t pid = *tracer_pid;
 	pid_t pid_ret;
 	int status = 0;
 
-	if (blktrace_pid == 0)
+	if (pid == 0)
 		return 0;
 
-	pid = blktrace_pid;
-	blktrace_pid = 0;
+	*tracer_pid = 0;
 	ret = kill(pid, SIGTERM);
 	if (ret) {
-		fprintf(stderr, "failed to stop blktrace pid %lu error %s\n",
-			(unsigned long)blktrace_pid, strerror(errno));
+		fprintf(stderr, "failed to stop tracer pid %lu error %s\n",
+			(unsigned long)pid, strerror(errno));
 		return -errno;
 	}
 	pid_ret = waitpid(pid, &status, WUNTRACED);
@@ -81,7 +91,8 @@ int stop_blktrace(void)
 
 void stop_all_tracers(void)
 {
-	stop_blktrace();
+	stop_tracer(&blktrace_pid);
+	stop_tracer(&mpstat_pid);
 }
 
 void sig_handler_for_quit(int val)
@@ -138,27 +149,63 @@ int run_program(char *str)
 		stop_all_tracers();
 		return -errno;
 	}
-	stop_blktrace();
+	stop_all_tracers();
 	return 0;
 }
 
 int wait_for_tracers(void)
 {
 	int status = 0;
-	if (blktrace_pid == 0)
-		return 0;
-
-	waitpid(blktrace_pid, &status, WUNTRACED);
-	blktrace_pid = 0;
+	if (blktrace_pid != 0) {
+		waitpid(blktrace_pid, &status, WUNTRACED);
+		blktrace_pid = 0;
+	}
+	if (mpstat_pid != 0) {
+		waitpid(mpstat_pid, &status, WUNTRACED);
+		mpstat_pid = 0;
+	}
 	return 0;
 }
 
 int blktrace_to_dump(char *trace_name)
 {
-	char line[1024];
-	snprintf(line, 1024, "blkparse -O -i %s -d '%s.%s'",
+	snprintf(line, line_len, "blkparse -O -i %s -d '%s.%s'",
 		trace_name, trace_name, "dump");
 
 	system(line);
+	return 0;
+}
+
+int start_mpstat(char *trace_name)
+{
+	int fd;
+	pid_t pid;
+
+	snprintf(line, line_len, "%s.mpstat", trace_name);
+
+	fd = open(line, O_WRONLY | O_CREAT | O_TRUNC);
+	if (fd < 0) {
+		fprintf(stderr, "unable to open %s for writing err %s\n",
+			line, strerror(errno));
+		exit(1);
+	}
+	pid = fork();
+	if (pid == 0) {
+		int ret;
+
+		close(1);
+		ret = dup2(fd, 1);
+		if (ret < 0) {
+			fprintf(stderr, "failed to setup output file for mpstat\n");
+			exit(1);
+		}
+		ret = execvp("mpstat", mpstat_args);
+		if (ret < 0) {
+			fprintf(stderr, "failed to exec mpstat err %s\n",
+				strerror(ret));
+			exit(1);
+		}
+	}
+	mpstat_pid = pid;
 	return 0;
 }

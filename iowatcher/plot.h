@@ -112,4 +112,5 @@ void svg_add_legend(struct plot *plot, char *text, char *extra, char *color);
 void svg_alloc_legend(struct plot *plot, int num_lines);
 void set_legend_width(int longest_str);
 void set_rolling_avg(int rolling);
+void svg_free_legend(struct plot *plot);
 #endif

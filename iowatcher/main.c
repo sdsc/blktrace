@@ -36,9 +36,12 @@
 #include "blkparse.h"
 #include "list.h"
 #include "tracers.h"
+#include "mpstat.h"
 
 LIST_HEAD(all_traces);
 
+static int found_mpstat = 0;
+static int cpu_color_index = 0;
 static int color_index = 0;
 char *colors[] = {
 	"blue", "darkgreen",
@@ -61,27 +64,46 @@ char *pick_color(void) {
 }
 
 char *pick_cpu_color(void) {
-	char *ret = colors[color_index];
+	char *ret = colors[cpu_color_index];
 	if (!ret) {
 		color_index = 0;
-		ret = colors[color_index];
+		ret = colors[cpu_color_index];
 	}
-	color_index++;
+	cpu_color_index++;
 	return ret;
 }
 
 enum {
 	IO_GRAPH_INDEX = 0,
 	TPUT_GRAPH_INDEX,
+	CPU_SYS_GRAPH_INDEX,
+	CPU_IO_GRAPH_INDEX,
+	CPU_IRQ_GRAPH_INDEX,
+	CPU_SOFT_GRAPH_INDEX,
+	CPU_USER_GRAPH_INDEX,
 	LATENCY_GRAPH_INDEX,
 	QUEUE_DEPTH_GRAPH_INDEX,
 	IOPS_GRAPH_INDEX,
 	TOTAL_GRAPHS
 };
 
+enum {
+	MPSTAT_SYS = 0,
+	MPSTAT_IRQ,
+	MPSTAT_IO,
+	MPSTAT_SOFT,
+	MPSTAT_USER,
+	MPSTAT_GRAPHS
+};
+
 static char *graphs_by_name[] = {
 	"io",
 	"tput",
+	"cpu-sys",
+	"cpu-io",
+	"cpu-irq",
+	"cpu-soft",
+	"cpu-user",
 	"latency",
 	"queue-depth",
 	"iops",
@@ -112,7 +134,27 @@ struct trace_file {
 	struct graph_line_data *queue_depth_gld;
 	struct graph_dot_data *gdd_writes;
 	struct graph_dot_data *gdd_reads;
+
+	int mpstat_seconds;
+	int mpstat_stop_seconds;
+	struct graph_line_data **mpstat_gld;
 };
+
+static void alloc_mpstat_gld(struct trace_file *tf)
+{
+	struct graph_line_data **ptr;
+
+	if (tf->trace->mpstat_num_cpus == 0)
+		return;
+
+	ptr = calloc((tf->trace->mpstat_num_cpus + 1) * MPSTAT_GRAPHS,
+		     sizeof(struct graph_line_data *));
+	if (!ptr) {
+		perror("Unable to allocate mpstat arrays\n");
+		exit(1);
+	}
+	tf->mpstat_gld = ptr;
+}
 
 static void enable_all_graphs(void)
 {
@@ -162,7 +204,6 @@ static int last_graph(void)
 	}
 	return -ENOENT;
 }
-
 static void add_trace_file(char *filename)
 {
 	struct trace_file *tf;
@@ -172,6 +213,7 @@ static void add_trace_file(char *filename)
 		fprintf(stderr, "Unable to allocate memory\n");
 		exit(1);
 	}
+	tf->label = "";
 	tf->filename = strdup(filename);
 	list_add_tail(&tf->list, &all_traces);
 	tf->read_color = pick_color();
@@ -182,6 +224,7 @@ static void add_trace_file(char *filename)
 static void setup_trace_file_graphs(void)
 {
 	struct trace_file *tf;
+	int i;
 
 	list_for_each_entry(tf, &all_traces, list) {
 		tf->tput_gld = alloc_line_data(tf->seconds, tf->stop_seconds);
@@ -190,6 +233,17 @@ static void setup_trace_file_graphs(void)
 		tf->iop_gld = alloc_line_data(tf->seconds, tf->stop_seconds);
 		tf->gdd_writes = alloc_dot_data(tf->seconds, tf->max_offset, tf->stop_seconds);
 		tf->gdd_reads = alloc_dot_data(tf->seconds, tf->max_offset, tf->stop_seconds);
+
+		if (tf->trace->mpstat_num_cpus == 0)
+			continue;
+
+		alloc_mpstat_gld(tf);
+		for (i = 0; i < (tf->trace->mpstat_num_cpus + 1) * MPSTAT_GRAPHS; i++) {
+			tf->mpstat_gld[i] =
+				alloc_line_data(tf->mpstat_seconds,
+						tf->mpstat_seconds);
+			tf->mpstat_gld[i]->max = 100;
+		}
 	}
 }
 
@@ -214,6 +268,12 @@ static void read_traces(void)
 
 		filter_outliers(trace, tf->max_offset, &ymin, &ymax);
 		tf->max_offset = ymax;
+
+		read_mpstat(trace, tf->filename);
+		tf->mpstat_stop_seconds = trace->mpstat_seconds;
+		tf->mpstat_seconds = trace->mpstat_seconds;
+		if (tf->mpstat_seconds)
+			found_mpstat = 1;
 	}
 }
 
@@ -223,6 +283,11 @@ static void read_trace_events(void)
 	struct trace_file *tf;
 	struct trace *trace;
 	int ret;
+	int i;
+	int time;
+	double user, sys, iowait, irq, soft;
+	double max_user = 0, max_sys = 0, max_iowait = 0,
+	       max_irq = 0, max_soft = 0;
 
 	list_for_each_entry(tf, &all_traces, list) {
 		trace = tf->trace;
@@ -239,6 +304,57 @@ static void read_trace_events(void)
 				break;
 		}
 	}
+	list_for_each_entry(tf, &all_traces, list) {
+		trace = tf->trace;
+
+		if (trace->mpstat_num_cpus == 0)
+			continue;
+
+		first_mpstat(trace);
+
+		for (time = 0; time < tf->mpstat_stop_seconds; time ++) {
+			for (i = 0; i < (trace->mpstat_num_cpus + 1) * MPSTAT_GRAPHS; i += MPSTAT_GRAPHS) {
+				ret = read_mpstat_event(trace, &user, &sys,
+							&iowait, &irq, &soft);
+				if (ret)
+					goto mpstat_done;
+				if (next_mpstat_line(trace))
+					goto mpstat_done;
+
+				if (sys > max_sys)
+					max_sys = sys;
+				if (user > max_user)
+					max_user = user;
+				if (irq > max_irq)
+					max_irq = irq;
+				if (iowait > max_iowait)
+					max_iowait = iowait;
+
+				add_mpstat_gld(time, sys, tf->mpstat_gld[i + MPSTAT_SYS]);
+				add_mpstat_gld(time, irq, tf->mpstat_gld[i + MPSTAT_IRQ]);
+				add_mpstat_gld(time, soft, tf->mpstat_gld[i + MPSTAT_SOFT]);
+				add_mpstat_gld(time, user, tf->mpstat_gld[i + MPSTAT_USER]);
+				add_mpstat_gld(time, iowait, tf->mpstat_gld[i + MPSTAT_IO]);
+			}
+			if (next_mpstat(trace) == NULL)
+				break;
+		}
+	}
+
+mpstat_done:
+	list_for_each_entry(tf, &all_traces, list) {
+		trace = tf->trace;
+
+		if (trace->mpstat_num_cpus == 0)
+			continue;
+
+		tf->mpstat_gld[MPSTAT_SYS]->max = max_sys;
+		tf->mpstat_gld[MPSTAT_IRQ]->max = max_irq;
+		tf->mpstat_gld[MPSTAT_SOFT]->max = max_soft;
+		tf->mpstat_gld[MPSTAT_USER]->max = max_user;
+		tf->mpstat_gld[MPSTAT_IO]->max = max_iowait;;
+	}
+	return;
 }
 
 static void set_trace_label(char *label)
@@ -471,6 +587,91 @@ static void plot_tput(struct plot *plot, int seconds)
 	close_plot(plot);
 }
 
+static void plot_cpu(struct plot *plot, int seconds, char *label,
+		     int active_index, int gld_index)
+{
+	struct trace_file *tf;
+	char line[128];
+	int max = 0;
+	int i;
+	int gld_i;
+	char *color;
+	double avg = 0;
+	int ymax;
+	int plotted = 0;
+
+	if (active_graphs[active_index] == 0)
+		return;
+
+	list_for_each_entry(tf, &all_traces, list) {
+		if (tf->trace->mpstat_num_cpus > max)
+			max = tf->trace->mpstat_num_cpus;
+	}
+	if (max == 0)
+		return;
+
+	tf = list_entry(all_traces.next, struct trace_file, list);
+
+	ymax = tf->mpstat_gld[gld_index]->max;
+	if (ymax == 0)
+		return;
+
+	svg_alloc_legend(plot, num_traces * max);
+
+	plot->add_xlabel = last_active_graph == active_index;
+	setup_axis(plot);
+	set_plot_label(plot, label);
+
+	seconds = tf->mpstat_seconds;
+
+	set_yticks(plot, 4, 0, tf->mpstat_gld[gld_index]->max, "");
+	set_ylabel(plot, "Percent");
+	set_xticks(plot, 9, 0, seconds);
+
+	cpu_color_index = 0;
+	list_for_each_entry(tf, &all_traces, list) {
+		for (i = 0; i < tf->mpstat_gld[0]->stop_seconds; i++) {
+			avg += tf->mpstat_gld[gld_index]->data[i].sum;
+		}
+		avg /= tf->mpstat_gld[gld_index]->stop_seconds;
+		color = pick_cpu_color();
+		svg_line_graph(plot, tf->mpstat_gld[0], color);
+		svg_add_legend(plot, tf->label, " avg", color);
+
+		for (i = 1; i < tf->trace->mpstat_num_cpus + 1; i++) {
+			struct graph_line_data *gld = tf->mpstat_gld[i * MPSTAT_GRAPHS + gld_index];
+			double this_avg = 0;
+
+			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++)
+				this_avg += gld->data[i].sum;
+
+			this_avg /= gld->stop_seconds;
+
+			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++) {
+				if (this_avg > avg + 30 ||
+				    gld->data[gld_i].sum > 95) {
+					color = pick_cpu_color();
+					svg_line_graph(plot, gld, color);
+					snprintf(line, 128, " CPU %d\n", i - 1);
+					svg_add_legend(plot, tf->label, line, color);
+					plotted++;
+					break;
+				}
+
+			}
+		}
+	}
+
+	if (plot->add_xlabel)
+		set_xlabel(plot, "Time (seconds)");
+
+	if (plot->legend_index <= 8)
+		svg_write_legend(plot);
+	else
+		svg_free_legend(plot);
+	close_plot(plot);
+}
+
 static void plot_latency(struct plot *plot, int seconds)
 {
 	struct trace_file *tf;
@@ -622,6 +823,7 @@ int main(int ac, char **av)
 			fprintf(stderr, "exiting due to blktrace failure\n");
 			exit(1);
 		}
+		start_mpstat(blktrace_outfile);
 		if (program_to_run) {
 			ret = run_program(program_to_run);
 			if (ret) {
@@ -665,7 +867,7 @@ int main(int ac, char **av)
 	write_svg_header(fd);
 	plot = alloc_plot(fd);
 
-	if (active_graphs[IO_GRAPH_INDEX])
+	if (active_graphs[IO_GRAPH_INDEX] || found_mpstat)
 		set_legend_width(longest_label + strlen("writes"));
 	else if (num_traces > 1)
 		set_legend_width(longest_label);
@@ -676,6 +878,17 @@ int main(int ac, char **av)
 
 	plot_io(plot, seconds, max_offset);
 	plot_tput(plot, seconds);
+	plot_cpu(plot, seconds, "CPU IO Wait Time",
+		 CPU_IO_GRAPH_INDEX, MPSTAT_IO);
+	plot_cpu(plot, seconds, "CPU System Time",
+		 CPU_SYS_GRAPH_INDEX, MPSTAT_SYS);
+	plot_cpu(plot, seconds, "CPU IRQ Time",
+		 CPU_IRQ_GRAPH_INDEX, MPSTAT_IRQ);
+	plot_cpu(plot, seconds, "CPU SoftIRQ Time",
+		 CPU_SOFT_GRAPH_INDEX, MPSTAT_SOFT);
+	plot_cpu(plot, seconds, "CPU User Time",
+		 CPU_USER_GRAPH_INDEX, MPSTAT_USER);
+
 	plot_latency(plot, seconds);
 	plot_queue_depth(plot, seconds);
 	plot_iops(plot, seconds);
