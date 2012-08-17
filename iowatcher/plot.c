@@ -33,9 +33,11 @@
 
 #include "plot.h"
 
+static int io_graph_scale = 8;
 static int graph_width = 600;
 static int graph_height = 150;
-static int graph_inner_margin = 2;
+static int graph_inner_x_margin = 2;
+static int graph_inner_y_margin = 2;
 static int graph_tick_len = 5;
 static int graph_left_pad = 120;
 static int tick_label_pad = 16;
@@ -88,7 +90,7 @@ struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seco
 {
 	int size;
 	int arr_size;
-	int rows = graph_height;
+	int rows = graph_height * io_graph_scale;
 	int cols = graph_width;
 	struct graph_dot_data *gdd;
 
@@ -118,9 +120,10 @@ void free_dot_data(struct graph_dot_data *gdd)
 	free(gdd);
 }
 
-void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, int bytes, double time)
+void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
 	double bytes_per_row = (double)gdd->max_offset / gdd->rows;
+
 	double secs_per_col = (double)gdd->seconds / gdd->cols;
 	double col;
 	double row;
@@ -129,20 +132,19 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, int bytes, double time)
 	int bit_index;
 	int arr_index;
 	int bit_mod;
-	int mod = (int)bytes_per_row;
+	double mod = bytes_per_row;
 
 	if (offset > gdd->max_offset)
 		return;
 
 	gdd->total_ios++;
+	time = time / 1000000000.0;
 	while (bytes > 0) {
-		time = time / 1000000000.0;
 		row = (double)offset / bytes_per_row;
 		col = time / secs_per_col;
 
 		col_int = floor(col);
 		row_int = floor(row);
-
 		bit_index = row_int * gdd->cols + col_int;
 		arr_index = bit_index / 8;
 		bit_mod = bit_index % 8;
@@ -267,13 +269,18 @@ void write_drop_shadow(struct plot *plot)
 /* svg y offset for the traditional 0,0 (bottom left corner) of the plot */
 static int axis_y(void)
 {
-	return plot_label_height + graph_height + graph_inner_margin;
+	return plot_label_height + graph_height + graph_inner_y_margin;
 }
 
 /* this gives you the correct pixel for a given offset from the bottom left y axis */
-static int axis_y_off(int y)
+static double axis_y_off_double(double y)
 {
 	return plot_label_height + graph_height - y;
+}
+
+static int axis_y_off(int y)
+{
+	return axis_y_off_double(y);
 }
 
 /* svg x axis offset from 0 */
@@ -283,10 +290,16 @@ static int axis_x(void)
 }
 
 /* the correct pixel for a given X offset */
+static double axis_x_off_double(double x)
+{
+	return graph_left_pad + graph_inner_x_margin + x;
+}
+
 static int axis_x_off(int x)
 {
-	return graph_left_pad + graph_inner_margin + x;
+	return (int)axis_x_off_double(x);
 }
+
 
 /*
  * this draws a backing rectangle for the plot and it
@@ -324,12 +337,12 @@ void setup_axis(struct plot *plot)
 
 
 	/* create an svg object for all our coords to be relative against */
-	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
+	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\" style=\"enable-background:new\">\n", plot->start_x_offset, plot->start_y_offset);
 	write(fd, line, strlen(line));
 
 	snprintf(line, 1024, "<path d=\"M%d %d h %d V %d H %d Z\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"/>\n",
 		 axis_x(), axis_y(),
-		 graph_width + graph_inner_margin * 2, axis_y_off(graph_height) - graph_inner_margin,
+		 graph_width + graph_inner_x_margin * 2, axis_y_off(graph_height) - graph_inner_y_margin,
 		 axis_x());
 	len = strlen(line);
 	ret = write(fd, line, len);
@@ -378,7 +391,7 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 	int pixels_per_tick = graph_width / num_ticks;
 	int step = (last - first) / num_ticks;
 	int i;
-	int tick_y = axis_y_off(graph_tick_len) + graph_inner_margin;
+	int tick_y = axis_y_off(graph_tick_len) + graph_inner_y_margin;
 	int tick_x = axis_x();
 	int tick_only = plot->add_xlabel == 0;
 
@@ -428,7 +441,7 @@ void set_ylabel(struct plot *plot, char *label)
 		 axis_y_off(graph_height / 2),
 		 font_family,
 		 graph_left_pad / 2 - axis_label_font_size,
-		 axis_y_off(graph_height / 2),
+		 (int)axis_y_off(graph_height / 2),
 		 axis_label_font_size, "middle", label);
 	len = strlen(line);
 	write(fd, line, len);
@@ -516,7 +529,7 @@ int close_plot(struct plot *plot)
 	return 0;
 }
 
-struct plot *alloc_plot(int fd)
+struct plot *alloc_plot(void)
 {
 	struct plot *plot;
 	plot = calloc(1, sizeof(*plot));
@@ -524,8 +537,24 @@ struct plot *alloc_plot(int fd)
 		fprintf(stderr, "Unable to allocate memory %s\n", strerror(errno));
 		exit(1);
 	}
-	plot->fd = fd;
+	plot->fd = 0;
 	return plot;
+}
+
+void set_plot_output(struct plot *plot, char *filename)
+{
+	int fd;
+
+	if (plot->fd)
+		close(plot->fd);
+	fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+	if (fd < 0) {
+		fprintf(stderr, "Unable to open output file %s err %s\n", filename, strerror(errno));
+		exit(1);
+	}
+	plot->fd = fd;
+	plot->start_y_offset = plot->start_x_offset = 0;
+	write_svg_header(fd);
 }
 
 char *byte_unit_names[] = { "", "K", "M", "G", "T", "P", "E", "Z", "Y", "unobtainium" };
@@ -606,11 +635,90 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color)
 	return 0;
 }
 
-static int svg_add_io(int fd, int row, int col, char *color)
+void svg_write_time_line(struct plot *plot, int col)
 {
-	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"1.5\" height=\"1.5\" rx=\"0.5\" style=\"stroke:none;fill:%s\"/>\n",
-		 axis_x_off(col), axis_y_off(row), color);
+	snprintf(line, line_len, "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\" "
+				 "style=\"stroke:black;stroke-width:2;\"/>\n",
+				 axis_x_off(col), axis_y_off(0),
+				 axis_x_off(col), axis_y_off(graph_height));
+	write(plot->fd, line, strlen(line));
+}
+
+static int svg_add_io(int fd, double row, double col, double width, double height, char *color, float alpha)
+{
+	float rx = 0;
+
+	snprintf(line, line_len, "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.1f\" height=\"%.1f\" "
+		 "rx=\"%.2f\" style=\"stroke:none;fill:%s;stroke-width:0;opacity:%.2f\"/>\n",
+		 axis_x_off_double(col), axis_y_off_double(row), width, height, rx, color, alpha);
 	return write(fd, line, strlen(line));
+}
+
+int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph, float alpha)
+{
+	double cell_index;
+	double movie_row;
+	double movie_col;
+	int i;
+
+	for (i = 0; i < ph->num_used; i++) {
+		cell_index = ph->history[i];
+		movie_row = floor(cell_index / graph_width);
+		movie_col = cell_index - movie_row * graph_width;
+		svg_add_io(plot->fd, movie_row, movie_col, 4, 4, ph->color, alpha);
+	}
+	return 0;
+}
+
+static int add_plot_history(struct plot_history *ph, double val)
+{
+	if (ph->num_used == ph->history_len) {
+		ph->history = realloc(ph->history,
+				      (ph->history_len + 4096) * sizeof(double));
+		if (!ph->history) {
+			perror("Unable to allocate memory");
+			exit(1);
+		}
+		ph->history_len += 4096;
+	}
+	ph->history[ph->num_used++] = val;
+	return 0;
+}
+
+int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int col)
+{
+	int row = 0;
+	int arr_index;
+	unsigned char val;
+	int bit_index;
+	int bit_mod;
+	double blocks_per_row = gdd->max_offset / gdd->rows;
+	double movie_blocks_per_cell = gdd->max_offset / (graph_width * graph_height);
+	double cell_index;
+	int margin_orig = graph_inner_y_margin;
+
+	graph_inner_y_margin += 5;
+
+	for (row = gdd->rows - 1; row >= 0; row--) {
+		bit_index = row * gdd->cols + col;
+		arr_index = bit_index / 8;
+		bit_mod = bit_index % 8;
+
+		if (arr_index < 0)
+			continue;
+		val = gdd->data[arr_index];
+		if (val & (1 << bit_mod)) {
+			/* in bytes, linear offset from the start of the drive */
+			cell_index = (double)row * blocks_per_row;
+
+			/* a cell number in the graph */
+			cell_index /= movie_blocks_per_cell;
+
+			add_plot_history(ph, cell_index);
+		}
+	}
+	graph_inner_y_margin = margin_orig;
+	return 0;
 }
 
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color)
@@ -633,7 +741,7 @@ int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color)
 				continue;
 			val = gdd->data[arr_index];
 			if (val & (1 << bit_mod))
-				svg_add_io(fd, row, col, color);
+				svg_add_io(fd, floor(row / io_graph_scale), col, 1.5, 1.5, color, 1.0);
 		}
 	}
 	return 0;
@@ -718,3 +826,28 @@ void set_rolling_avg(int rolling)
 	rolling_avg_secs = rolling;
 }
 
+void set_io_graph_scale(int scale)
+{
+	io_graph_scale = scale;
+}
+
+void set_graph_size(int width, int height)
+{
+	graph_width = width;
+	graph_height = height;
+}
+
+void get_graph_size(int *width, int *height)
+{
+	*width = graph_width;
+	*height = graph_height;
+}
+
+void set_graph_height(int h)
+{
+	graph_height = h;
+}
+void set_graph_width(int w)
+{
+	graph_width = w;
+}

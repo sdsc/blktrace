@@ -40,9 +40,15 @@
 
 LIST_HEAD(all_traces);
 
+static char line[1024];
+static int line_len = 1024;
 static int found_mpstat = 0;
 static int cpu_color_index = 0;
 static int color_index = 0;
+static int make_movie = 0;
+static int opt_graph_width = 0;
+static int opt_graph_height = 0;
+
 char *colors[] = {
 	"blue", "darkgreen",
 	"red", "aqua",
@@ -396,98 +402,6 @@ static void set_blktrace_outfile(char *arg)
 }
 
 
-char *option_string = "hT:t:o:l:r:O:N:d:p:";
-static struct option long_options[] = {
-	{"title", required_argument, 0, 'T'},
-	{"trace", required_argument, 0, 't'},
-	{"output", required_argument, 0, 'o'},
-	{"label", required_argument, 0, 'l'},
-	{"rolling", required_argument, 0, 'r'},
-	{"no-graph", required_argument, 0, 'N'},
-	{"only-graph", required_argument, 0, 'O'},
-	{"device", required_argument, 0, 'd'},
-	{"prog", required_argument, 0, 'p'},
-	{"help", required_argument, 0, 'h'},
-	{0, 0, 0, 0}
-};
-
-static void print_usage(void)
-{
-	fprintf(stderr, "iowatcher usage:\n"
-		"\t-d (--device): device for blktrace to trace\n"
-		"\t-t (--trace): trace file name (more than one allowed)\n"
-		"\t-l (--label): trace label in the graph\n"
-		"\t-o (--output): output file name (SVG only)\n"
-		"\t-p (--prog): program to run while blktrace is run\n"
-		"\t-r (--rolling): number of seconds in the rolling averge\n"
-		"\t-T (--title): graph title\n"
-		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, iops)\n"
-		"\t-O (--only-graph): add a single graph (io, tput, latency, queue_depth, iops)\n"
-	       );
-	exit(1);
-}
-
-static int parse_options(int ac, char **av)
-{
-	int c;
-	int disabled = 0;
-
-	while (1) {
-		// int this_option_optind = optind ? optind : 1;
-		int option_index = 0;
-
-		c = getopt_long(ac, av, option_string,
-				long_options, &option_index);
-
-		if (c == -1)
-			break;
-
-		switch(c) {
-		case 'h':
-			print_usage();
-			break;
-		case 'T':
-			graph_title = strdup(optarg);
-			break;
-		case 't':
-			add_trace_file(optarg);
-			set_blktrace_outfile(optarg);
-			break;
-		case 'o':
-			output_filename = strdup(optarg);
-			break;
-		case 'l':
-			set_trace_label(optarg);
-			break;
-		case 'r':
-			set_rolling_avg(atoi(optarg));
-			break;
-		case 'O':
-			if (!disabled) {
-				disable_all_graphs();
-				disabled = 1;
-			}
-			enable_one_graph(optarg);
-			break;
-		case 'N':
-			disable_one_graph(optarg);
-			break;
-		case 'd':
-			blktrace_device = strdup(optarg);
-			break;
-		case 'p':
-			program_to_run = strdup(optarg);
-			break;
-		case '?':
-			print_usage();
-			break;
-		default:
-			break;
-		}
-	}
-	return 0;
-}
-
 static void compare_max_tf(struct trace_file *tf, int *seconds, u64 *max_offset)
 {
 	if (tf->seconds > *seconds)
@@ -506,14 +420,90 @@ static void set_all_max_tf(int seconds, u64 max_offset)
 	}
 }
 
-static void plot_io(struct plot *plot, int seconds, u64 max_offset)
+static char *create_movie_temp_dir(void)
+{
+	char *ret;
+	char *pattern = strdup("btrfs-movie-XXXXXX");;
+
+	ret = mkdtemp(pattern);
+	if (!ret) {
+		perror("Unable to create temp directory for movie files");
+		exit(1);
+	}
+	return ret;
+}
+
+static struct plot_history *alloc_plot_history(char *color)
+{
+	struct plot_history *ph = calloc(1, sizeof(struct plot_history));
+
+	if (!ph) {
+		perror("memory allocation failed");
+		exit(1);
+	}
+	ph->history = calloc(4096, sizeof(double));
+	if (!ph->history) {
+		perror("memory allocation failed");
+		exit(1);
+	}
+	ph->history_len = 4096;
+	ph->color = color;
+	return ph;
+}
+
+LIST_HEAD(movie_history_writes);
+LIST_HEAD(movie_history_reads);
+int num_histories = 0;
+
+static void add_history(struct plot_history *ph, struct list_head *list)
+{
+	struct plot_history *entry;
+
+	list_add_tail(&ph->list, list);
+	num_histories++;
+
+	if (num_histories > 12) {
+		num_histories--;
+		entry = list_entry(list->next, struct plot_history, list);
+		list_del(&entry->list);
+		free(entry->history);
+		free(entry);
+	}
+}
+
+static void plot_movie_history(struct plot *plot, struct list_head *list)
+{
+	float alpha = 0.1;
+	struct plot_history *ph;
+
+	list_for_each_entry(ph, list, list) {
+		if (ph->list.next == list)
+			alpha = 1;
+		svg_io_graph_movie_array(plot, ph, 1);
+		alpha += 0.2;
+		if (alpha > 1)
+			alpha = 0.8;
+	 }
+}
+
+static void free_all_plot_history(struct list_head *head)
+{
+	struct plot_history *entry;
+	while (!list_empty(head)) {
+		entry = list_entry(head->next, struct plot_history, list);
+		list_del(&entry->list);
+		free(entry->history);
+		free(entry);
+	}
+}
+
+static void __plot_io(struct plot *plot, int seconds, u64 max_offset)
 {
 	struct trace_file *tf;
 
 	if (active_graphs[IO_GRAPH_INDEX] == 0)
 		return;
 
-	plot->add_xlabel = last_active_graph == IO_GRAPH_INDEX;
 	setup_axis(plot);
 
 	svg_alloc_legend(plot, num_traces * 2);
@@ -540,10 +530,17 @@ static void plot_io(struct plot *plot, int seconds, u64 max_offset)
 	if (plot->add_xlabel)
 		set_xlabel(plot, "Time (seconds)");
 	svg_write_legend(plot);
+}
+
+static void plot_io(struct plot *plot, int seconds, u64 max_offset)
+{
+	plot->add_xlabel = last_active_graph == IO_GRAPH_INDEX;
+
+	__plot_io(plot, seconds, max_offset);
 	close_plot(plot);
 }
 
-static void plot_tput(struct plot *plot, int seconds)
+static void __plot_tput(struct plot *plot, int seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -562,7 +559,6 @@ static void plot_tput(struct plot *plot, int seconds)
 	list_for_each_entry(tf, &all_traces, list)
 		tf->tput_gld->max = max;
 
-	plot->add_xlabel = last_active_graph == TPUT_GRAPH_INDEX;
 	setup_axis(plot);
 	set_plot_label(plot, "Throughput");
 
@@ -584,7 +580,121 @@ static void plot_tput(struct plot *plot, int seconds)
 		set_xlabel(plot, "Time (seconds)");
 	if (num_traces > 1)
 		svg_write_legend(plot);
+}
+
+static void plot_tput(struct plot *plot, int seconds)
+{
+	plot->add_xlabel = last_active_graph == TPUT_GRAPH_INDEX;
+	__plot_tput(plot, seconds);
 	close_plot(plot);
+}
+
+static void convert_movie_files(char *movie_dir)
+{
+	fprintf(stderr, "Converting svg files in %s\n", movie_dir);
+	snprintf(line, line_len, "find %s -name \\*.svg | xargs -I{} -n 1 -P 8 rsvg-convert -o {}.png {}",
+		 movie_dir);
+	system(line);
+}
+
+static void mencode_movie(char *movie_dir)
+{
+	fprintf(stderr, "Creating movie %s\n", movie_dir);
+	snprintf(line, line_len, "mencoder mf://%s/*.png -mf type=png:fps=16 -of lavf "
+		 "-ovc x264 -oac copy -o %s",
+		 movie_dir, output_filename);
+	system(line);
+}
+
+static void cleanup_movie(char *movie_dir)
+{
+	fprintf(stderr, "Removing movie dir %s\n", movie_dir);
+	snprintf(line, line_len, "rm %s/*", movie_dir);
+	system(line);
+
+	snprintf(line, line_len, "rmdir %s", movie_dir);
+	system(line);
+}
+
+static void plot_io_movie(struct plot *plot)
+{
+	struct trace_file *tf;
+	char *movie_dir = create_movie_temp_dir();
+	int i;
+	struct plot_history *read_history;
+	struct plot_history *write_history;
+	int batch_i;
+	int movie_len = 30;
+	int movie_frames_per_sec = 16;
+	int total_frames = movie_len * movie_frames_per_sec;
+	int rows, cols;
+	int batch_count;
+
+	get_graph_size(&cols, &rows);
+	batch_count = cols / total_frames;
+
+	if (batch_count == 0)
+		batch_count = 1;
+
+	list_for_each_entry(tf, &all_traces, list) {
+		char *label = tf->label;
+		if (!label)
+			label = "";
+
+		i = 0;
+		while (i < cols) {
+			snprintf(line, line_len, "%s/%010d-%s.svg", movie_dir, i, output_filename);
+			set_plot_output(plot, line);
+
+			set_plot_title(plot, graph_title);
+			setup_axis(plot);
+			svg_alloc_legend(plot, num_traces * 2);
+
+			read_history = alloc_plot_history(tf->read_color);
+			write_history = alloc_plot_history(tf->write_color);
+			read_history->col = i;
+			write_history->col = i;
+
+			if (tf->gdd_reads->total_ios)
+				svg_add_legend(plot, label, " Reads", tf->read_color);
+			if (tf->gdd_writes->total_ios)
+				svg_add_legend(plot, label, " Writes", tf->write_color);
+
+			batch_i = 0;
+			while (i < cols && batch_i < batch_count) {
+				/* print just this column */
+				svg_io_graph_movie(tf->gdd_reads, read_history, i);
+
+				svg_io_graph_movie(tf->gdd_writes, write_history, i);
+				i++;
+				batch_i++;
+			}
+
+			add_history(read_history, &movie_history_reads);
+			add_history(write_history, &movie_history_writes);
+
+			plot_movie_history(plot, &movie_history_reads);
+			plot_movie_history(plot, &movie_history_writes);
+
+			svg_write_legend(plot);
+			close_plot(plot);
+
+			set_graph_size(cols, rows / 3);
+			plot->add_xlabel = 1;
+			__plot_tput(plot, tf->gdd_reads->seconds);
+			svg_write_time_line(plot, i);
+			close_plot(plot);
+			set_graph_size(cols, rows);
+
+			close_plot(plot);
+		}
+		free_all_plot_history(&movie_history_reads);
+		free_all_plot_history(&movie_history_writes);
+	}
+	convert_movie_files(movie_dir);
+	mencode_movie(movie_dir);
+	cleanup_movie(movie_dir);
+	free(movie_dir);
 }
 
 static void plot_cpu(struct plot *plot, int seconds, char *label,
@@ -794,12 +904,120 @@ static void plot_iops(struct plot *plot, int seconds)
 	close_plot(plot);
 }
 
+enum {
+	HELP_LONG_OPT = 1,
+};
+
+char *option_string = "T:t:o:l:r:O:N:d:p:mh:w:";
+static struct option long_options[] = {
+	{"title", required_argument, 0, 'T'},
+	{"trace", required_argument, 0, 't'},
+	{"output", required_argument, 0, 'o'},
+	{"label", required_argument, 0, 'l'},
+	{"rolling", required_argument, 0, 'r'},
+	{"no-graph", required_argument, 0, 'N'},
+	{"only-graph", required_argument, 0, 'O'},
+	{"device", required_argument, 0, 'd'},
+	{"prog", required_argument, 0, 'p'},
+	{"movie", no_argument, 0, 'm'},
+	{"width", required_argument, 0, 'w'},
+	{"height", required_argument, 0, 'h'},
+	{"help", required_argument, 0, HELP_LONG_OPT},
+	{0, 0, 0, 0}
+};
+
+static void print_usage(void)
+{
+	fprintf(stderr, "iowatcher usage:\n"
+		"\t-d (--device): device for blktrace to trace\n"
+		"\t-t (--trace): trace file name (more than one allowed)\n"
+		"\t-l (--label): trace label in the graph\n"
+		"\t-o (--output): output file name (SVG only)\n"
+		"\t-p (--prog): program to run while blktrace is run\n"
+		"\t-p (--movie): create IO animations\n"
+		"\t-r (--rolling): number of seconds in the rolling averge\n"
+		"\t-T (--title): graph title\n"
+		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, iops)\n"
+		"\t-h (--height): set the height of each graph\n"
+		"\t-w (--width): set the width of each graph\n"
+	       );
+	exit(1);
+}
+
+static int parse_options(int ac, char **av)
+{
+	int c;
+	int disabled = 0;
+
+	while (1) {
+		// int this_option_optind = optind ? optind : 1;
+		int option_index = 0;
+
+		c = getopt_long(ac, av, option_string,
+				long_options, &option_index);
+
+		if (c == -1)
+			break;
+
+		switch(c) {
+		case 'T':
+			graph_title = strdup(optarg);
+			break;
+		case 't':
+			add_trace_file(optarg);
+			set_blktrace_outfile(optarg);
+			break;
+		case 'o':
+			output_filename = strdup(optarg);
+			break;
+		case 'l':
+			set_trace_label(optarg);
+			break;
+		case 'r':
+			set_rolling_avg(atoi(optarg));
+			break;
+		case 'O':
+			if (!disabled) {
+				disable_all_graphs();
+				disabled = 1;
+			}
+			enable_one_graph(optarg);
+			break;
+		case 'N':
+			disable_one_graph(optarg);
+			break;
+		case 'd':
+			blktrace_device = strdup(optarg);
+			break;
+		case 'p':
+			program_to_run = strdup(optarg);
+			break;
+		case 'm':
+			make_movie = 1;
+			break;
+		case 'h':
+			opt_graph_height = atoi(optarg);
+			break;
+		case 'w':
+			opt_graph_width = atoi(optarg);
+			break;
+		case '?':
+		case HELP_LONG_OPT:
+			print_usage();
+			break;
+		default:
+			break;
+		}
+	}
+	return 0;
+}
+
+
 int main(int ac, char **av)
 {
 	struct plot *plot;
 	int seconds = 0;
 	u64 max_offset = 0;
-	int fd;
 	struct trace_file *tf;
 	int ret;
 
@@ -810,6 +1028,15 @@ int main(int ac, char **av)
 	parse_options(ac, av);
 
 	last_active_graph = last_graph();
+	if (make_movie) {
+		set_io_graph_scale(256);
+		set_graph_size(700, 250);
+	}
+	if (opt_graph_height)
+		set_graph_height(opt_graph_height);
+
+	if (opt_graph_width)
+		set_graph_width(opt_graph_height);
 
 	if (list_empty(&all_traces)) {
 		fprintf(stderr, "No traces found, exiting\n");
@@ -857,15 +1084,14 @@ int main(int ac, char **av)
 	/* run through all the traces and read their events */
 	read_trace_events();
 
-	fd = open(output_filename, O_CREAT | O_TRUNC | O_WRONLY, 0600);
-	if (fd < 0) {
-		fprintf(stderr, "Unable to open output file %s %s\n",
-			output_filename, strerror(errno));
-		exit(1);
+	plot = alloc_plot();
+
+	if (make_movie) {
+		plot_io_movie(plot);
+		exit(0);
 	}
 
-	write_svg_header(fd);
-	plot = alloc_plot(fd);
+	set_plot_output(plot, output_filename);
 
 	if (active_graphs[IO_GRAPH_INDEX] || found_mpstat)
 		set_legend_width(longest_label + strlen("writes"));
@@ -874,7 +1100,6 @@ int main(int ac, char **av)
 	else
 		set_legend_width(0);
 
-	set_plot_title(plot, graph_title);
 
 	plot_io(plot, seconds, max_offset);
 	plot_tput(plot, seconds);
@@ -895,6 +1120,5 @@ int main(int ac, char **av)
 
 	/* once for all */
 	close_plot(plot);
-	close(fd);
 	return 0;
 }

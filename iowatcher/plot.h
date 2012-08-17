@@ -19,9 +19,12 @@
 #define __IOWATCH_PLOT__
 #define MAX_TICKS 10
 
+#include "list.h"
+
 typedef __u64 u64;
 typedef __u32 u32;
 typedef __u16 u16;
+
 
 struct plot {
 	int fd;
@@ -85,16 +88,25 @@ struct graph_dot_data {
 	unsigned char data[];
 };
 
+struct plot_history {
+	struct list_head list;
+	int history_len;
+	int num_used;
+	int col;
+	char *color;
+	double *history;
+};
+
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color);
 int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color);
 struct graph_line_data *alloc_line_data(int seconds, int stop_seconds);
 void free_line_data(struct graph_line_data *gld);
 struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seconds);
 void free_dot_data(struct graph_dot_data *gdd);
-void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, int bytes, double time);
+void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time);
 void print_gdd(struct graph_dot_data *gdd);
 void write_svg_header(int fd);
-struct plot *alloc_plot(int fd);
+struct plot *alloc_plot(void);
 int close_plot(struct plot *plot);
 void setup_axis(struct plot *plot);
 void set_xticks(struct plot *plot, int num_ticks, int first, int last);
@@ -113,4 +125,13 @@ void svg_alloc_legend(struct plot *plot, int num_lines);
 void set_legend_width(int longest_str);
 void set_rolling_avg(int rolling);
 void svg_free_legend(struct plot *plot);
+void set_io_graph_scale(int scale);
+void set_plot_output(struct plot *plot, char *filename);
+void set_graph_size(int width, int height);
+void get_graph_size(int *width, int *height);
+int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int col);
+int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph, float alpha);
+void svg_write_time_line(struct plot *plot, int col);
+void set_graph_height(int h);
+void set_graph_width(int w);
 #endif
