@@ -1100,7 +1100,7 @@ int main(int ac, char **av)
 	else
 		set_legend_width(0);
 
-
+	set_plot_title(plot, graph_title);
 	plot_io(plot, seconds, max_offset);
 	plot_tput(plot, seconds);
 	plot_cpu(plot, seconds, "CPU IO Wait Time",
