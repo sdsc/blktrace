@@ -922,7 +922,7 @@ static struct option long_options[] = {
 	{"movie", no_argument, 0, 'm'},
 	{"width", required_argument, 0, 'w'},
 	{"height", required_argument, 0, 'h'},
-	{"help", required_argument, 0, HELP_LONG_OPT},
+	{"help", no_argument, 0, HELP_LONG_OPT},
 	{0, 0, 0, 0}
 };
 
