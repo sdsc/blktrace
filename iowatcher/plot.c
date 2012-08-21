@@ -34,8 +34,9 @@
 #include "plot.h"
 
 static int io_graph_scale = 8;
-static int graph_width = 600;
-static int graph_height = 150;
+static int graph_width = 700;
+static int graph_height = 250;
+static int graph_circle_extra = 30;
 static int graph_inner_x_margin = 2;
 static int graph_inner_y_margin = 2;
 static int graph_tick_len = 5;
@@ -64,6 +65,9 @@ static int rolling_avg_secs = 0;
 
 static int line_len = 1024;
 static char line[1024];
+
+static int final_height = 0;
+static int final_width = 0;
 
 struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
 {
@@ -210,7 +214,8 @@ static double rolling_avg(struct graph_line_pair *data, int index, int distance)
 
 void write_svg_header(int fd)
 {
-	char *header = "<svg  xmlns=\"http://www.w3.org/2000/svg\"\nxmlns:xlink=\"http://www.w3.org/1999/xlink\">\n";
+	char *spaces = "                                                    \n";
+	char *header = "<svg  xmlns=\"http://www.w3.org/2000/svg\">\n";
 	char *filter1 ="<filter id=\"shadow\">\n "
 		"<feOffset result=\"offOut\" in=\"SourceAlpha\" dx=\"4\" dy=\"4\" />\n "
 		"<feGaussianBlur result=\"blurOut\" in=\"offOut\" stdDeviation=\"2\" />\n "
@@ -230,8 +235,13 @@ void write_svg_header(int fd)
 		"</filter>\n";
 	char *defs_start = "<defs>\n";
 	char *defs_close = "</defs>\n";
+	final_width = 0;
+	final_height = 0;
 
 	write(fd, header, strlen(header));
+	/* write a bunch of spaces so we can stuff in the width and height later */
+	write(fd, spaces, strlen(spaces));
+
 	write(fd, defs_start, strlen(defs_start));
 	write(fd, filter1, strlen(filter1));
 	write(fd, filter2, strlen(filter2));
@@ -313,6 +323,59 @@ void setup_axis(struct plot *plot)
 	int fd = plot->fd;
 	int bump_height = tick_font_size * 3 + axis_label_font_size;
 
+	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + legend_width;
+	plot->total_height = axis_y() + tick_label_pad + tick_font_size;
+
+	if (plot->add_xlabel)
+		plot->total_height += bump_height;
+
+	/* backing rect */
+	snprintf(line, line_len, "<rect x=\"0\" y=\"%d\" width=\"%d\" "
+		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
+		plot->start_y_offset, plot->total_width + 40,
+		plot->total_height + 20);
+	len = strlen(line);
+	write(fd, line, len);
+
+	snprintf(line, line_len, "<rect x=\"15\" y=\"%d\" width=\"%d\" "
+		 "filter=\"url(#shadow)\" "
+		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
+		plot->start_y_offset, plot->total_width, plot->total_height);
+	len = strlen(line);
+	write(fd, line, len);
+	plot->total_height += 20;
+
+	if (plot->total_height + plot->start_y_offset > final_height)
+		final_height = plot->total_height + plot->start_y_offset;
+	if (plot->total_width + 40 > final_width)
+		final_width = plot->total_width + 40;
+
+	/* create an svg object for all our coords to be relative against */
+	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
+	write(fd, line, strlen(line));
+
+	snprintf(line, 1024, "<path d=\"M%d %d h %d V %d H %d Z\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"/>\n",
+		 axis_x(), axis_y(),
+		 graph_width + graph_inner_x_margin * 2, axis_y_off(graph_height) - graph_inner_y_margin,
+		 axis_x());
+	len = strlen(line);
+	ret = write(fd, line, len);
+	if (ret != len) {
+		fprintf(stderr, "failed to write svg axis\n");
+		exit(1);
+	}
+}
+
+/*
+ * this draws a backing rectangle for the plot and it
+ * also creates a new svg element so our offsets can
+ * be relative to this one plot.
+ */
+void setup_axis_spindle(struct plot *plot)
+{
+	int len;
+	int fd = plot->fd;
+	int bump_height = tick_font_size * 3 + axis_label_font_size;
 
 	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + legend_width;
 	plot->total_height = axis_y() + tick_label_pad + tick_font_size;
@@ -327,6 +390,7 @@ void setup_axis(struct plot *plot)
 		plot->total_height + 20);
 	len = strlen(line);
 	write(fd, line, len);
+
 	snprintf(line, line_len, "<rect x=\"15\" y=\"%d\" width=\"%d\" "
 		 "filter=\"url(#shadow)\" "
 		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
@@ -335,21 +399,15 @@ void setup_axis(struct plot *plot)
 	write(fd, line, len);
 	plot->total_height += 20;
 
+	if (plot->total_height + plot->start_y_offset > final_height)
+		final_height = plot->total_height + plot->start_y_offset;
+	if (plot->total_width + 40 > final_width)
+		final_width = plot->total_width + 40;
 
 	/* create an svg object for all our coords to be relative against */
-	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\" style=\"enable-background:new\">\n", plot->start_x_offset, plot->start_y_offset);
+	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
 	write(fd, line, strlen(line));
 
-	snprintf(line, 1024, "<path d=\"M%d %d h %d V %d H %d Z\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"/>\n",
-		 axis_x(), axis_y(),
-		 graph_width + graph_inner_x_margin * 2, axis_y_off(graph_height) - graph_inner_y_margin,
-		 axis_x());
-	len = strlen(line);
-	ret = write(fd, line, len);
-	if (ret != len) {
-		fprintf(stderr, "failed to write svg axis\n");
-		exit(1);
-	}
 }
 
 /* draw a plot title.  This should be done only once,
@@ -541,12 +599,31 @@ struct plot *alloc_plot(void)
 	return plot;
 }
 
+int close_plot_file(struct plot *plot)
+{
+	int ret;
+	ret = lseek(plot->fd, 0, SEEK_SET);
+	if (ret == (off_t)-1) {
+		perror("seek");
+		exit(1);
+	}
+	final_width = ((final_width  + 1) / 2) * 2;
+	final_height = ((final_height  + 1) / 2) * 2;
+	snprintf(line, line_len, "<svg  xmlns=\"http://www.w3.org/2000/svg\" "
+		 "width=\"%d\" height=\"%d\">\n",
+		 final_width, final_height);
+	write(plot->fd, line, strlen(line));
+	close(plot->fd);
+	plot->fd = 0;
+	return 0;
+}
+
 void set_plot_output(struct plot *plot, char *filename)
 {
 	int fd;
 
 	if (plot->fd)
-		close(plot->fd);
+		close_plot_file(plot);
 	fd = open(filename, O_CREAT | O_TRUNC | O_WRONLY, 0600);
 	if (fd < 0) {
 		fprintf(stderr, "Unable to open output file %s err %s\n", filename, strerror(errno));
@@ -644,17 +721,17 @@ void svg_write_time_line(struct plot *plot, int col)
 	write(plot->fd, line, strlen(line));
 }
 
-static int svg_add_io(int fd, double row, double col, double width, double height, char *color, float alpha)
+static int svg_add_io(int fd, double row, double col, double width, double height, char *color)
 {
 	float rx = 0;
 
 	snprintf(line, line_len, "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.1f\" height=\"%.1f\" "
-		 "rx=\"%.2f\" style=\"stroke:none;fill:%s;stroke-width:0;opacity:%.2f\"/>\n",
-		 axis_x_off_double(col), axis_y_off_double(row), width, height, rx, color, alpha);
+		 "rx=\"%.2f\" style=\"stroke:none;fill:%s;stroke-width:0\"/>\n",
+		 axis_x_off_double(col), axis_y_off_double(row), width, height, rx, color);
 	return write(fd, line, strlen(line));
 }
 
-int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph, float alpha)
+int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph)
 {
 	double cell_index;
 	double movie_row;
@@ -665,7 +742,78 @@ int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph, float a
 		cell_index = ph->history[i];
 		movie_row = floor(cell_index / graph_width);
 		movie_col = cell_index - movie_row * graph_width;
-		svg_add_io(plot->fd, movie_row, movie_col, 4, 4, ph->color, alpha);
+		svg_add_io(plot->fd, movie_row, movie_col, 4, 4, ph->color);
+	}
+	return 0;
+}
+
+static float spindle_steps = 0;
+
+void rewind_spindle_steps(int num)
+{
+	spindle_steps -= num * 0.01;
+}
+
+int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph)
+{
+	double cell_index;
+	int i;
+	int num_circles = 0;
+	double cells_per_circle;
+	double circle_num;
+	double degrees_per_cell;
+	double rot;
+	double center_x;
+	double center_y;
+	double graph_width_extra = graph_width + graph_circle_extra;
+	double graph_height_extra = graph_height + graph_circle_extra;
+	double radius;;
+
+	if (graph_width_extra > graph_height_extra)
+		graph_width_extra = graph_height_extra;
+
+	if (graph_width_extra < graph_height_extra)
+		graph_height_extra = graph_width_extra;
+
+	radius = graph_width_extra;
+
+	center_x = axis_x_off_double(graph_width_extra / 2);
+	center_y = axis_y_off_double(graph_height_extra / 2);
+
+	snprintf(line, line_len, "<g transform=\"rotate(%.4f, %.2f, %.2f)\"> "
+		 "<circle cx=\"%.2f\" cy=\"%.2f\" "
+		 "stroke=\"black\" stroke-width=\"6\" "
+		 "r=\"%.2f\" fill=\"none\"/>\n",
+		 -spindle_steps * 1.2, center_x, center_y, center_x, center_y, graph_width_extra / 2);
+	write(plot->fd, line, strlen(line));
+	snprintf(line, line_len, "<circle cx=\"%.2f\" cy=\"%.2f\" "
+		"stroke=\"none\" fill=\"red\" r=\"%.2f\"/>\n</g>\n",
+		axis_x_off_double(graph_width_extra), center_y, 4.5);
+	write(plot->fd, line, strlen(line));
+	spindle_steps += 0.01;
+
+	radius = floor(radius / 2);
+	num_circles = radius / 4 - 3;
+	cells_per_circle = ph->history_max / num_circles;
+	degrees_per_cell = 360 / cells_per_circle;
+
+	for (i = 0; i < ph->num_used; i++) {
+		cell_index = ph->history[i];
+		circle_num = floor(cell_index / cells_per_circle);
+		rot = cell_index - circle_num * cells_per_circle;
+		circle_num = num_circles - circle_num;
+		radius = circle_num * 4;
+
+		rot = rot * degrees_per_cell;
+		rot -= spindle_steps;
+		snprintf(line, line_len, "<path transform=\"rotate(%.4f, %.2f, %.2f)\" "
+			 "d=\"M %.2f %.2f a %.2f %.2f 0 0 1 0 5\" "
+			 "stroke=\"%s\" stroke-width=\"4\"/>\n",
+			 rot, center_x, center_y,
+			 axis_x_off_double(graph_width_extra / 2 + radius) + 8, center_y,
+			 radius, radius, ph->color);
+
+		write(plot->fd, line, strlen(line));
 	}
 	return 0;
 }
@@ -698,6 +846,7 @@ int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int 
 	int margin_orig = graph_inner_y_margin;
 
 	graph_inner_y_margin += 5;
+	ph->history_max = gdd->max_offset / movie_blocks_per_cell;
 
 	for (row = gdd->rows - 1; row >= 0; row--) {
 		bit_index = row * gdd->cols + col;
@@ -741,7 +890,7 @@ int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color)
 				continue;
 			val = gdd->data[arr_index];
 			if (val & (1 << bit_mod))
-				svg_add_io(fd, floor(row / io_graph_scale), col, 1.5, 1.5, color, 1.0);
+				svg_add_io(fd, floor(row / io_graph_scale), col, 1.5, 1.5, color);
 		}
 	}
 	return 0;

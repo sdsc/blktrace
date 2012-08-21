@@ -90,6 +90,7 @@ struct graph_dot_data {
 
 struct plot_history {
 	struct list_head list;
+	double history_max;
 	int history_len;
 	int num_used;
 	int col;
@@ -130,8 +131,12 @@ void set_plot_output(struct plot *plot, char *filename);
 void set_graph_size(int width, int height);
 void get_graph_size(int *width, int *height);
 int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int col);
-int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph, float alpha);
+int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph);
 void svg_write_time_line(struct plot *plot, int col);
 void set_graph_height(int h);
 void set_graph_width(int w);
+int close_plot_file(struct plot *plot);
+int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph);
+void rewind_spindle_steps(int num);
+void setup_axis_spindle(struct plot *plot);
 #endif

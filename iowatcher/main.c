@@ -115,6 +115,31 @@ static char *graphs_by_name[] = {
 	"iops",
 };
 
+enum {
+	MOVIE_SPINDLE,
+	MOVIE_RECT,
+	NUM_MOVIE_STYLES,
+};
+
+char *movie_styles[] = {
+	"spindle",
+	"rect",
+	NULL
+};
+
+static int movie_style = 0;
+
+static int lookup_movie_style(char *str)
+{
+	int i;
+
+	for (i = 0; i < NUM_MOVIE_STYLES; i++) {
+		if (strcmp(str, movie_styles[i]) == 0)
+			return i;
+	}
+	return -1;
+}
+
 static int active_graphs[TOTAL_GRAPHS];
 static int last_active_graph = IOPS_GRAPH_INDEX;
 
@@ -423,7 +448,7 @@ static void set_all_max_tf(int seconds, u64 max_offset)
 static char *create_movie_temp_dir(void)
 {
 	char *ret;
-	char *pattern = strdup("btrfs-movie-XXXXXX");;
+	char *pattern = strdup("io-movie-XXXXXX");;
 
 	ret = mkdtemp(pattern);
 	if (!ret) {
@@ -473,16 +498,16 @@ static void add_history(struct plot_history *ph, struct list_head *list)
 
 static void plot_movie_history(struct plot *plot, struct list_head *list)
 {
-	float alpha = 0.1;
 	struct plot_history *ph;
 
+	if (num_histories > 2)
+		rewind_spindle_steps(num_histories - 1);
+
 	list_for_each_entry(ph, list, list) {
-		if (ph->list.next == list)
-			alpha = 1;
-		svg_io_graph_movie_array(plot, ph, 1);
-		alpha += 0.2;
-		if (alpha > 1)
-			alpha = 0.8;
+		if (movie_style == MOVIE_SPINDLE)
+			svg_io_graph_movie_array_spindle(plot, ph);
+		else
+			svg_io_graph_movie_array(plot, ph);
 	 }
 }
 
@@ -600,7 +625,7 @@ static void convert_movie_files(char *movie_dir)
 static void mencode_movie(char *movie_dir)
 {
 	fprintf(stderr, "Creating movie %s\n", movie_dir);
-	snprintf(line, line_len, "ffmpeg -r 25 -y -i %s/%%10d-%s.svg.png -b:v 250k "
+	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
 		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
 	system(line);
 }
@@ -624,7 +649,7 @@ static void plot_io_movie(struct plot *plot)
 	struct plot_history *write_history;
 	int batch_i;
 	int movie_len = 30;
-	int movie_frames_per_sec = 16;
+	int movie_frames_per_sec = 20;
 	int total_frames = movie_len * movie_frames_per_sec;
 	int rows, cols;
 	int batch_count;
@@ -646,7 +671,11 @@ static void plot_io_movie(struct plot *plot)
 			set_plot_output(plot, line);
 
 			set_plot_title(plot, graph_title);
-			setup_axis(plot);
+			if (movie_style == MOVIE_SPINDLE)
+				setup_axis_spindle(plot);
+			else
+				setup_axis(plot);
+
 			svg_alloc_legend(plot, num_traces * 2);
 
 			read_history = alloc_plot_history(tf->read_color);
@@ -661,9 +690,7 @@ static void plot_io_movie(struct plot *plot)
 
 			batch_i = 0;
 			while (i < cols && batch_i < batch_count) {
-				/* print just this column */
 				svg_io_graph_movie(tf->gdd_reads, read_history, i);
-
 				svg_io_graph_movie(tf->gdd_writes, write_history, i);
 				i++;
 				batch_i++;
@@ -678,7 +705,7 @@ static void plot_io_movie(struct plot *plot)
 			svg_write_legend(plot);
 			close_plot(plot);
 
-			set_graph_size(cols, rows / 3);
+			set_graph_size(cols, rows / 7);
 			plot->add_xlabel = 1;
 			__plot_tput(plot, tf->gdd_reads->seconds);
 			svg_write_time_line(plot, i);
@@ -686,6 +713,7 @@ static void plot_io_movie(struct plot *plot)
 			set_graph_size(cols, rows);
 
 			close_plot(plot);
+			close_plot_file(plot);
 		}
 		free_all_plot_history(&movie_history_reads);
 		free_all_plot_history(&movie_history_writes);
@@ -907,7 +935,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:p:mh:w:";
+char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:";
 static struct option long_options[] = {
 	{"title", required_argument, 0, 'T'},
 	{"trace", required_argument, 0, 't'},
@@ -918,7 +946,7 @@ static struct option long_options[] = {
 	{"only-graph", required_argument, 0, 'O'},
 	{"device", required_argument, 0, 'd'},
 	{"prog", required_argument, 0, 'p'},
-	{"movie", no_argument, 0, 'm'},
+	{"movie", optional_argument, 0, 'm'},
 	{"width", required_argument, 0, 'w'},
 	{"height", required_argument, 0, 'h'},
 	{"help", no_argument, 0, HELP_LONG_OPT},
@@ -933,7 +961,7 @@ static void print_usage(void)
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
 		"\t-p (--prog): program to run while blktrace is run\n"
-		"\t-p (--movie): create IO animations\n"
+		"\t-p (--movie [=spindle|rect]): create IO animations\n"
 		"\t-r (--rolling): number of seconds in the rolling averge\n"
 		"\t-T (--title): graph title\n"
 		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, iops)\n"
@@ -993,6 +1021,15 @@ static int parse_options(int ac, char **av)
 			break;
 		case 'm':
 			make_movie = 1;
+			if (optarg) {
+				movie_style = lookup_movie_style(optarg);
+				if (movie_style < 0) {
+					fprintf(stderr, "Unknown movie style %s\n", optarg);
+					print_usage();
+				}
+			}
+			fprintf(stderr, "Using movie style: %s\n",
+				movie_styles[movie_style]);
 			break;
 		case 'h':
 			opt_graph_height = atoi(optarg);
@@ -1029,7 +1066,10 @@ int main(int ac, char **av)
 	last_active_graph = last_graph();
 	if (make_movie) {
 		set_io_graph_scale(256);
-		set_graph_size(700, 250);
+		if (movie_style == MOVIE_SPINDLE)
+			set_graph_size(550, 550);
+		else
+			set_graph_size(700, 400);
 	}
 	if (opt_graph_height)
 		set_graph_height(opt_graph_height);
@@ -1119,5 +1159,6 @@ int main(int ac, char **av)
 
 	/* once for all */
 	close_plot(plot);
+	close_plot_file(plot);
 	return 0;
 }
