@@ -600,9 +600,8 @@ static void convert_movie_files(char *movie_dir)
 static void mencode_movie(char *movie_dir)
 {
 	fprintf(stderr, "Creating movie %s\n", movie_dir);
-	snprintf(line, line_len, "mencoder mf://%s/*.png -mf type=png:fps=16 -of lavf "
-		 "-ovc x264 -oac copy -o %s",
-		 movie_dir, output_filename);
+	snprintf(line, line_len, "ffmpeg -r 25 -y -i %s/%%10d-%s.svg.png -b:v 250k "
+		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
 	system(line);
 }
 
