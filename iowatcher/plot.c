@@ -679,10 +679,11 @@ void scale_line_graph_time(u64 *max, char **units)
 	*max /= div;
 }
 
-int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color)
+int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2)
 {
 	int i;
 	double val;
+	double avg;
 	int rolling;
 	int fd = plot->fd;
 	char *start = "<path d=\"";
@@ -690,24 +691,58 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color)
 	double xscale = (double)(gld->seconds - 1) / graph_width;
 	char c = 'M';
 	double x;
+	int printed_header = 0;
+	int printed_lines = 0;
 
-	if (rolling_avg_secs)
+	if (0 && thresh1 && thresh2)
+		rolling = 0;
+	else if (rolling_avg_secs)
 		rolling = rolling_avg_secs;
 	else
 		rolling = gld->stop_seconds / 25;
 
-	write(fd, start, strlen(start));
 	for (i = 0; i < gld->stop_seconds; i++) {
-		val = rolling_avg(gld->data, i, rolling);
-		val = val / yscale;
+		avg = rolling_avg(gld->data, i, rolling);
+		val = avg / yscale;
 		x = (double)i / xscale;
-		snprintf(line, line_len, "%c %d %d ", c, axis_x_off(x), axis_y_off(val));
+		if (!thresh1 && !thresh2) {
 
-		c = 'L';
+			if (!printed_header) {
+				write(fd, start, strlen(start));
+				printed_header = 1;
+			}
+
+			/* in full line mode, everything in the graph is connected */
+			snprintf(line, line_len, "%c %d %d ", c, axis_x_off(x), axis_y_off(val));
+			c = 'L';
+			write(fd, line, strlen(line));
+			printed_lines = 1;
+		} else if (avg > thresh1 || avg > thresh2) {
+			int len = 10;
+			if (!printed_header) {
+				write(fd, start, strlen(start));
+				printed_header = 1;
+			}
+
+			/* otherwise, we just print a bar up there to show this one data point */
+			if (i == gld->stop_seconds)
+				len = -10;
+
+			/*
+			 * we don't use the rolling averages here to show high
+			 * points in the data
+			 */
+			snprintf(line, line_len, "M %d %d h %d ", axis_x_off(x),
+				 axis_y_off(val), len);
+			write(fd, line, strlen(line));
+			printed_lines = 1;
+		}
+
+	}
+	if (printed_lines) {
+		snprintf(line, line_len, "\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/>\n", color);
 		write(fd, line, strlen(line));
 	}
-	snprintf(line, line_len, "\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/>\n", color);
-	write(fd, line, strlen(line));
 
 	return 0;
 }

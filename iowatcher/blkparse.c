@@ -300,6 +300,23 @@ void first_record(struct trace *trace)
 	trace->io = (struct blk_io_trace *)trace->cur;
 }
 
+int is_io_event(struct blk_io_trace *test)
+{
+	char *message;
+	if (!(test->action & BLK_TC_ACT(BLK_TC_NOTIFY)))
+		return 1;
+	if (test->action == BLK_TN_MESSAGE) {
+		int len = test->pdu_len;
+		if (len < 3)
+			return 0;
+		message = (char *)(test + 1);
+		if (strncmp(message, "fio ", 4) == 0) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 u64 find_last_time(struct trace *trace)
 {
 	char *p = trace->start + trace->len;
@@ -312,8 +329,7 @@ u64 find_last_time(struct trace *trace)
 	p -= sizeof(*trace->io);
 	while (p >= trace->start) {
 		test = (struct blk_io_trace *)p;
-		if (CHECK_MAGIC(test) &&
-		   !(test->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
+		if (CHECK_MAGIC(test) && is_io_event(test)) {
 			u64 offset = p - trace->start;
 			if (offset + sizeof(*test) + test->pdu_len == trace->len) {
 				return test->time;
@@ -329,7 +345,7 @@ u64 find_last_time(struct trace *trace)
 	/* searching backwards didn't work out, we'll have to scan the file */
 	first_record(trace);
 	while (1) {
-		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY)))
+		if (is_io_event(trace->io))
 			found = trace->io->time;
 		if (next_record(trace))
 			break;
@@ -338,10 +354,71 @@ u64 find_last_time(struct trace *trace)
 	return found;
 }
 
-u64 find_highest_offset(struct trace *trace)
+int parse_fio_bank_message(struct trace *trace, u64 *bank_ret, u64 *offset_ret,
+			   u64 *num_banks_ret)
+{
+	char *s;
+	char *next;
+	char *message;
+	struct blk_io_trace *test = trace->io;
+	int len = test->pdu_len;
+	u64 bank;
+	u64 offset;
+	u64 num_banks;
+
+	if (!(test->action & BLK_TC_ACT(BLK_TC_NOTIFY)))
+		return -1;
+	if (test->action != BLK_TN_MESSAGE)
+		return -1;
+
+	/* the message is fio rw bank offset num_banks */
+	if (len < 3)
+		return -1;
+	message = (char *)(test + 1);
+	if (strncmp(message, "fio r ", 6) != 0)
+		return -1;
+
+	message = strndup(message, len);
+	s = strchr(message, ' ');
+	if (!s)
+		goto out;
+	s++;
+	s = strchr(s, ' ');
+	if (!s)
+		goto out;
+
+	bank = strtoll(s, &next, 10);
+	if (s == next)
+		goto out;
+	s = next;
+
+	offset = strtoll(s, &next, 10);
+	if (s == next)
+		goto out;
+	s = next;
+
+	num_banks = strtoll(s, &next, 10);
+	if (s == next)
+		goto out;
+
+	*bank_ret = bank;
+	*offset_ret = offset;
+	*num_banks_ret = num_banks;
+
+	return 0;
+out:
+	free(message);
+	return -1;
+}
+
+void find_highest_offset(struct trace *trace, u64 *max_ret, u64 *max_bank_ret,
+			 u64 *max_offset_ret)
 {
 	u64 found = 0;
 	u64 max = 0;
+	u64 max_bank = 0;
+	u64 max_bank_offset = 0;
+	u64 num_banks = 0;
 	first_record(trace);
 	while (1) {
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
@@ -351,12 +428,24 @@ u64 find_highest_offset(struct trace *trace)
 			if (max < found) {
 				max = found;
 			}
+		} else {
+			u64 bank;
+			u64 offset;
+			if (!parse_fio_bank_message(trace, &bank,
+						    &offset, &num_banks)) {
+				if (bank > max_bank)
+					max_bank = bank;
+				if (offset > max_bank_offset)
+					max_bank_offset = offset;
+			}
 		}
 		if (next_record(trace))
 			break;
 	}
 	first_record(trace);
-	return max;
+	*max_ret = max;
+	*max_bank_ret = max_bank;
+	*max_offset_ret = max_bank_offset;
 }
 
 int filter_outliers(struct trace *trace, u64 max_offset,

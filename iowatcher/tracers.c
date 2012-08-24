@@ -51,6 +51,7 @@ char *blktrace_args[] = {
 	"-a", "queue",
 	"-a", "complete",
 	"-a", "issue",
+	"-a", "notify",
 	NULL,
 };
 

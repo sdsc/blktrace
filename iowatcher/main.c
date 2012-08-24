@@ -285,6 +285,8 @@ static void read_traces(void)
 	u64 last_time;
 	u64 ymin;
 	u64 ymax;
+	u64 max_bank;
+	u64 max_bank_offset;
 
 	list_for_each_entry(tf, &all_traces, list) {
 		trace = open_trace(tf->filename);
@@ -295,8 +297,8 @@ static void read_traces(void)
 		tf->trace = trace;
 		tf->seconds = SECONDS(last_time);
 		tf->stop_seconds = SECONDS(last_time);
-		tf->max_offset = find_highest_offset(trace);
-
+		find_highest_offset(trace, &tf->max_offset, &max_bank,
+				    &max_bank_offset);
 		filter_outliers(trace, tf->max_offset, &ymin, &ymax);
 		tf->max_offset = ymax;
 
@@ -526,9 +528,6 @@ static void __plot_io(struct plot *plot, int seconds, u64 max_offset)
 {
 	struct trace_file *tf;
 
-	if (active_graphs[IO_GRAPH_INDEX] == 0)
-		return;
-
 	setup_axis(plot);
 
 	svg_alloc_legend(plot, num_traces * 2);
@@ -559,8 +558,10 @@ static void __plot_io(struct plot *plot, int seconds, u64 max_offset)
 
 static void plot_io(struct plot *plot, int seconds, u64 max_offset)
 {
-	plot->add_xlabel = last_active_graph == IO_GRAPH_INDEX;
+	if (active_graphs[IO_GRAPH_INDEX] == 0)
+		return;
 
+	plot->add_xlabel = last_active_graph == IO_GRAPH_INDEX;
 	__plot_io(plot, seconds, max_offset);
 	close_plot(plot);
 }
@@ -571,9 +572,6 @@ static void __plot_tput(struct plot *plot, int seconds)
 	char *units;
 	char line[128];
 	u64 max = 0;
-
-	if (active_graphs[TPUT_GRAPH_INDEX] == 0)
-		return;
 
 	if (num_traces > 1)
 		svg_alloc_legend(plot, num_traces);
@@ -596,7 +594,7 @@ static void __plot_tput(struct plot *plot, int seconds)
 	set_xticks(plot, 9, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->tput_gld, tf->read_color);
+		svg_line_graph(plot, tf->tput_gld, tf->read_color, 0, 0);
 		if (num_traces > 1)
 			svg_add_legend(plot, tf->label, "", tf->read_color);
 	}
@@ -609,6 +607,9 @@ static void __plot_tput(struct plot *plot, int seconds)
 
 static void plot_tput(struct plot *plot, int seconds)
 {
+	if (active_graphs[TPUT_GRAPH_INDEX] == 0)
+		return;
+
 	plot->add_xlabel = last_active_graph == TPUT_GRAPH_INDEX;
 	__plot_tput(plot, seconds);
 	close_plot(plot);
@@ -728,7 +729,6 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 		     int active_index, int gld_index)
 {
 	struct trace_file *tf;
-	char line[128];
 	int max = 0;
 	int i;
 	int gld_i;
@@ -768,11 +768,14 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 	cpu_color_index = 0;
 	list_for_each_entry(tf, &all_traces, list) {
 		for (i = 0; i < tf->mpstat_gld[0]->stop_seconds; i++) {
-			avg += tf->mpstat_gld[gld_index]->data[i].sum;
+			if (tf->mpstat_gld[gld_index]->data[i].count) {
+				avg += (tf->mpstat_gld[gld_index]->data[i].sum /
+					tf->mpstat_gld[gld_index]->data[i].count);
+			}
 		}
 		avg /= tf->mpstat_gld[gld_index]->stop_seconds;
 		color = pick_cpu_color();
-		svg_line_graph(plot, tf->mpstat_gld[0], color);
+		svg_line_graph(plot, tf->mpstat_gld[0], color, 0, 0);
 		svg_add_legend(plot, tf->label, " avg", color);
 
 		for (i = 1; i < tf->trace->mpstat_num_cpus + 1; i++) {
@@ -780,16 +783,23 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 			double this_avg = 0;
 
 			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++)
-				this_avg += gld->data[i].sum;
+				this_avg += gld->data[i].sum /
+					gld->data[i].count;;
 
 			this_avg /= gld->stop_seconds;
 
 			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++) {
-				if (this_avg > avg + 30 ||
-				    gld->data[gld_i].sum > 95) {
+				double val;
+
+				if (gld->data[gld_i].count == 0)
+					continue;
+				val = (double)gld->data[gld_i].sum /
+					gld->data[gld_i].count;
+
+				if (this_avg > avg + 30 || val > 95) {
 					color = pick_cpu_color();
-					svg_line_graph(plot, gld, color);
-					snprintf(line, 128, " CPU %d\n", i - 1);
+					svg_line_graph(plot, gld, color, avg + 30, 95);
+					snprintf(line, line_len, " CPU %d\n", i - 1);
 					svg_add_legend(plot, tf->label, line, color);
 					plotted++;
 					break;
@@ -802,10 +812,8 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 	if (plot->add_xlabel)
 		set_xlabel(plot, "Time (seconds)");
 
-	if (plot->legend_index <= 8)
-		svg_write_legend(plot);
-	else
-		svg_free_legend(plot);
+	svg_write_legend(plot);
+	svg_free_legend(plot);
 	close_plot(plot);
 }
 
@@ -841,7 +849,7 @@ static void plot_latency(struct plot *plot, int seconds)
 	set_xticks(plot, 9, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->latency_gld, tf->read_color);
+		svg_line_graph(plot, tf->latency_gld, tf->read_color, 0, 0);
 		if (num_traces > 1)
 			svg_add_legend(plot, tf->label, "", tf->read_color);
 	}
@@ -873,7 +881,7 @@ static void plot_queue_depth(struct plot *plot, int seconds)
 	set_xticks(plot, 9, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color);
+		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color, 0, 0);
 		if (num_traces > 1)
 			svg_add_legend(plot, tf->label, "", tf->read_color);
 	}
@@ -918,7 +926,7 @@ static void plot_iops(struct plot *plot, int seconds)
 	set_xticks(plot, 9, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->iop_gld, tf->read_color);
+		svg_line_graph(plot, tf->iop_gld, tf->read_color, 0, 0);
 		if (num_traces > 1)
 			svg_add_legend(plot, tf->label, "", tf->read_color);
 	}

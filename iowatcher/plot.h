@@ -70,7 +70,12 @@ struct graph_line_data {
 
 struct graph_dot_data {
 	u64 max_offset;
+	u64 max_bank;
+	u64 max_bank_offset;
 	u64 total_ios;
+	u64 total_bank_ios;
+
+	int add_bank_ios;
 
 	/* in pixels, number of rows in our bitmap */
 	int rows;
@@ -99,7 +104,7 @@ struct plot_history {
 };
 
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color);
-int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color);
+int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2);
 struct graph_line_data *alloc_line_data(int seconds, int stop_seconds);
 void free_line_data(struct graph_line_data *gld);
 struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seconds);
