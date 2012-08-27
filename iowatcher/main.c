@@ -1006,7 +1006,9 @@ static void print_usage(void)
 		"\t-p (--movie [=spindle|rect]): create IO animations\n"
 		"\t-r (--rolling): number of seconds in the rolling averge\n"
 		"\t-T (--title): graph title\n"
-		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, iops)\n"
+		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, \n"
+		"\t\t\tiops, cpu-sys, cpu-io, cpu-irq cpu-soft cpu-user)\n"
+		"\t-O (--only-graph): add a single graph to the output\n"
 		"\t-h (--height): set the height of each graph\n"
 		"\t-w (--width): set the width of each graph\n"
 	       );

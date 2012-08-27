@@ -1,15 +1,29 @@
 iowatcher graphs the results of a blktrace run.  It has a few different modes:
 
-* Graph the result of an existing blktrace
+	* Graph the result of an existing blktrace
 
-* Start a new blktrace
+	* Start a new blktrace
 
-* Start a new blktrace and a benchmark run
+	* Start a new blktrace and a benchmark run
+
+	* Make a movie of the IO from a given trace (only mp4 for now)
+
+Output:
+
+	iowatcher can produce either svg files or mp4 movies.  Most browsers
+	can view the svg files, or you can use rsvg-view-3 from librsvg.
+	rsvg-convert can turn the svgs into many other formats.
+
+Building:
+
+	Type make and make install.  We need ffmpeg and librsvg to make
+	movies, otherwise there are no dependencies.
 
 The basic options:
 
-	-d controls which device you are string.  You can only trace one device
-	   at a time for now.  It is sent directly to blktrace
+	-d controls which device you are tracing.  You can only trace one device
+	   at a time for now.  It is sent directly to blktrace, and only
+	   needed when you are making a new trace.
 
 	-t controls the name of the blktrace file.  iowatcher uses a dump from
 	   blkparse, so -t tries to guess the name of the corresponding
@@ -18,8 +32,15 @@ The basic options:
 	   If you want more than one trace in a given graph, you can specify
 	   -t more than once.
 
-	-l Sets a label for a trace file.  The labels are added in the same
-	   order the trace files are added.
+	-l Sets a label in the graph for a trace file.  The labels are added in
+	   the same order the trace files are added.
+
+	-m Create a movie.  This defaults to the mp4 file format, and you
+	   should also use -o filename.mp4.  You can use any other filename,
+	   but the end result will be an mp4.
+
+	   You can use --movie=spindle or --movie=rect, which changes the
+	   style of the IO mapping.
 
 	-T Set a title for the graph.  This goes at the top of the image.
 
@@ -39,7 +60,8 @@ The basic options:
 	   than once.
 
 	Choices for -O and -N are:
-	   io, tput, latency, queue_depth, iops
+	   io, tput, latency, queue_depth, iops, cpu-sys, cpu-io,
+	   cpu-irq, cpu-user, cpu-soft
 
 Examples:
 	
@@ -58,5 +80,8 @@ Examples:
 	# Run a fio benchmark and store the trace in trace.dump
 	# add a title to the top.  Use /dev/sda for blktrace
 	iowatcher -d /dev/sda -t trace.dump -T 'Fio Benchmark' -p 'fio some_job_file'
+
+	# Make a movie from an existing trace
+	iowatcher -t trace --movie -o trace.mp4
 
 Please email chris.mason@fusionio.com with any questions
