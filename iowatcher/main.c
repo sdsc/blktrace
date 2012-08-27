@@ -669,9 +669,12 @@ static int __plot_cpu(struct plot *plot, int seconds, char *label,
 			struct graph_line_data *gld = tf->mpstat_gld[i * MPSTAT_GRAPHS + gld_index];
 			double this_avg = 0;
 
-			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++)
-				this_avg += gld->data[i].sum /
-					gld->data[i].count;;
+			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++) {
+				if (gld->data[i].count) {
+					this_avg += gld->data[i].sum /
+						gld->data[i].count;
+				}
+			}
 
 			this_avg /= gld->stop_seconds;
 
