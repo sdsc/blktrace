@@ -241,6 +241,8 @@ void write_svg_header(int fd)
 	write(fd, header, strlen(header));
 	/* write a bunch of spaces so we can stuff in the width and height later */
 	write(fd, spaces, strlen(spaces));
+	write(fd, spaces, strlen(spaces));
+	write(fd, spaces, strlen(spaces));
 
 	write(fd, defs_start, strlen(defs_start));
 	write(fd, filter1, strlen(filter1));
@@ -322,33 +324,40 @@ void setup_axis(struct plot *plot)
 	int len;
 	int fd = plot->fd;
 	int bump_height = tick_font_size * 3 + axis_label_font_size;
+	int local_legend_width = legend_width;
 
-	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + legend_width;
+	if (plot->no_legend)
+		local_legend_width = 0;
+
+	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + local_legend_width;;
 	plot->total_height = axis_y() + tick_label_pad + tick_font_size;
 
 	if (plot->add_xlabel)
 		plot->total_height += bump_height;
 
 	/* backing rect */
-	snprintf(line, line_len, "<rect x=\"0\" y=\"%d\" width=\"%d\" "
+	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
+		 plot->start_x_offset,
 		plot->start_y_offset, plot->total_width + 40,
 		plot->total_height + 20);
 	len = strlen(line);
 	write(fd, line, len);
 
-	snprintf(line, line_len, "<rect x=\"15\" y=\"%d\" width=\"%d\" "
+	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "filter=\"url(#shadow)\" "
 		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
+		 plot->start_x_offset + 15,
 		plot->start_y_offset, plot->total_width, plot->total_height);
 	len = strlen(line);
 	write(fd, line, len);
 	plot->total_height += 20;
+	plot->total_width += 20;
 
 	if (plot->total_height + plot->start_y_offset > final_height)
 		final_height = plot->total_height + plot->start_y_offset;
-	if (plot->total_width + 40 > final_width)
-		final_width = plot->total_width + 40;
+	if (plot->start_x_offset + plot->total_width + 40 > final_width)
+		final_width = plot->start_x_offset + plot->total_width + 40;
 
 	/* create an svg object for all our coords to be relative against */
 	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
@@ -377,32 +386,37 @@ void setup_axis_spindle(struct plot *plot)
 	int fd = plot->fd;
 	int bump_height = tick_font_size * 3 + axis_label_font_size;
 
-	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + legend_width;
+	legend_x_off = -60;
+
+	plot->total_width = axis_x_off(graph_width) + legend_width;
 	plot->total_height = axis_y() + tick_label_pad + tick_font_size;
 
 	if (plot->add_xlabel)
 		plot->total_height += bump_height;
 
 	/* backing rect */
-	snprintf(line, line_len, "<rect x=\"0\" y=\"%d\" width=\"%d\" "
+	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
-		plot->start_y_offset, plot->total_width + 40,
+		 plot->start_x_offset,
+		plot->start_y_offset, plot->total_width + 10,
 		plot->total_height + 20);
 	len = strlen(line);
 	write(fd, line, len);
 
-	snprintf(line, line_len, "<rect x=\"15\" y=\"%d\" width=\"%d\" "
+	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "filter=\"url(#shadow)\" "
 		 "height=\"%d\" fill=\"white\" stroke=\"none\"/>",
-		plot->start_y_offset, plot->total_width, plot->total_height);
+		 plot->start_x_offset + 15,
+		plot->start_y_offset, plot->total_width - 30,
+		plot->total_height);
 	len = strlen(line);
 	write(fd, line, len);
 	plot->total_height += 20;
 
 	if (plot->total_height + plot->start_y_offset > final_height)
 		final_height = plot->total_height + plot->start_y_offset;
-	if (plot->total_width + 40 > final_width)
-		final_width = plot->total_width + 40;
+	if (plot->start_x_offset + plot->total_width + 40 > final_width)
+		final_width = plot->start_x_offset + plot->total_width + 40;
 
 	/* create an svg object for all our coords to be relative against */
 	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
@@ -587,6 +601,22 @@ int close_plot(struct plot *plot)
 	return 0;
 }
 
+int close_plot_no_height(struct plot *plot)
+{
+	close_svg(plot->fd);
+	plot->add_xlabel = 0;
+	return 0;
+}
+
+int close_plot_col(struct plot *plot)
+{
+	close_svg(plot->fd);
+	plot->start_x_offset += plot->total_width;
+	plot->add_xlabel = 0;
+	return 0;
+}
+
+
 struct plot *alloc_plot(void)
 {
 	struct plot *plot;
@@ -612,6 +642,9 @@ int close_plot_file(struct plot *plot)
 	snprintf(line, line_len, "<svg  xmlns=\"http://www.w3.org/2000/svg\" "
 		 "width=\"%d\" height=\"%d\">\n",
 		 final_width, final_height);
+	write(plot->fd, line, strlen(line));
+	snprintf(line, line_len, "<rect x=\"0\" y=\"0\" width=\"%d\" "
+		 "height=\"%d\" fill=\"white\"/>\n", final_width, final_height);
 	write(plot->fd, line, strlen(line));
 	close(plot->fd);
 	plot->fd = 0;

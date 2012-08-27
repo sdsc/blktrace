@@ -615,117 +615,7 @@ static void plot_tput(struct plot *plot, int seconds)
 	close_plot(plot);
 }
 
-static void convert_movie_files(char *movie_dir)
-{
-	fprintf(stderr, "Converting svg files in %s\n", movie_dir);
-	snprintf(line, line_len, "find %s -name \\*.svg | xargs -I{} -n 1 -P 8 rsvg-convert -o {}.png {}",
-		 movie_dir);
-	system(line);
-}
-
-static void mencode_movie(char *movie_dir)
-{
-	fprintf(stderr, "Creating movie %s\n", movie_dir);
-	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
-		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
-	system(line);
-}
-
-static void cleanup_movie(char *movie_dir)
-{
-	fprintf(stderr, "Removing movie dir %s\n", movie_dir);
-	snprintf(line, line_len, "rm %s/*", movie_dir);
-	system(line);
-
-	snprintf(line, line_len, "rmdir %s", movie_dir);
-	system(line);
-}
-
-static void plot_io_movie(struct plot *plot)
-{
-	struct trace_file *tf;
-	char *movie_dir = create_movie_temp_dir();
-	int i;
-	struct plot_history *read_history;
-	struct plot_history *write_history;
-	int batch_i;
-	int movie_len = 30;
-	int movie_frames_per_sec = 20;
-	int total_frames = movie_len * movie_frames_per_sec;
-	int rows, cols;
-	int batch_count;
-
-	get_graph_size(&cols, &rows);
-	batch_count = cols / total_frames;
-
-	if (batch_count == 0)
-		batch_count = 1;
-
-	list_for_each_entry(tf, &all_traces, list) {
-		char *label = tf->label;
-		if (!label)
-			label = "";
-
-		i = 0;
-		while (i < cols) {
-			snprintf(line, line_len, "%s/%010d-%s.svg", movie_dir, i, output_filename);
-			set_plot_output(plot, line);
-
-			set_plot_title(plot, graph_title);
-			if (movie_style == MOVIE_SPINDLE)
-				setup_axis_spindle(plot);
-			else
-				setup_axis(plot);
-
-			svg_alloc_legend(plot, num_traces * 2);
-
-			read_history = alloc_plot_history(tf->read_color);
-			write_history = alloc_plot_history(tf->write_color);
-			read_history->col = i;
-			write_history->col = i;
-
-			if (tf->gdd_reads->total_ios)
-				svg_add_legend(plot, label, " Reads", tf->read_color);
-			if (tf->gdd_writes->total_ios)
-				svg_add_legend(plot, label, " Writes", tf->write_color);
-
-			batch_i = 0;
-			while (i < cols && batch_i < batch_count) {
-				svg_io_graph_movie(tf->gdd_reads, read_history, i);
-				svg_io_graph_movie(tf->gdd_writes, write_history, i);
-				i++;
-				batch_i++;
-			}
-
-			add_history(read_history, &movie_history_reads);
-			add_history(write_history, &movie_history_writes);
-
-			plot_movie_history(plot, &movie_history_reads);
-			plot_movie_history(plot, &movie_history_writes);
-
-			svg_write_legend(plot);
-			close_plot(plot);
-
-			set_graph_size(cols, rows / 7);
-			plot->add_xlabel = 1;
-			__plot_tput(plot, tf->gdd_reads->seconds);
-			svg_write_time_line(plot, i);
-			close_plot(plot);
-			set_graph_size(cols, rows);
-
-			close_plot(plot);
-			close_plot_file(plot);
-		}
-		free_all_plot_history(&movie_history_reads);
-		free_all_plot_history(&movie_history_writes);
-	}
-	convert_movie_files(movie_dir);
-	mencode_movie(movie_dir);
-	cleanup_movie(movie_dir);
-	free(movie_dir);
-}
-
-static void plot_cpu(struct plot *plot, int seconds, char *label,
+static int __plot_cpu(struct plot *plot, int seconds, char *label,
 		     int active_index, int gld_index)
 {
 	struct trace_file *tf;
@@ -737,21 +627,18 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 	int ymax;
 	int plotted = 0;
 
-	if (active_graphs[active_index] == 0)
-		return;
-
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->trace->mpstat_num_cpus > max)
 			max = tf->trace->mpstat_num_cpus;
 	}
 	if (max == 0)
-		return;
+		return 1;
 
 	tf = list_entry(all_traces.next, struct trace_file, list);
 
 	ymax = tf->mpstat_gld[gld_index]->max;
 	if (ymax == 0)
-		return;
+		return 1;
 
 	svg_alloc_legend(plot, num_traces * max);
 
@@ -812,9 +699,188 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 	if (plot->add_xlabel)
 		set_xlabel(plot, "Time (seconds)");
 
-	svg_write_legend(plot);
-	svg_free_legend(plot);
+	if (!plot->no_legend) {
+		svg_write_legend(plot);
+		svg_free_legend(plot);
+	}
+	return 0;
+}
+
+static void plot_cpu(struct plot *plot, int seconds, char *label,
+		     int active_index, int gld_index)
+{
+	if (active_graphs[active_index] == 0)
+		return;
+
+	plot->add_xlabel = last_active_graph == active_index;
+	if (!__plot_cpu(plot, seconds, label, active_index, gld_index))
+		close_plot(plot);
+}
+
+static void __plot_queue_depth(struct plot *plot, int seconds)
+{
+	struct trace_file *tf;
+
+	plot->add_xlabel = last_active_graph == QUEUE_DEPTH_GRAPH_INDEX;
+
+	setup_axis(plot);
+	set_plot_label(plot, "Queue Depth");
+	if (num_traces > 1)
+		svg_alloc_legend(plot, num_traces);
+
+	tf = list_entry(all_traces.next, struct trace_file, list);
+	set_ylabel(plot, "Pending IO");
+	set_yticks(plot, 4, 0, tf->queue_depth_gld->max, "");
+	set_xticks(plot, 9, 0, seconds);
+
+	list_for_each_entry(tf, &all_traces, list) {
+		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color, 0, 0);
+		if (num_traces > 1)
+			svg_add_legend(plot, tf->label, "", tf->read_color);
+	}
+
+	if (plot->add_xlabel)
+		set_xlabel(plot, "Time (seconds)");
+	if (num_traces > 1)
+		svg_write_legend(plot);
+}
+
+static void plot_queue_depth(struct plot *plot, int seconds)
+{
+	if (active_graphs[QUEUE_DEPTH_GRAPH_INDEX] == 0)
+		return;
+	__plot_queue_depth(plot, seconds);
 	close_plot(plot);
+}
+
+static void convert_movie_files(char *movie_dir)
+{
+	fprintf(stderr, "Converting svg files in %s\n", movie_dir);
+	snprintf(line, line_len, "find %s -name \\*.svg | xargs -I{} -n 1 -P 8 rsvg-convert -o {}.png {}",
+		 movie_dir);
+	system(line);
+}
+
+static void mencode_movie(char *movie_dir)
+{
+	fprintf(stderr, "Creating movie %s\n", movie_dir);
+	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
+		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
+	system(line);
+}
+
+static void cleanup_movie(char *movie_dir)
+{
+	fprintf(stderr, "Removing movie dir %s\n", movie_dir);
+	snprintf(line, line_len, "rm %s/*", movie_dir);
+	system(line);
+
+	snprintf(line, line_len, "rmdir %s", movie_dir);
+	system(line);
+}
+
+static void plot_io_movie(struct plot *plot)
+{
+	struct trace_file *tf;
+	char *movie_dir = create_movie_temp_dir();
+	int i;
+	struct plot_history *read_history;
+	struct plot_history *write_history;
+	int batch_i;
+	int movie_len = 30;
+	int movie_frames_per_sec = 20;
+	int total_frames = movie_len * movie_frames_per_sec;
+	int rows, cols;
+	int batch_count;
+	int graph_width_factor = 5;
+	int orig_y_offset;
+
+	get_graph_size(&cols, &rows);
+	batch_count = cols / total_frames;
+
+	if (batch_count == 0)
+		batch_count = 1;
+
+	list_for_each_entry(tf, &all_traces, list) {
+		char *label = tf->label;
+		if (!label)
+			label = "";
+
+		i = 0;
+		while (i < cols) {
+			snprintf(line, line_len, "%s/%010d-%s.svg", movie_dir, i, output_filename);
+			set_plot_output(plot, line);
+			set_plot_title(plot, graph_title);
+			orig_y_offset = plot->start_y_offset;
+
+			plot->no_legend = 1;
+
+			set_graph_size(cols / graph_width_factor, rows / 8);
+
+			__plot_tput(plot, tf->gdd_reads->seconds);
+			svg_write_time_line(plot, i / graph_width_factor);
+			close_plot(plot);
+
+			if (!__plot_cpu(plot, tf->gdd_reads->seconds,
+				   "CPU System Time", CPU_SYS_GRAPH_INDEX, MPSTAT_SYS)) {
+				svg_write_time_line(plot, i / graph_width_factor);
+				close_plot(plot);
+			}
+
+			__plot_queue_depth(plot, tf->gdd_reads->seconds);
+			svg_write_time_line(plot, i / graph_width_factor);
+
+			close_plot_col(plot);
+
+			/* movie graph starts here */
+			plot->start_y_offset = orig_y_offset;
+			set_graph_size(cols - cols / graph_width_factor, rows);
+			plot->no_legend = 0;
+
+			if (movie_style == MOVIE_SPINDLE)
+				setup_axis_spindle(plot);
+			else
+				setup_axis(plot);
+
+			svg_alloc_legend(plot, num_traces * 2);
+
+			read_history = alloc_plot_history(tf->read_color);
+			write_history = alloc_plot_history(tf->write_color);
+			read_history->col = i;
+			write_history->col = i;
+
+			if (tf->gdd_reads->total_ios)
+				svg_add_legend(plot, label, " Reads", tf->read_color);
+			if (tf->gdd_writes->total_ios)
+				svg_add_legend(plot, label, " Writes", tf->write_color);
+
+			batch_i = 0;
+			while (i < cols && batch_i < batch_count) {
+				svg_io_graph_movie(tf->gdd_reads, read_history, i);
+				svg_io_graph_movie(tf->gdd_writes, write_history, i);
+				i++;
+				batch_i++;
+			}
+
+			add_history(read_history, &movie_history_reads);
+			add_history(write_history, &movie_history_writes);
+
+			plot_movie_history(plot, &movie_history_reads);
+			plot_movie_history(plot, &movie_history_writes);
+
+			svg_write_legend(plot);
+			close_plot(plot);
+			close_plot(plot);
+
+			close_plot_file(plot);
+		}
+		free_all_plot_history(&movie_history_reads);
+		free_all_plot_history(&movie_history_writes);
+	}
+	convert_movie_files(movie_dir);
+	mencode_movie(movie_dir);
+	cleanup_movie(movie_dir);
+	free(movie_dir);
 }
 
 static void plot_latency(struct plot *plot, int seconds)
@@ -850,38 +916,6 @@ static void plot_latency(struct plot *plot, int seconds)
 
 	list_for_each_entry(tf, &all_traces, list) {
 		svg_line_graph(plot, tf->latency_gld, tf->read_color, 0, 0);
-		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->read_color);
-	}
-
-	if (plot->add_xlabel)
-		set_xlabel(plot, "Time (seconds)");
-	if (num_traces > 1)
-		svg_write_legend(plot);
-	close_plot(plot);
-}
-
-static void plot_queue_depth(struct plot *plot, int seconds)
-{
-	struct trace_file *tf;
-
-	if (active_graphs[QUEUE_DEPTH_GRAPH_INDEX] == 0)
-		return;
-
-	plot->add_xlabel = last_active_graph == QUEUE_DEPTH_GRAPH_INDEX;
-
-	setup_axis(plot);
-	set_plot_label(plot, "Queue Depth");
-	if (num_traces > 1)
-		svg_alloc_legend(plot, num_traces);
-
-	tf = list_entry(all_traces.next, struct trace_file, list);
-	set_ylabel(plot, "Pending IO");
-	set_yticks(plot, 4, 0, tf->queue_depth_gld->max, "");
-	set_xticks(plot, 9, 0, seconds);
-
-	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color, 0, 0);
 		if (num_traces > 1)
 			svg_add_legend(plot, tf->label, "", tf->read_color);
 	}
@@ -1075,7 +1109,7 @@ int main(int ac, char **av)
 	if (make_movie) {
 		set_io_graph_scale(256);
 		if (movie_style == MOVIE_SPINDLE)
-			set_graph_size(550, 550);
+			set_graph_size(750, 550);
 		else
 			set_graph_size(700, 400);
 	}

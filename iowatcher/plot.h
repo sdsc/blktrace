@@ -36,6 +36,7 @@ struct plot {
 	int start_x_offset;
 
 	int add_xlabel;
+	int no_legend;
 
 	/*
 	 * these two are for anyone that wants
@@ -114,6 +115,7 @@ void print_gdd(struct graph_dot_data *gdd);
 void write_svg_header(int fd);
 struct plot *alloc_plot(void);
 int close_plot(struct plot *plot);
+int close_plot_no_height(struct plot *plot);
 void setup_axis(struct plot *plot);
 void set_xticks(struct plot *plot, int num_ticks, int first, int last);
 void set_yticks(struct plot *plot, int num_ticks, int first, int last, char *units);
@@ -144,4 +146,5 @@ int close_plot_file(struct plot *plot);
 int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph);
 void rewind_spindle_steps(int num);
 void setup_axis_spindle(struct plot *plot);
+int close_plot_col(struct plot *plot);
 #endif
