@@ -734,7 +734,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 			}
 
 			/* otherwise, we just print a bar up there to show this one data point */
-			if (i == gld->stop_seconds)
+			if (i >= gld->stop_seconds - 2)
 				len = -10;
 
 			/*
