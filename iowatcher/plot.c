@@ -694,7 +694,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	int printed_header = 0;
 	int printed_lines = 0;
 
-	if (0 && thresh1 && thresh2)
+	if (thresh1 && thresh2)
 		rolling = 0;
 	else if (rolling_avg_secs)
 		rolling = rolling_avg_secs;
@@ -703,7 +703,16 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 
 	for (i = 0; i < gld->stop_seconds; i++) {
 		avg = rolling_avg(gld->data, i, rolling);
-		val = avg / yscale;
+		if (yscale == 0)
+			val = 0;
+		else
+			val = avg / yscale;
+
+		if (val > graph_height)
+			val = graph_height;
+		if (val < 0)
+			val = 0;
+
 		x = (double)i / xscale;
 		if (!thresh1 && !thresh2) {
 
