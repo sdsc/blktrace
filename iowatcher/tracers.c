@@ -184,7 +184,7 @@ int start_mpstat(char *trace_name)
 
 	snprintf(line, line_len, "%s.mpstat", trace_name);
 
-	fd = open(line, O_WRONLY | O_CREAT | O_TRUNC);
+	fd = open(line, O_WRONLY | O_CREAT | O_TRUNC, 0600);
 	if (fd < 0) {
 		fprintf(stderr, "unable to open %s for writing err %s\n",
 			line, strerror(errno));
