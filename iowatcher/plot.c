@@ -312,7 +312,6 @@ static int axis_x_off(int x)
 	return (int)axis_x_off_double(x);
 }
 
-
 /*
  * this draws a backing rectangle for the plot and it
  * also creates a new svg element so our offsets can
@@ -329,7 +328,7 @@ void setup_axis(struct plot *plot)
 	if (plot->no_legend)
 		local_legend_width = 0;
 
-	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + local_legend_width;;
+	plot->total_width = axis_x_off(graph_width) + graph_left_pad / 2 + local_legend_width;
 	plot->total_height = axis_y() + tick_label_pad + tick_font_size;
 
 	if (plot->add_xlabel)
@@ -596,26 +595,12 @@ static void close_svg(int fd)
 int close_plot(struct plot *plot)
 {
 	close_svg(plot->fd);
-	plot->start_y_offset += plot->total_height;
-	plot->add_xlabel = 0;
+	if (plot->direction == PLOT_DOWN)
+		plot->start_y_offset += plot->total_height;
+	else if (plot->direction == PLOT_ACROSS)
+		plot->start_x_offset += plot->total_width;
 	return 0;
 }
-
-int close_plot_no_height(struct plot *plot)
-{
-	close_svg(plot->fd);
-	plot->add_xlabel = 0;
-	return 0;
-}
-
-int close_plot_col(struct plot *plot)
-{
-	close_svg(plot->fd);
-	plot->start_x_offset += plot->total_width;
-	plot->add_xlabel = 0;
-	return 0;
-}
-
 
 struct plot *alloc_plot(void)
 {
@@ -785,6 +770,8 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 		snprintf(line, line_len, "\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/>\n", color);
 		write(fd, line, strlen(line));
 	}
+	if (plot->timeline)
+		svg_write_time_line(plot, plot->timeline);
 
 	return 0;
 }

@@ -26,6 +26,10 @@ typedef __u32 u32;
 typedef __u16 u16;
 
 
+/* values for the plot direction field */
+#define PLOT_DOWN 0
+#define PLOT_ACROSS 1
+
 struct plot {
 	int fd;
 
@@ -48,6 +52,14 @@ struct plot {
 	char **legend_lines;
 	int legend_index;
 	int num_legend_lines;
+	int direction;
+
+	/*
+	 * timeline is a vertical line through line graphs that
+	 * is used by the movie mode to show where in the graph
+	 * our current frame lives
+	 */
+	int timeline;
 };
 
 struct graph_line_pair {
