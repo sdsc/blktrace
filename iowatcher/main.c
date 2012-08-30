@@ -1021,7 +1021,7 @@ static void print_usage(void)
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
 		"\t-p (--prog): program to run while blktrace is run\n"
-		"\t-p (--movie [=spindle|rect]): create IO animations\n"
+		"\t-m (--movie [=spindle|rect]): create IO animations\n"
 		"\t-r (--rolling): number of seconds in the rolling averge\n"
 		"\t-T (--title): graph title\n"
 		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, \n"
