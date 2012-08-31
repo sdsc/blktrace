@@ -51,6 +51,7 @@ static int opt_graph_height = 0;
 
 static int columns = 1;
 static int num_xticks = 9;
+static int num_yticks = 4;
 
 /*
  * this doesn't include the IO graph,
@@ -558,7 +559,7 @@ static void plot_io(struct plot *plot, int seconds, u64 max_offset)
 
 	set_plot_label(plot, "Device IO");
 	set_ylabel(plot, "Offset (MB)");
-	set_yticks(plot, 4, 0, max_offset / (1024 * 1024), "");
+	set_yticks(plot, num_yticks, 0, max_offset / (1024 * 1024), "");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -608,7 +609,7 @@ static void plot_tput(struct plot *plot, int seconds)
 	scale_line_graph_bytes(&max, &units, 1024);
 	sprintf(line, "%sB/s", units);
 	set_ylabel(plot, line);
-	set_yticks(plot, 4, 0, max, "");
+	set_yticks(plot, num_yticks, 0, max, "");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -660,12 +661,14 @@ static void plot_cpu(struct plot *plot, int seconds, char *label,
 
 	seconds = tf->mpstat_seconds;
 
-	set_yticks(plot, 4, 0, tf->mpstat_gld[gld_index]->max, "");
+	set_yticks(plot, num_yticks, 0, tf->mpstat_gld[gld_index]->max, "");
 	set_ylabel(plot, "Percent");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	cpu_color_index = 0;
 	list_for_each_entry(tf, &all_traces, list) {
+		if (tf->mpstat_gld == 0)
+			break;
 		for (i = 0; i < tf->mpstat_gld[0]->stop_seconds; i++) {
 			if (tf->mpstat_gld[gld_index]->data[i].count) {
 				avg += (tf->mpstat_gld[gld_index]->data[i].sum /
@@ -736,7 +739,7 @@ static void plot_queue_depth(struct plot *plot, int seconds)
 
 	tf = list_entry(all_traces.next, struct trace_file, list);
 	set_ylabel(plot, "Pending IO");
-	set_yticks(plot, 4, 0, tf->queue_depth_gld->max, "");
+	set_yticks(plot, num_yticks, 0, tf->queue_depth_gld->max, "");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -891,10 +894,12 @@ static void plot_latency(struct plot *plot, int seconds)
 
 	if (num_traces > 1)
 		svg_alloc_legend(plot, num_traces);
+
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->latency_gld->max > max)
 			max = tf->latency_gld->max;
 	}
+
 	list_for_each_entry(tf, &all_traces, list)
 		tf->latency_gld->max = max;
 
@@ -906,7 +911,7 @@ static void plot_latency(struct plot *plot, int seconds)
 	scale_line_graph_time(&max, &units);
 	sprintf(line, "latency (%ss)", units);
 	set_ylabel(plot, line);
-	set_yticks(plot, 4, 0, max, "");
+	set_yticks(plot, num_yticks, 0, max, "");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -950,7 +955,7 @@ static void plot_iops(struct plot *plot, int seconds)
 	scale_line_graph_bytes(&max, &units, 1000);
 	set_ylabel(plot, "IO/s");
 
-	set_yticks(plot, 4, 0, max, units);
+	set_yticks(plot, num_yticks, 0, max, units);
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -1226,6 +1231,8 @@ int main(int ac, char **av)
 		if (num_xticks < 2)
 			num_xticks = 2;
 	}
+	if (rows <= 50)
+		num_yticks--;
 
 	check_plot_columns(plot, TPUT_GRAPH_INDEX);
 	plot_tput(plot, seconds);
