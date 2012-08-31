@@ -31,6 +31,8 @@
 #include <time.h>
 #include <math.h>
 #include <getopt.h>
+#include <limits.h>
+#include <float.h>
 
 #include "plot.h"
 #include "blkparse.h"
@@ -51,6 +53,11 @@ static int opt_graph_height = 0;
 
 static int columns = 1;
 static int num_xticks = 9;
+
+static double min_time = 0;
+static double max_time = DBL_MAX;
+static unsigned long long min_mb = 0;
+static unsigned long long max_mb = ULLONG_MAX >> 20;
 
 /*
  * this doesn't include the IO graph,
@@ -472,6 +479,14 @@ static void set_all_minmax_tf(int min_seconds, int max_seconds, u64 min_offset, 
 	list_for_each_entry(tf, &all_traces, list) {
 		tf->min_seconds = min_seconds;
 		tf->max_seconds = max_seconds;
+		if (tf->stop_seconds > max_seconds)
+			tf->stop_seconds = max_seconds;
+		if (tf->mpstat_max_seconds) {
+			tf->mpstat_min_seconds = min_seconds;
+			tf->mpstat_max_seconds = max_seconds;
+			if (tf->mpstat_stop_seconds > max_seconds)
+				tf->mpstat_stop_seconds = max_seconds;
+		}
 		tf->min_offset = min_offset;
 		tf->max_offset = max_offset;
 	}
@@ -1010,7 +1025,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:";
+char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1025,6 +1040,8 @@ static struct option long_options[] = {
 	{"movie", optional_argument, 0, 'm'},
 	{"width", required_argument, 0, 'w'},
 	{"height", required_argument, 0, 'h'},
+	{"xzoom", required_argument, 0, 'x'},
+	{"yzoom", required_argument, 0, 'y'},
 	{"help", no_argument, 0, HELP_LONG_OPT},
 	{0, 0, 0, 0}
 };
@@ -1046,8 +1063,63 @@ static void print_usage(void)
 		"\t-h (--height): set the height of each graph\n"
 		"\t-w (--width): set the width of each graph\n"
 		"\t-c (--columns): numbers of columns in graph output\n"
+		"\t-x (--xzoom): limit processed time to min:max\n"
+		"\t-y (--yzoom): limit processed sectors to min:max\n"
 	       );
 	exit(1);
+}
+
+static int parse_double_range(char *str, double *min, double *max)
+{
+	char *end;
+
+	/* Empty lower bound - leave original value */
+	if (str[0] != ':') {
+		*min = strtod(str, &end);
+		if (*min == HUGE_VAL || *min == -HUGE_VAL)
+			return -ERANGE;
+		if (*end != ':')
+			return -EINVAL;
+	} else
+		end = str;
+	/* Empty upper bound - leave original value */
+	if (end[1]) {
+		*max = strtod(end+1, &end);
+		if (*max == HUGE_VAL || *max == -HUGE_VAL)
+			return -ERANGE;
+		if (*end != 0)
+			return -EINVAL;
+	}
+	if (*min > *max)
+		return -EINVAL;
+	return 0;
+}
+
+static int parse_ull_range(char *str, unsigned long long *min,
+			   unsigned long long *max)
+{
+	char *end;
+
+	/* Empty lower bound - leave original value */
+	if (str[0] != ':') {
+		*min = strtoull(str, &end, 10);
+		if (*min == ULLONG_MAX && errno == ERANGE)
+			return -ERANGE;
+		if (*end != ':')
+			return -EINVAL;
+	} else
+		end = str;
+	/* Empty upper bound - leave original value */
+	if (end[1]) {
+		*max = strtoull(end+1, &end, 10);
+		if (*max == ULLONG_MAX && errno == ERANGE)
+			return -ERANGE;
+		if (*end != 0)
+			return -EINVAL;
+	}
+	if (*min > *max)
+		return -EINVAL;
+	return 0;
 }
 
 static int parse_options(int ac, char **av)
@@ -1118,6 +1190,29 @@ static int parse_options(int ac, char **av)
 			break;
 		case 'c':
 			columns = atoi(optarg);
+			break;
+		case 'x':
+			if (parse_double_range(optarg, &min_time, &max_time)
+			    < 0) {
+				fprintf(stderr, "Cannot parse time range %s\n",
+					optarg);
+				exit(1);
+			}
+			break;
+		case 'y':
+			if (parse_ull_range(optarg, &min_mb, &max_mb)
+			    < 0) {
+				fprintf(stderr,
+					"Cannot parse offset range %s\n",
+					optarg);
+				exit(1);
+			}
+			if (max_mb > ULLONG_MAX >> 20) {
+				fprintf(stderr,
+					"Upper range limit too big."
+					" Maximum is %llu.\n", ULLONG_MAX >> 20);
+				exit(1);
+			}
 			break;
 		case '?':
 		case HELP_LONG_OPT:
@@ -1204,6 +1299,14 @@ int main(int ac, char **av)
 	/* step two, find the maxes for time and offset */
 	list_for_each_entry(tf, &all_traces, list)
 		compare_minmax_tf(tf, &max_seconds, &min_offset, &max_offset);
+	min_seconds = min_time;
+	if (max_seconds > max_time)
+		max_seconds = ceil(max_time);
+	if (min_offset < min_mb << 20)
+		min_offset = min_mb << 20;
+	if (max_offset > max_mb << 20)
+		max_offset = max_mb << 20;
+
 	/* push the max we found into all the tfs */
 	set_all_minmax_tf(min_seconds, max_seconds, min_offset, max_offset);
 
