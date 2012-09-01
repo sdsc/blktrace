@@ -90,7 +90,7 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seconds)
+struct graph_dot_data *alloc_dot_data(int seconds, u64 min_offset, u64 max_offset, int stop_seconds)
 {
 	int size;
 	int arr_size;
@@ -115,6 +115,7 @@ struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seco
 	gdd->stop_seconds = stop_seconds;
 	gdd->rows = rows;
 	gdd->cols = cols;
+	gdd->min_offset = min_offset;
 	gdd->max_offset = max_offset;
 	return gdd;
 }
@@ -126,8 +127,7 @@ void free_dot_data(struct graph_dot_data *gdd)
 
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
-	double bytes_per_row = (double)gdd->max_offset / gdd->rows;
-
+	double bytes_per_row = (double)(gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
 	double secs_per_col = (double)gdd->seconds / gdd->cols;
 	double col;
 	double row;
@@ -138,13 +138,13 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 	int bit_mod;
 	double mod = bytes_per_row;
 
-	if (offset > gdd->max_offset)
+	if (offset > gdd->max_offset || offset < gdd->min_offset)
 		return;
 
 	gdd->total_ios++;
 	time = time / 1000000000.0;
 	while (bytes > 0) {
-		row = (double)offset / bytes_per_row;
+		row = (double)(offset - gdd->min_offset) / bytes_per_row;
 		col = time / secs_per_col;
 
 		col_int = floor(col);
@@ -561,7 +561,7 @@ void set_yticks(struct plot *plot, int num_ticks, int first, int last, char *uni
 			 "fill=\"black\" style=\"text-anchor: %s\">%d%s</text>\n",
 			text_x,
 			axis_y_off(tick_y - tick_font_size / 2),
-			font_family, tick_font_size, anchor, step * i, units);
+			font_family, tick_font_size, anchor, first + step * i, units);
 		write(plot->fd, line, strlen(line));
 		tick_y += pixels_per_tick;
 	}
@@ -904,13 +904,13 @@ int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int 
 	unsigned char val;
 	int bit_index;
 	int bit_mod;
-	double blocks_per_row = gdd->max_offset / gdd->rows;
-	double movie_blocks_per_cell = gdd->max_offset / (graph_width * graph_height);
+	double blocks_per_row = (gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
+	double movie_blocks_per_cell = (gdd->max_offset - gdd->min_offset + 1) / (graph_width * graph_height);
 	double cell_index;
 	int margin_orig = graph_inner_y_margin;
 
 	graph_inner_y_margin += 5;
-	ph->history_max = gdd->max_offset / movie_blocks_per_cell;
+	ph->history_max = (gdd->max_offset - gdd->min_offset + 1) / movie_blocks_per_cell;
 
 	for (row = gdd->rows - 1; row >= 0; row--) {
 		bit_index = row * gdd->cols + col;

@@ -63,9 +63,9 @@ static inline unsigned int MINOR(unsigned int dev)
 void init_io_hash_table(void);
 struct trace *open_trace(char *filename);
 u64 find_last_time(struct trace *trace);
-void find_highest_offset(struct trace *trace, u64 *max_ret, u64 *max_bank_ret,
-			 u64 *max_offset_ret);
-int filter_outliers(struct trace *trace, u64 max_offset,
+void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret,
+			  u64 *max_bank_ret, u64 *max_offset_ret);
+int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 		    u64 *yzoom_min, u64 *yzoom_max);
 void add_iop(struct trace *trace, struct graph_line_data *gld);
 void check_record(struct trace *trace);

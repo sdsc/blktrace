@@ -163,6 +163,7 @@ struct trace_file {
 	struct trace *trace;
 	int seconds;
 	int stop_seconds;
+	u64 min_offset;
 	u64 max_offset;
 
 	char *read_color;
@@ -283,8 +284,8 @@ static void setup_trace_file_graphs(void)
 		tf->latency_gld = alloc_line_data(tf->seconds, tf->stop_seconds);
 		tf->queue_depth_gld = alloc_line_data(tf->seconds, tf->stop_seconds);
 		tf->iop_gld = alloc_line_data(tf->seconds, tf->stop_seconds);
-		tf->gdd_writes = alloc_dot_data(tf->seconds, tf->max_offset, tf->stop_seconds);
-		tf->gdd_reads = alloc_dot_data(tf->seconds, tf->max_offset, tf->stop_seconds);
+		tf->gdd_writes = alloc_dot_data(tf->seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
+		tf->gdd_reads = alloc_dot_data(tf->seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
 
 		if (tf->trace->mpstat_num_cpus == 0)
 			continue;
@@ -318,9 +319,10 @@ static void read_traces(void)
 		tf->trace = trace;
 		tf->seconds = SECONDS(last_time);
 		tf->stop_seconds = SECONDS(last_time);
-		find_highest_offset(trace, &tf->max_offset, &max_bank,
-				    &max_bank_offset);
-		filter_outliers(trace, tf->max_offset, &ymin, &ymax);
+		find_extreme_offsets(trace, &tf->min_offset, &tf->max_offset,
+				    &max_bank, &max_bank_offset);
+		filter_outliers(trace, tf->min_offset, tf->max_offset, &ymin, &ymax);
+		tf->min_offset = ymin;
 		tf->max_offset = ymax;
 
 		read_mpstat(trace, tf->filename);
@@ -450,20 +452,23 @@ static void set_blktrace_outfile(char *arg)
 }
 
 
-static void compare_max_tf(struct trace_file *tf, int *seconds, u64 *max_offset)
+static void compare_minmax_tf(struct trace_file *tf, int *seconds, u64 *min_offset, u64 *max_offset)
 {
 	if (tf->seconds > *seconds)
 		*seconds = tf->seconds;
 	if (tf->max_offset > *max_offset)
 		*max_offset = tf->max_offset;
+	if (tf->min_offset < *min_offset)
+		*min_offset = tf->min_offset;
 }
 
-static void set_all_max_tf(int seconds, u64 max_offset)
+static void set_all_minmax_tf(int seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 
 	list_for_each_entry(tf, &all_traces, list) {
 		tf->seconds = seconds;
+		tf->min_offset = min_offset;
 		tf->max_offset = max_offset;
 	}
 }
@@ -545,7 +550,7 @@ static void free_all_plot_history(struct list_head *head)
 	}
 }
 
-static void plot_io(struct plot *plot, int seconds, u64 max_offset)
+static void plot_io(struct plot *plot, int seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 
@@ -558,7 +563,8 @@ static void plot_io(struct plot *plot, int seconds, u64 max_offset)
 
 	set_plot_label(plot, "Device IO");
 	set_ylabel(plot, "Offset (MB)");
-	set_yticks(plot, 4, 0, max_offset / (1024 * 1024), "");
+	set_yticks(plot, 4, min_offset / (1024 * 1024),
+		   max_offset / (1024 * 1024), "");
 	set_xticks(plot, num_xticks, 0, seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
@@ -1120,6 +1126,7 @@ int main(int ac, char **av)
 	struct plot *plot;
 	int seconds = 0;
 	u64 max_offset = 0;
+	u64 min_offset = ~(u64)0;
 	struct trace_file *tf;
 	int ret;
 	int rows, cols;
@@ -1185,10 +1192,9 @@ int main(int ac, char **av)
 
 	/* step two, find the maxes for time and offset */
 	list_for_each_entry(tf, &all_traces, list)
-		compare_max_tf(tf, &seconds, &max_offset);
-
+		compare_minmax_tf(tf, &seconds, &min_offset, &max_offset);
 	/* push the max we found into all the tfs */
-	set_all_max_tf(seconds, max_offset);
+	set_all_minmax_tf(seconds, min_offset, max_offset);
 
 	/* alloc graphing structs for all the traces */
 	setup_trace_file_graphs();
@@ -1217,7 +1223,7 @@ int main(int ac, char **av)
 		plot->add_xlabel = 1;
 	set_plot_title(plot, graph_title);
 
-	plot_io(plot, seconds, max_offset);
+	plot_io(plot, seconds, min_offset, max_offset);
 	plot->add_xlabel = 0;
 
 	if (columns > 1) {

@@ -413,11 +413,11 @@ out:
 	return -1;
 }
 
-void find_highest_offset(struct trace *trace, u64 *max_ret, u64 *max_bank_ret,
-			 u64 *max_offset_ret)
+void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret, u64 *max_bank_ret,
+			  u64 *max_offset_ret)
 {
 	u64 found = 0;
-	u64 max = 0;
+	u64 max = 0, min = ~(u64)0;
 	u64 max_bank = 0;
 	u64 max_bank_offset = 0;
 	u64 num_banks = 0;
@@ -425,11 +425,12 @@ void find_highest_offset(struct trace *trace, u64 *max_ret, u64 *max_bank_ret,
 	while (1) {
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
 			found = trace->io->sector << 9;
-			found += trace->io->bytes;
+			if (found < min)
+				min = found;
 
-			if (max < found) {
+			found += trace->io->bytes;
+			if (max < found)
 				max = found;
-			}
 		} else {
 			u64 bank;
 			u64 offset;
@@ -445,31 +446,41 @@ void find_highest_offset(struct trace *trace, u64 *max_ret, u64 *max_bank_ret,
 			break;
 	}
 	first_record(trace);
+	*min_ret = min;
 	*max_ret = max;
 	*max_bank_ret = max_bank;
 	*max_offset_ret = max_bank_offset;
 }
 
-int filter_outliers(struct trace *trace, u64 max_offset,
+int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 		    u64 *yzoom_min, u64 *yzoom_max)
 {
 	int hits[11];
 	u64 max_per_bucket[11];
-	u64 bytes_per_bucket = max_offset / 10;
+	u64 min_per_bucket[11];
+	u64 bytes_per_bucket = (max_offset - min_offset + 1) / 10;
 	int slot;
 	int fat_count = 0;
 
 	memset(hits, 0, sizeof(int) * 11);
 	memset(max_per_bucket, 0, sizeof(u64) * 11);
+	memset(min_per_bucket, 0xff, sizeof(u64) * 11);
 	first_record(trace);
 	while (1) {
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY)) &&
 		    (trace->io->action & BLK_TA_MASK) == __BLK_TA_QUEUE) {
-			u64 top = (trace->io->sector << 9) + trace->io->bytes;
-			slot = (int)(top / bytes_per_bucket);
+			u64 off = (trace->io->sector << 9) - min_offset;
+
+			slot = (int)(off / bytes_per_bucket);
 			hits[slot]++;
-			if (top > max_per_bucket[slot])
-				max_per_bucket[slot] = top;
+			if (off < min_per_bucket[slot])
+				min_per_bucket[slot] = off;
+
+ 			off += trace->io->bytes;
+			slot = (int)(off / bytes_per_bucket);
+			hits[slot]++;
+			if (off > max_per_bucket[slot])
+				max_per_bucket[slot] = off;
 		}
 		if (next_record(trace))
 			break;
@@ -486,17 +497,17 @@ int filter_outliers(struct trace *trace, u64 max_offset,
 		double d = hits[slot];
 
 		if (d >= (double)fat_count * .05) {
-			*yzoom_max = max_per_bucket[slot];
+			*yzoom_max = max_per_bucket[slot] + min_offset;
 			break;
 		}
 	}
 
-	*yzoom_min = 0;
+	*yzoom_min = min_offset;
 	for (slot = 0; slot < 10; slot++) {
 		double d = hits[slot];
 
 		if (d >= (double)fat_count * .05) {
-			*yzoom_min = slot * bytes_per_bucket;
+			*yzoom_min = min_per_bucket[slot] + min_offset;
 			break;
 		}
 	}
