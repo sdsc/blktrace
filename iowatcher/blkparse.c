@@ -93,6 +93,8 @@ enum {
 	__BLK_TA_DRV_DATA,		/* binary driver data */
 };
 
+#define BLK_TA_MASK ((1 << BLK_TC_SHIFT) - 1)
+
 /*
  * Notify events.
  */
@@ -614,7 +616,7 @@ static inline int io_event(struct trace *trace)
 void add_tput(struct trace *trace, struct graph_line_data *gld)
 {
 	struct blk_io_trace *io = trace->io;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 	int seconds;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
@@ -639,7 +641,7 @@ void add_io(struct trace *trace, struct graph_dot_data *gdd_writes,
 	    struct graph_dot_data *gdd_reads)
 {
 	struct blk_io_trace *io = trace->io;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 	u64 offset;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
@@ -661,7 +663,7 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 	int ret;
 	int seconds;
 	struct blk_io_trace *io = trace->io;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 	double avg;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
@@ -696,7 +698,7 @@ void add_completed_io(struct trace *trace,
 {
 	struct blk_io_trace *io = trace->io;
 	int seconds;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 	struct pending_io *pio;
 	double avg;
 	u64 latency;
@@ -734,7 +736,7 @@ void add_completed_io(struct trace *trace,
 void add_iop(struct trace *trace, struct graph_line_data *gld)
 {
 	struct blk_io_trace *io = trace->io;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 	int seconds;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
@@ -759,7 +761,7 @@ void add_iop(struct trace *trace, struct graph_line_data *gld)
 void check_record(struct trace *trace)
 {
 	struct blk_io_trace *io = trace->io;
-	int action = io->action & 0xffff;
+	int action = io->action & BLK_TA_MASK;
 
 	if (!(io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
 		switch (action) {
