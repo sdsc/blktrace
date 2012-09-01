@@ -463,7 +463,8 @@ int filter_outliers(struct trace *trace, u64 max_offset,
 	memset(max_per_bucket, 0, sizeof(u64) * 11);
 	first_record(trace);
 	while (1) {
-		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
+		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY)) &&
+		    (trace->io->action & BLK_TA_MASK) == __BLK_TA_QUEUE) {
 			u64 top = (trace->io->sector << 9) + trace->io->bytes;
 			slot = (int)(top / bytes_per_bucket);
 			hits[slot]++;
