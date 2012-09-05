@@ -69,7 +69,7 @@ static char line[1024];
 static int final_height = 0;
 static int final_width = 0;
 
-struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
+struct graph_line_data *alloc_line_data(int max_seconds, int stop_seconds)
 {
 	int size = sizeof(struct graph_line_data) + (stop_seconds + 1) * sizeof(struct graph_line_pair);
 	struct graph_line_data *gld;
@@ -79,7 +79,7 @@ struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
-	gld->seconds = seconds;
+	gld->max_seconds = max_seconds;
 	gld->stop_seconds = stop_seconds;
 	return gld;
 }
@@ -90,7 +90,7 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int seconds, u64 min_offset, u64 max_offset, int stop_seconds)
+struct graph_dot_data *alloc_dot_data(int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds)
 {
 	int size;
 	int arr_size;
@@ -111,7 +111,7 @@ struct graph_dot_data *alloc_dot_data(int seconds, u64 min_offset, u64 max_offse
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
-	gdd->seconds = seconds;
+	gdd->max_seconds = max_seconds;
 	gdd->stop_seconds = stop_seconds;
 	gdd->rows = rows;
 	gdd->cols = cols;
@@ -128,7 +128,7 @@ void free_dot_data(struct graph_dot_data *gdd)
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
 	double bytes_per_row = (double)(gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
-	double secs_per_col = (double)gdd->seconds / gdd->cols;
+	double secs_per_col = (double)gdd->max_seconds / gdd->cols;
 	double col;
 	double row;
 	int col_int;
@@ -706,7 +706,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	int fd = plot->fd;
 	char *start = "<path d=\"";
 	double yscale = ((double)gld->max) / graph_height;
-	double xscale = (double)(gld->seconds - 1) / graph_width;
+	double xscale = (double)(gld->max_seconds - 1) / graph_width;
 	char c = 'M';
 	double x;
 	int printed_header = 0;

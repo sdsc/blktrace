@@ -638,8 +638,8 @@ void add_tput(struct trace *trace, struct graph_line_data *gld)
 		return;
 
 	seconds = SECONDS(io->time);
-	if (seconds > gld->seconds) {
-		fprintf(stderr, "Bad record %d %d %d\n", seconds, gld->seconds, action);
+	if (seconds > gld->max_seconds) {
+		fprintf(stderr, "Bad record %d %d %d\n", seconds, gld->max_seconds, action);
 		abort();
 	}
 
@@ -685,8 +685,8 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 		return;
 
 	seconds = SECONDS(io->time);
-	if (seconds > gld->seconds) {
-		fprintf(stderr, "Bad record %d %d\n", seconds, gld->seconds);
+	if (seconds > gld->max_seconds) {
+		fprintf(stderr, "Bad record %d %d\n", seconds, gld->max_seconds);
 		abort();
 	}
 
@@ -759,8 +759,8 @@ void add_iop(struct trace *trace, struct graph_line_data *gld)
 		return;
 
 	seconds = SECONDS(io->time);
-	if (seconds > gld->seconds) {
-		fprintf(stderr, "Bad record %d %d\n", seconds, gld->seconds);
+	if (seconds > gld->max_seconds) {
+		fprintf(stderr, "Bad record %d %d\n", seconds, gld->max_seconds);
 		abort();
 	}
 
