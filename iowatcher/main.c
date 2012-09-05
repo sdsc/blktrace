@@ -161,8 +161,9 @@ struct trace_file {
 	char *filename;
 	char *label;
 	struct trace *trace;
-	int max_seconds;
-	int stop_seconds;
+	int stop_seconds;	/* Time when trace stops */
+	int min_seconds;	/* Beginning of the interval we should plot */
+	int max_seconds;	/* End of the interval we should plot */
 	u64 min_offset;
 	u64 max_offset;
 
@@ -176,6 +177,7 @@ struct trace_file {
 	struct graph_dot_data *gdd_writes;
 	struct graph_dot_data *gdd_reads;
 
+	int mpstat_min_seconds;
 	int mpstat_max_seconds;
 	int mpstat_stop_seconds;
 	struct graph_line_data **mpstat_gld;
@@ -280,12 +282,12 @@ static void setup_trace_file_graphs(void)
 	int i;
 
 	list_for_each_entry(tf, &all_traces, list) {
-		tf->tput_gld = alloc_line_data(tf->max_seconds, tf->stop_seconds);
-		tf->latency_gld = alloc_line_data(tf->max_seconds, tf->stop_seconds);
-		tf->queue_depth_gld = alloc_line_data(tf->max_seconds, tf->stop_seconds);
-		tf->iop_gld = alloc_line_data(tf->max_seconds, tf->stop_seconds);
-		tf->gdd_writes = alloc_dot_data(tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
-		tf->gdd_reads = alloc_dot_data(tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
+		tf->tput_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->latency_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->queue_depth_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->iop_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->gdd_writes = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
+		tf->gdd_reads = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
 
 		if (tf->trace->mpstat_num_cpus == 0)
 			continue;
@@ -293,7 +295,8 @@ static void setup_trace_file_graphs(void)
 		alloc_mpstat_gld(tf);
 		for (i = 0; i < (tf->trace->mpstat_num_cpus + 1) * MPSTAT_GRAPHS; i++) {
 			tf->mpstat_gld[i] =
-				alloc_line_data(tf->mpstat_max_seconds,
+				alloc_line_data(tf->mpstat_min_seconds,
+						tf->mpstat_max_seconds,
 						tf->mpstat_max_seconds);
 			tf->mpstat_gld[i]->max = 100;
 		}
@@ -462,11 +465,12 @@ static void compare_minmax_tf(struct trace_file *tf, int *max_seconds, u64 *min_
 		*min_offset = tf->min_offset;
 }
 
-static void set_all_minmax_tf(int max_seconds, u64 min_offset, u64 max_offset)
+static void set_all_minmax_tf(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 
 	list_for_each_entry(tf, &all_traces, list) {
+		tf->min_seconds = min_seconds;
 		tf->max_seconds = max_seconds;
 		tf->min_offset = min_offset;
 		tf->max_offset = max_offset;
@@ -550,7 +554,7 @@ static void free_all_plot_history(struct list_head *head)
 	}
 }
 
-static void plot_io(struct plot *plot, int max_seconds, u64 min_offset, u64 max_offset)
+static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 
@@ -565,7 +569,7 @@ static void plot_io(struct plot *plot, int max_seconds, u64 min_offset, u64 max_
 	set_ylabel(plot, "Offset (MB)");
 	set_yticks(plot, 4, min_offset / (1024 * 1024),
 		   max_offset / (1024 * 1024), "");
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		char *label = tf->label;
@@ -587,7 +591,7 @@ static void plot_io(struct plot *plot, int max_seconds, u64 min_offset, u64 max_
 	close_plot(plot);
 }
 
-static void plot_tput(struct plot *plot, int max_seconds)
+static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -615,7 +619,7 @@ static void plot_tput(struct plot *plot, int max_seconds)
 	sprintf(line, "%sB/s", units);
 	set_ylabel(plot, line);
 	set_yticks(plot, 4, 0, max, "");
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		svg_line_graph(plot, tf->tput_gld, tf->read_color, 0, 0);
@@ -668,17 +672,19 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 
 	set_yticks(plot, 4, 0, tf->mpstat_gld[gld_index]->max, "");
 	set_ylabel(plot, "Percent");
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, tf->mpstat_min_seconds, max_seconds);
 
 	cpu_color_index = 0;
 	list_for_each_entry(tf, &all_traces, list) {
-		for (i = 0; i < tf->mpstat_gld[0]->stop_seconds; i++) {
+		for (i = tf->mpstat_gld[0]->min_seconds;
+		     i < tf->mpstat_gld[0]->stop_seconds; i++) {
 			if (tf->mpstat_gld[gld_index]->data[i].count) {
 				avg += (tf->mpstat_gld[gld_index]->data[i].sum /
 					tf->mpstat_gld[gld_index]->data[i].count);
 			}
 		}
-		avg /= tf->mpstat_gld[gld_index]->stop_seconds;
+		avg /= tf->mpstat_gld[gld_index]->stop_seconds -
+		       tf->mpstat_gld[gld_index]->min_seconds;
 		color = pick_cpu_color();
 		svg_line_graph(plot, tf->mpstat_gld[0], color, 0, 0);
 		svg_add_legend(plot, tf->label, " avg", color);
@@ -687,16 +693,18 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 			struct graph_line_data *gld = tf->mpstat_gld[i * MPSTAT_GRAPHS + gld_index];
 			double this_avg = 0;
 
-			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++) {
+			for (gld_i = gld->min_seconds;
+			     gld_i < gld->stop_seconds; gld_i++) {
 				if (gld->data[i].count) {
 					this_avg += gld->data[i].sum /
 						gld->data[i].count;
 				}
 			}
 
-			this_avg /= gld->stop_seconds;
+			this_avg /= gld->stop_seconds - gld->min_seconds;
 
-			for (gld_i = 0; gld_i < gld->stop_seconds; gld_i++) {
+			for (gld_i = gld->min_seconds;
+			     gld_i < gld->stop_seconds; gld_i++) {
 				double val;
 
 				if (gld->data[gld_i].count == 0)
@@ -728,7 +736,7 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 	total_graphs_written++;
 }
 
-static void plot_queue_depth(struct plot *plot, int max_seconds)
+static void plot_queue_depth(struct plot *plot, int min_seconds, int max_seconds)
 {
 	struct trace_file *tf;
 
@@ -743,7 +751,7 @@ static void plot_queue_depth(struct plot *plot, int max_seconds)
 	tf = list_entry(all_traces.next, struct trace_file, list);
 	set_ylabel(plot, "Pending IO");
 	set_yticks(plot, 4, 0, tf->queue_depth_gld->max, "");
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color, 0, 0);
@@ -824,13 +832,15 @@ static void plot_io_movie(struct plot *plot)
 			set_graph_size(cols / graph_width_factor, rows / 8);
 			plot->timeline = i / graph_width_factor;
 
-			plot_tput(plot, tf->gdd_reads->max_seconds);
+			plot_tput(plot, tf->gdd_reads->min_seconds,
+				  tf->gdd_reads->max_seconds);
 
 			plot_cpu(plot, tf->gdd_reads->max_seconds,
 				   "CPU System Time", CPU_SYS_GRAPH_INDEX, MPSTAT_SYS);
 
 			plot->direction = PLOT_ACROSS;
-			plot_queue_depth(plot, tf->gdd_reads->max_seconds);
+			plot_queue_depth(plot, tf->gdd_reads->min_seconds,
+					 tf->gdd_reads->max_seconds);
 
 			/* movie graph starts here */
 			plot->start_y_offset = orig_y_offset;
@@ -885,7 +895,7 @@ static void plot_io_movie(struct plot *plot)
 	free(movie_dir);
 }
 
-static void plot_latency(struct plot *plot, int max_seconds)
+static void plot_latency(struct plot *plot, int min_seconds, int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -913,7 +923,7 @@ static void plot_latency(struct plot *plot, int max_seconds)
 	sprintf(line, "latency (%ss)", units);
 	set_ylabel(plot, line);
 	set_yticks(plot, 4, 0, max, "");
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		svg_line_graph(plot, tf->latency_gld, tf->read_color, 0, 0);
@@ -929,7 +939,7 @@ static void plot_latency(struct plot *plot, int max_seconds)
 	total_graphs_written++;
 }
 
-static void plot_iops(struct plot *plot, int max_seconds)
+static void plot_iops(struct plot *plot, int min_seconds, int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -957,7 +967,7 @@ static void plot_iops(struct plot *plot, int max_seconds)
 	set_ylabel(plot, "IO/s");
 
 	set_yticks(plot, 4, 0, max, units);
-	set_xticks(plot, num_xticks, 0, max_seconds);
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		svg_line_graph(plot, tf->iop_gld, tf->read_color, 0, 0);
@@ -1124,6 +1134,7 @@ static int parse_options(int ac, char **av)
 int main(int ac, char **av)
 {
 	struct plot *plot;
+	int min_seconds = 0;
 	int max_seconds = 0;
 	u64 max_offset = 0;
 	u64 min_offset = ~(u64)0;
@@ -1194,7 +1205,7 @@ int main(int ac, char **av)
 	list_for_each_entry(tf, &all_traces, list)
 		compare_minmax_tf(tf, &max_seconds, &min_offset, &max_offset);
 	/* push the max we found into all the tfs */
-	set_all_minmax_tf(max_seconds, min_offset, max_offset);
+	set_all_minmax_tf(min_seconds, max_seconds, min_offset, max_offset);
 
 	/* alloc graphing structs for all the traces */
 	setup_trace_file_graphs();
@@ -1223,7 +1234,7 @@ int main(int ac, char **av)
 		plot->add_xlabel = 1;
 	set_plot_title(plot, graph_title);
 
-	plot_io(plot, max_seconds, min_offset, max_offset);
+	plot_io(plot, min_seconds, max_seconds, min_offset, max_offset);
 	plot->add_xlabel = 0;
 
 	if (columns > 1) {
@@ -1234,7 +1245,7 @@ int main(int ac, char **av)
 	}
 
 	check_plot_columns(plot, TPUT_GRAPH_INDEX);
-	plot_tput(plot, max_seconds);
+	plot_tput(plot, min_seconds, max_seconds);
 
 	check_plot_columns(plot, CPU_IO_GRAPH_INDEX);
 	plot_cpu(plot, max_seconds, "CPU IO Wait Time",
@@ -1257,13 +1268,13 @@ int main(int ac, char **av)
 		 CPU_USER_GRAPH_INDEX, MPSTAT_USER);
 
 	check_plot_columns(plot, LATENCY_GRAPH_INDEX);
-	plot_latency(plot, max_seconds);
+	plot_latency(plot, min_seconds, max_seconds);
 
 	check_plot_columns(plot, QUEUE_DEPTH_GRAPH_INDEX);
-	plot_queue_depth(plot, max_seconds);
+	plot_queue_depth(plot, min_seconds, max_seconds);
 
 	check_plot_columns(plot, IOPS_GRAPH_INDEX);
-	plot_iops(plot, max_seconds);
+	plot_iops(plot, min_seconds, max_seconds);
 
 	/* once for all */
 	close_plot(plot);

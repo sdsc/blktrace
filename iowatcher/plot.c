@@ -69,7 +69,7 @@ static char line[1024];
 static int final_height = 0;
 static int final_width = 0;
 
-struct graph_line_data *alloc_line_data(int max_seconds, int stop_seconds)
+struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds)
 {
 	int size = sizeof(struct graph_line_data) + (stop_seconds + 1) * sizeof(struct graph_line_pair);
 	struct graph_line_data *gld;
@@ -79,6 +79,7 @@ struct graph_line_data *alloc_line_data(int max_seconds, int stop_seconds)
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
+	gld->min_seconds = min_seconds;
 	gld->max_seconds = max_seconds;
 	gld->stop_seconds = stop_seconds;
 	return gld;
@@ -90,7 +91,7 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds)
+struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds)
 {
 	int size;
 	int arr_size;
@@ -111,6 +112,7 @@ struct graph_dot_data *alloc_dot_data(int max_seconds, u64 min_offset, u64 max_o
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
+	gdd->min_seconds = min_seconds;
 	gdd->max_seconds = max_seconds;
 	gdd->stop_seconds = stop_seconds;
 	gdd->rows = rows;
@@ -128,7 +130,7 @@ void free_dot_data(struct graph_dot_data *gdd)
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
 	double bytes_per_row = (double)(gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
-	double secs_per_col = (double)gdd->max_seconds / gdd->cols;
+	double secs_per_col = (double)(gdd->max_seconds - gdd->min_seconds) / gdd->cols;
 	double col;
 	double row;
 	int col_int;
@@ -145,7 +147,7 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 	time = time / 1000000000.0;
 	while (bytes > 0) {
 		row = (double)(offset - gdd->min_offset) / bytes_per_row;
-		col = time / secs_per_col;
+		col = (time - gdd->min_seconds) / secs_per_col;
 
 		col_int = floor(col);
 		row_int = floor(row);
@@ -485,7 +487,8 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 		if (!tick_only) {
 			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
 				"fill=\"black\" style=\"text-anchor: %s\">%d</text>\n",
-				tick_x, text_y, font_family, tick_font_size, anchor, step * i);
+				tick_x, text_y, font_family, tick_font_size, anchor,
+				first + step * i);
 			write(plot->fd, line, strlen(line));
 		}
 		tick_x += pixels_per_tick;
@@ -706,7 +709,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	int fd = plot->fd;
 	char *start = "<path d=\"";
 	double yscale = ((double)gld->max) / graph_height;
-	double xscale = (double)(gld->max_seconds - 1) / graph_width;
+	double xscale = (double)(gld->max_seconds - gld->min_seconds - 1) / graph_width;
 	char c = 'M';
 	double x;
 	int printed_header = 0;
@@ -717,9 +720,9 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	else if (rolling_avg_secs)
 		rolling = rolling_avg_secs;
 	else
-		rolling = gld->stop_seconds / 25;
+		rolling = (gld->stop_seconds - gld->min_seconds) / 25;
 
-	for (i = 0; i < gld->stop_seconds; i++) {
+	for (i = gld->min_seconds; i < gld->stop_seconds; i++) {
 		avg = rolling_avg(gld->data, i, rolling);
 		if (yscale == 0)
 			val = 0;
@@ -731,7 +734,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 		if (val < 0)
 			val = 0;
 
-		x = (double)i / xscale;
+		x = (double)(i - gld->min_seconds) / xscale;
 		if (!thresh1 && !thresh2) {
 
 			if (!printed_header) {
