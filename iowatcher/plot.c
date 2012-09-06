@@ -455,14 +455,34 @@ void set_plot_title(struct plot *plot, char *title)
 	write(fd, line, len);
 }
 
+#define TICK_MINI_STEPS 3
+
+static double find_step(double first, double last, int num_ticks)
+{
+	int mini_step[TICK_MINI_STEPS] = { 1, 2, 5 };
+	int cur_mini_step = 0;
+	double step = (last - first) / num_ticks;
+	double log10 = log(10);
+
+	/* Round to power of 10 */
+	step = exp(floor(log(step) / log10) * log10);
+	/* Scale down step to provide enough ticks */
+	while ((last - first) / (step * mini_step[cur_mini_step]) > num_ticks
+	       && cur_mini_step < TICK_MINI_STEPS)
+		cur_mini_step++;
+	step *= mini_step[cur_mini_step - 1];
+
+	return step;
+}
+
 /*
  * create evenly spread out ticks along the xaxis.  if tick only is set
  * this just makes the ticks, otherwise it labels each tick as it goes
  */
 void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 {
-	int pixels_per_tick = graph_width / num_ticks;
-	int step = (last - first) / num_ticks;
+	int pixels_per_tick;
+	double step;
 	int i;
 	int tick_y = axis_y_off(graph_tick_len) + graph_inner_y_margin;
 	int tick_x = axis_x();
@@ -472,6 +492,14 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 
 	char *middle = "middle";
 	char *start = "start";
+
+	step = find_step(first, last, num_ticks);
+	/*
+	 * We don't want last two ticks to be too close together so subtract
+	 * 20% of the step from the interval
+	 */
+	num_ticks = (double)(last - first - step / 5) / step + 1;
+	pixels_per_tick = graph_width * step / (double)(last - first);
 
 	for (i = 0; i < num_ticks; i++) {
 		char *anchor;
@@ -485,20 +513,32 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 		}
 
 		if (!tick_only) {
-			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
-				"fill=\"black\" style=\"text-anchor: %s\">%d</text>\n",
-				tick_x, text_y, font_family, tick_font_size, anchor,
-				first + step * i);
+			if (step >= 1)
+				snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+					"fill=\"black\" style=\"text-anchor: %s\">%d</text>\n",
+					tick_x, text_y, font_family, tick_font_size, anchor,
+					(int)(first + step * i));
+			else
+				snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+					"fill=\"black\" style=\"text-anchor: %s\">%.2f</text>\n",
+					tick_x, text_y, font_family, tick_font_size, anchor,
+					first + step * i);
 			write(plot->fd, line, strlen(line));
 		}
 		tick_x += pixels_per_tick;
 	}
 
 	if (!tick_only) {
-		snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
-			"fill=\"black\" style=\"text-anchor: middle\">%d</text>\n",
-			axis_x_off(graph_width - 2),
-			text_y, font_family, tick_font_size, last);
+		if (step >= 1)
+			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+				"fill=\"black\" style=\"text-anchor: middle\">%d</text>\n",
+				axis_x_off(graph_width - 2),
+				text_y, font_family, tick_font_size, last);
+		else
+			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+				"fill=\"black\" style=\"text-anchor: middle\">%.2f</text>\n",
+				axis_x_off(graph_width - 2),
+				text_y, font_family, tick_font_size, (double)last);
 		write(plot->fd, line, strlen(line));
 	}
 }
