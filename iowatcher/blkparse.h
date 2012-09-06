@@ -67,6 +67,7 @@ void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret,
 			  u64 *max_bank_ret, u64 *max_offset_ret);
 int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 		    u64 *yzoom_min, u64 *yzoom_max);
+int action_char_to_num(char action);
 void add_iop(struct trace *trace, struct graph_line_data *gld);
 void check_record(struct trace *trace);
 void add_completed_io(struct trace *trace,

@@ -59,6 +59,8 @@ static double max_time = DBL_MAX;
 static unsigned long long min_mb = 0;
 static unsigned long long max_mb = ULLONG_MAX >> 20;
 
+int plot_io_action = 0;
+
 /*
  * this doesn't include the IO graph,
  * but it counts the other graphs as they go out
@@ -1025,7 +1027,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:";
+char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:a:";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1042,6 +1044,7 @@ static struct option long_options[] = {
 	{"height", required_argument, 0, 'h'},
 	{"xzoom", required_argument, 0, 'x'},
 	{"yzoom", required_argument, 0, 'y'},
+	{"io-plot-action", required_argument, 0, 'a'},
 	{"help", no_argument, 0, HELP_LONG_OPT},
 	{0, 0, 0, 0}
 };
@@ -1065,6 +1068,7 @@ static void print_usage(void)
 		"\t-c (--columns): numbers of columns in graph output\n"
 		"\t-x (--xzoom): limit processed time to min:max\n"
 		"\t-y (--yzoom): limit processed sectors to min:max\n"
+		"\t-a (--io-plot-action): plot given action (one of Q,D,C) in IO graph\n"
 	       );
 	exit(1);
 }
@@ -1213,6 +1217,16 @@ static int parse_options(int ac, char **av)
 					" Maximum is %llu.\n", ULLONG_MAX >> 20);
 				exit(1);
 			}
+			break;
+		case 'a':
+			if (strlen(optarg) != 1) {
+action_err:
+				fprintf(stderr, "Action must be one of Q, D, C.");
+				exit(1);
+			}
+			plot_io_action = action_char_to_num(optarg[0]);
+			if (plot_io_action < 0)
+				goto action_err;
 			break;
 		case '?':
 		case HELP_LONG_OPT:

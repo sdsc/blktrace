@@ -41,6 +41,7 @@
 static struct list_head io_hash_table[IO_HASH_TABLE_SIZE];
 static u64 ios_in_flight = 0;
 
+extern int plot_io_action;
 
 /*
  * Trace categories
@@ -613,8 +614,23 @@ static inline int tput_event(struct trace *trace)
 	return __BLK_TA_COMPLETE;
 }
 
+int action_char_to_num(char action)
+{
+	switch (action) {
+	case 'Q':
+		return __BLK_TA_QUEUE;
+	case 'D':
+		return __BLK_TA_ISSUE;
+	case 'C':
+		return __BLK_TA_COMPLETE;
+	}
+	return -1;
+}
+
 static inline int io_event(struct trace *trace)
 {
+	if (plot_io_action)
+		return plot_io_action;
 	if (trace->found_queue)
 		return __BLK_TA_QUEUE;
 	if (trace->found_issue)
