@@ -69,6 +69,49 @@ static char line[1024];
 static int final_height = 0;
 static int final_width = 0;
 
+static char *colors[] = {
+	"blue", "darkgreen",
+	"red", "aqua",
+	"orange", "darkviolet",
+	"brown", "#00FF00",
+	"yellow", "coral",
+	"black", "darkred",
+	"fuchsia", "crimson",
+	NULL };
+
+extern unsigned int longest_proc_name;
+
+char *pick_color(void)
+{
+	static int color_index;
+	char *ret = colors[color_index];
+
+	if (!ret) {
+		color_index = 0;
+		ret = colors[color_index];
+	}
+	color_index++;
+	return ret;
+}
+
+static int cpu_color_index;
+
+char *pick_cpu_color(void)
+{
+	char *ret = colors[cpu_color_index];
+	if (!ret) {
+		cpu_color_index = 0;
+		ret = colors[cpu_color_index];
+	}
+	cpu_color_index++;
+	return ret;
+}
+
+void reset_cpu_color(void)
+{
+	cpu_color_index = 0;
+}
+
 struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds)
 {
 	int size = sizeof(struct graph_line_data) + (stop_seconds + 1) * sizeof(struct graph_line_pair);
@@ -91,7 +134,7 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds)
+struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds, char *color, char *label)
 {
 	int size;
 	int arr_size;
@@ -119,6 +162,12 @@ struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_
 	gdd->cols = cols;
 	gdd->min_offset = min_offset;
 	gdd->max_offset = max_offset;
+	gdd->color = color;
+	gdd->label = label;
+
+	if (strlen(label) > longest_proc_name)
+		longest_proc_name = strlen(label);
+
 	return gdd;
 }
 
@@ -838,18 +887,18 @@ static int svg_add_io(int fd, double row, double col, double width, double heigh
 	return write(fd, line, strlen(line));
 }
 
-int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph)
+int svg_io_graph_movie_array(struct plot *plot, struct pid_plot_history *pph)
 {
 	double cell_index;
 	double movie_row;
 	double movie_col;
 	int i;
 
-	for (i = 0; i < ph->num_used; i++) {
-		cell_index = ph->history[i];
+	for (i = 0; i < pph->num_used; i++) {
+		cell_index = pph->history[i];
 		movie_row = floor(cell_index / graph_width);
 		movie_col = cell_index - movie_row * graph_width;
-		svg_add_io(plot->fd, movie_row, movie_col, 4, 4, ph->color);
+		svg_add_io(plot->fd, movie_row, movie_col, 4, 4, pph->color);
 	}
 	return 0;
 }
@@ -861,7 +910,7 @@ void rewind_spindle_steps(int num)
 	spindle_steps -= num * 0.01;
 }
 
-int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph)
+int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history *pph)
 {
 	double cell_index;
 	int i;
@@ -901,11 +950,11 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph)
 
 	radius = floor(radius / 2);
 	num_circles = radius / 4 - 3;
-	cells_per_circle = ph->history_max / num_circles;
+	cells_per_circle = pph->history_max / num_circles;
 	degrees_per_cell = 360 / cells_per_circle;
 
-	for (i = 0; i < ph->num_used; i++) {
-		cell_index = ph->history[i];
+	for (i = 0; i < pph->num_used; i++) {
+		cell_index = pph->history[i];
 		circle_num = floor(cell_index / cells_per_circle);
 		rot = cell_index - circle_num * cells_per_circle;
 		circle_num = num_circles - circle_num;
@@ -918,29 +967,29 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph)
 			 "stroke=\"%s\" stroke-width=\"4\"/>\n",
 			 rot, center_x, center_y,
 			 axis_x_off_double(graph_width_extra / 2 + radius) + 8, center_y,
-			 radius, radius, ph->color);
+			 radius, radius, pph->color);
 
 		write(plot->fd, line, strlen(line));
 	}
 	return 0;
 }
 
-static int add_plot_history(struct plot_history *ph, double val)
+static int add_plot_history(struct pid_plot_history *pph, double val)
 {
-	if (ph->num_used == ph->history_len) {
-		ph->history = realloc(ph->history,
-				      (ph->history_len + 4096) * sizeof(double));
-		if (!ph->history) {
+	if (pph->num_used == pph->history_len) {
+		pph->history_len += 4096;
+		pph->history = realloc(pph->history,
+				       pph->history_len * sizeof(double));
+		if (!pph->history) {
 			perror("Unable to allocate memory");
 			exit(1);
 		}
-		ph->history_len += 4096;
 	}
-	ph->history[ph->num_used++] = val;
+	pph->history[pph->num_used++] = val;
 	return 0;
 }
 
-int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int col)
+int svg_io_graph_movie(struct graph_dot_data *gdd, struct pid_plot_history *pph, int col)
 {
 	int row = 0;
 	int arr_index;
@@ -953,7 +1002,7 @@ int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int 
 	int margin_orig = graph_inner_y_margin;
 
 	graph_inner_y_margin += 5;
-	ph->history_max = (gdd->max_offset - gdd->min_offset + 1) / movie_blocks_per_cell;
+	pph->history_max = (gdd->max_offset - gdd->min_offset + 1) / movie_blocks_per_cell;
 
 	for (row = gdd->rows - 1; row >= 0; row--) {
 		bit_index = row * gdd->cols + col;
@@ -970,14 +1019,14 @@ int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int 
 			/* a cell number in the graph */
 			cell_index /= movie_blocks_per_cell;
 
-			add_plot_history(ph, cell_index);
+			add_plot_history(pph, cell_index);
 		}
 	}
 	graph_inner_y_margin = margin_orig;
 	return 0;
 }
 
-int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color)
+int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd)
 {
 	int fd = plot->fd;;
 	int col = 0;
@@ -997,7 +1046,7 @@ int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color)
 				continue;
 			val = gdd->data[arr_index];
 			if (val & (1 << bit_mod))
-				svg_add_io(fd, floor(row / io_graph_scale), col, 1.5, 1.5, color);
+				svg_add_io(fd, floor(row / io_graph_scale), col, 1.5, 1.5, gdd->color);
 		}
 	}
 	return 0;

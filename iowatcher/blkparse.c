@@ -41,7 +41,12 @@
 static struct list_head io_hash_table[IO_HASH_TABLE_SIZE];
 static u64 ios_in_flight = 0;
 
+#define PROCESS_HASH_TABLE_BITS 7
+#define PROCESS_HASH_TABLE_SIZE (1 << PROCESS_HASH_TABLE_BITS)
+static struct list_head process_hash_table[PROCESS_HASH_TABLE_SIZE];
+
 extern int plot_io_action;
+extern int io_per_process;
 
 /*
  * Trace categories
@@ -158,6 +163,15 @@ struct pending_io {
 	/* time this IO was finished */
 	u64 completion_time;
 	struct list_head hash_list;
+	/* process which queued this IO */
+	u32 pid;
+};
+
+struct pid_map {
+	struct list_head hash_list;
+	u32 pid;
+	int index;
+	char name[0];
 };
 
 #define MINORBITS 20
@@ -202,7 +216,7 @@ static inline u64 hash_sector(u64 val)
 	return hash >> (64 - IO_HASH_TABLE_BITS);
 }
 
-static int hash_table_insert(struct pending_io *ins_pio)
+static int io_hash_table_insert(struct pending_io *ins_pio)
 {
 	u64 sector = ins_pio->sector;
 	int slot = hash_sector(sector);
@@ -218,7 +232,7 @@ static int hash_table_insert(struct pending_io *ins_pio)
 	return 0;
 }
 
-static struct pending_io *hash_table_search(u64 sector)
+static struct pending_io *io_hash_table_search(u64 sector)
 {
 	int slot = hash_sector(sector);
 	struct list_head *head;
@@ -232,32 +246,111 @@ static struct pending_io *hash_table_search(u64 sector)
 	return NULL;
 }
 
-static int hash_dispatched_io(struct blk_io_trace *io)
+static int hash_queued_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 	int ret;
 
 	pio = calloc(1, sizeof(*pio));
 	pio->sector = io->sector;
-	pio->dispatch_time = io->time;
+	pio->pid = io->pid;
 
-	ret = hash_table_insert(pio);
-	if (ret == -EEXIST) {
-		/* crud, the IO isn't here */
+	ret = io_hash_table_insert(pio);
+	if (ret < 0) {
+		/* crud, the IO is there already */
 		free(pio);
+		return ret;
 	}
-	return ret;
+	return 0;
+}
+
+static int hash_dispatched_io(struct blk_io_trace *io)
+{
+	struct pending_io *pio;
+
+	pio = io_hash_table_search(io->sector);
+	if (!pio) {
+		/* crud, the IO isn't here */
+		return -EEXIST;
+	}
+	pio->dispatch_time = io->time;
+	return 0;
 }
 
 static struct pending_io *hash_completed_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 
-	pio = hash_table_search(io->sector);
+	pio = io_hash_table_search(io->sector);
 
 	if (!pio)
 		return NULL;
 	return pio;
+}
+
+void init_process_hash_table(void)
+{
+	int i;
+	struct list_head *head;
+
+	for (i = 0; i < PROCESS_HASH_TABLE_SIZE; i++) {
+		head = process_hash_table + i;
+		INIT_LIST_HEAD(head);
+	}
+}
+
+static u32 hash_pid(u32 pid)
+{
+	u32 hash = pid;
+
+	hash ^= pid >> 3;
+	hash ^= pid >> 3;
+	hash ^= pid >> 4;
+	hash ^= pid >> 6;
+	return (hash & (PROCESS_HASH_TABLE_SIZE - 1));
+}
+
+static struct pid_map *process_hash_search(u32 pid)
+{
+	int slot = hash_pid(pid);
+	struct list_head *head;
+	struct pid_map *pm;
+
+	head = process_hash_table + slot;
+	list_for_each_entry(pm, head, hash_list) {
+		if (pm->pid == pid)
+			return pm;
+	}
+	return NULL;
+}
+
+static struct pid_map *process_hash_insert(u32 pid, char *name)
+{
+	int slot = hash_pid(pid);
+	struct pid_map *pm;
+	int old_index = 0;
+	char buf[16];
+
+	pm = process_hash_search(pid);
+	if (pm) {
+		/* Entry exists and name shouldn't be changed? */
+		if (!name || !strcmp(name, pm->name))
+			return pm;
+		list_del(&pm->hash_list);
+		old_index = pm->index;
+		free(pm);
+	}
+	if (!name) {
+		sprintf(buf, "[%u]", pid);
+		name = buf;
+	}
+	pm = malloc(sizeof(struct pid_map) + strlen(name) + 1);
+	pm->pid = pid;
+	pm->index = old_index;
+	strcpy(pm->name, name);
+	list_add_tail(&pm->hash_list, process_hash_table + slot);
+
+	return pm;
 }
 
 static void handle_notify(struct trace *trace)
@@ -266,6 +359,11 @@ static void handle_notify(struct trace *trace)
 	void *payload = (char *)io + sizeof(*io);
 	u32 two32[2];
 
+	if (io->action == BLK_TN_PROCESS) {
+		if (io_per_process)
+			process_hash_insert(io->pid, payload);
+		return;
+	}
 
 	if (io->action != BLK_TN_TIMESTAMP)
 		return;
@@ -663,12 +761,49 @@ void add_tput(struct trace *trace, struct graph_line_data *gld)
 		gld->max = gld->data[seconds].sum;
 }
 
-void add_io(struct trace *trace, struct graph_dot_data *gdd_writes,
-	    struct graph_dot_data *gdd_reads)
+#define GDD_PTR_ALLOC_STEP 16
+
+static struct pid_map *get_pid_map(struct trace_file *tf, u32 pid)
+{
+	struct pid_map *pm;
+
+	if (!io_per_process) {
+		if (!tf->io_plots)
+			tf->io_plots = 1;
+		return NULL;
+	}
+
+	pm = process_hash_insert(pid, NULL);
+	/* New entry? */
+	if (!pm->index) {
+		if (tf->io_plots == tf->io_plots_allocated) {
+			tf->io_plots_allocated += GDD_PTR_ALLOC_STEP;
+			tf->gdd_reads = realloc(tf->gdd_reads, tf->io_plots_allocated * sizeof(struct graph_dot_data *));
+			if (!tf->gdd_reads)
+				abort();
+			tf->gdd_writes = realloc(tf->gdd_writes, tf->io_plots_allocated * sizeof(struct graph_dot_data *));
+			if (!tf->gdd_writes)
+				abort();
+			memset(tf->gdd_reads + tf->io_plots_allocated - GDD_PTR_ALLOC_STEP,
+			       0, GDD_PTR_ALLOC_STEP * sizeof(struct graph_dot_data *));
+			memset(tf->gdd_writes + tf->io_plots_allocated - GDD_PTR_ALLOC_STEP,
+			       0, GDD_PTR_ALLOC_STEP * sizeof(struct graph_dot_data *));
+		}
+		pm->index = tf->io_plots++;
+
+		return pm;
+	}
+	return pm;
+}
+
+void add_io(struct trace *trace, struct trace_file *tf)
 {
 	struct blk_io_trace *io = trace->io;
 	int action = io->action & BLK_TA_MASK;
 	u64 offset;
+	int index;
+	char *label;
+	struct pid_map *pm;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
 		return;
@@ -678,10 +813,23 @@ void add_io(struct trace *trace, struct graph_dot_data *gdd_writes,
 
 	offset = io->sector << 9;
 
-	if (BLK_DATADIR(io->action) & BLK_TC_READ)
-		set_gdd_bit(gdd_reads, offset, io->bytes, io->time);
-	else if (BLK_DATADIR(io->action) & BLK_TC_WRITE)
-		set_gdd_bit(gdd_writes, offset, io->bytes, io->time);
+	pm = get_pid_map(tf, io->pid);
+	if (!pm) {
+		index = 0;
+		label = "";
+	} else {
+		index = pm->index;
+		label = pm->name;
+	}
+	if (BLK_DATADIR(io->action) & BLK_TC_READ) {
+		if (!tf->gdd_reads[index])
+			tf->gdd_reads[index] = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds, pick_color(), strdup(label));
+		set_gdd_bit(tf->gdd_reads[index], offset, io->bytes, io->time);
+	} else if (BLK_DATADIR(io->action) & BLK_TC_WRITE) {
+		if (!tf->gdd_writes[index])
+			tf->gdd_writes[index] = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds, pick_color(), strdup(label));
+		set_gdd_bit(tf->gdd_writes[index], offset, io->bytes, io->time);
+	}
 }
 
 void add_pending_io(struct trace *trace, struct graph_line_data *gld)
@@ -695,6 +843,10 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
 		return;
 
+	if (action == __BLK_TA_QUEUE) {
+		hash_queued_io(trace->io);
+		return;
+	}
 	if (action != __BLK_TA_ISSUE)
 		return;
 

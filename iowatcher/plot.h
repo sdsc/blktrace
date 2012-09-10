@@ -109,25 +109,37 @@ struct graph_dot_data {
 	/* label for the legend */
 	char *label;
 
+	/* color for plotting data */
+	char *color;
+
 	/* bitmap, one bit for each cell to light up */
 	unsigned char data[];
 };
 
-struct plot_history {
-	struct list_head list;
+struct pid_plot_history {
 	double history_max;
 	int history_len;
 	int num_used;
-	int col;
 	char *color;
 	double *history;
 };
 
-int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color);
+struct plot_history {
+	struct list_head list;
+	int pid_history_count;
+	int col;
+	struct pid_plot_history **read_pid_history;
+	struct pid_plot_history **write_pid_history;
+};
+
+char *pick_color(void);
+char *pick_cpu_color(void);
+void reset_cpu_color(void);
+int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd);
 int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2);
 struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds);
 void free_line_data(struct graph_line_data *gld);
-struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds);
+struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds, char *color, char *label);
 void free_dot_data(struct graph_dot_data *gdd);
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time);
 void print_gdd(struct graph_dot_data *gdd);
@@ -156,13 +168,13 @@ void set_io_graph_scale(int scale);
 void set_plot_output(struct plot *plot, char *filename);
 void set_graph_size(int width, int height);
 void get_graph_size(int *width, int *height);
-int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int col);
-int svg_io_graph_movie_array(struct plot *plot, struct plot_history *ph);
+int svg_io_graph_movie(struct graph_dot_data *gdd, struct pid_plot_history *ph, int col);
+int svg_io_graph_movie_array(struct plot *plot, struct pid_plot_history *ph);
 void svg_write_time_line(struct plot *plot, int col);
 void set_graph_height(int h);
 void set_graph_width(int w);
 int close_plot_file(struct plot *plot);
-int svg_io_graph_movie_array_spindle(struct plot *plot, struct plot_history *ph);
+int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history *ph);
 void rewind_spindle_steps(int num);
 void setup_axis_spindle(struct plot *plot);
 int close_plot_col(struct plot *plot);

@@ -50,6 +50,36 @@ struct trace {
 	int mpstat_num_cpus;
 };
 
+struct trace_file {
+	struct list_head list;
+	char *filename;
+	char *label;
+	struct trace *trace;
+	int stop_seconds;	/* Time when trace stops */
+	int min_seconds;	/* Beginning of the interval we should plot */
+	int max_seconds;	/* End of the interval we should plot */
+	u64 min_offset;
+	u64 max_offset;
+
+	char *line_color;
+
+	struct graph_line_data *tput_gld;
+	struct graph_line_data *iop_gld;
+	struct graph_line_data *latency_gld;
+	struct graph_line_data *queue_depth_gld;
+	/* Number of entries in gdd_writes / gdd_reads */
+	int io_plots;
+	/* Allocated array size for gdd_writes / gdd_reads */
+	int io_plots_allocated;
+	struct graph_dot_data **gdd_writes;
+	struct graph_dot_data **gdd_reads;
+
+	int mpstat_min_seconds;
+	int mpstat_max_seconds;
+	int mpstat_stop_seconds;
+	struct graph_line_data **mpstat_gld;
+};
+
 static inline unsigned int MAJOR(unsigned int dev)
 {
 	return dev >> MINORBITS;
@@ -61,6 +91,7 @@ static inline unsigned int MINOR(unsigned int dev)
 }
 
 void init_io_hash_table(void);
+void init_process_hash_table(void);
 struct trace *open_trace(char *filename);
 u64 find_last_time(struct trace *trace);
 void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret,
@@ -72,8 +103,7 @@ void add_iop(struct trace *trace, struct graph_line_data *gld);
 void check_record(struct trace *trace);
 void add_completed_io(struct trace *trace,
 		      struct graph_line_data *latency_gld);
-void add_io(struct trace *trace, struct graph_dot_data *gdd_writes,
-	    struct graph_dot_data *gdd_reads);
+void add_io(struct trace *trace, struct trace_file *tf);
 void add_tput(struct trace *trace, struct graph_line_data *gld);
 void add_pending_io(struct trace *trace, struct graph_line_data *gld);
 int next_record(struct trace *trace);

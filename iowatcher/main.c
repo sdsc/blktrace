@@ -45,8 +45,6 @@ LIST_HEAD(all_traces);
 static char line[1024];
 static int line_len = 1024;
 static int found_mpstat = 0;
-static int cpu_color_index = 0;
-static int color_index = 0;
 static int make_movie = 0;
 static int opt_graph_width = 0;
 static int opt_graph_height = 0;
@@ -61,42 +59,14 @@ static unsigned long long min_mb = 0;
 static unsigned long long max_mb = ULLONG_MAX >> 20;
 
 int plot_io_action = 0;
+int io_per_process = 0;
+unsigned int longest_proc_name = 0;
 
 /*
  * this doesn't include the IO graph,
  * but it counts the other graphs as they go out
  */
 static int total_graphs_written = 1;
-
-char *colors[] = {
-	"blue", "darkgreen",
-	"red", "aqua",
-	"orange", "darkviolet",
-	"brown", "#00FF00",
-	"yellow", "coral",
-	"black", "darkred",
-	"fuchsia", "crimson",
-	NULL };
-
-char *pick_color(void) {
-	char *ret = colors[color_index];
-	if (!ret) {
-		color_index = 0;
-		ret = colors[color_index];
-	}
-	color_index++;
-	return ret;
-}
-
-char *pick_cpu_color(void) {
-	char *ret = colors[cpu_color_index];
-	if (!ret) {
-		color_index = 0;
-		ret = colors[cpu_color_index];
-	}
-	cpu_color_index++;
-	return ret;
-}
 
 enum {
 	IO_GRAPH_INDEX = 0,
@@ -165,33 +135,6 @@ static int last_active_graph = IOPS_GRAPH_INDEX;
 static int label_index = 0;
 static int num_traces = 0;
 static int longest_label = 0;
-
-struct trace_file {
-	struct list_head list;
-	char *filename;
-	char *label;
-	struct trace *trace;
-	int stop_seconds;	/* Time when trace stops */
-	int min_seconds;	/* Beginning of the interval we should plot */
-	int max_seconds;	/* End of the interval we should plot */
-	u64 min_offset;
-	u64 max_offset;
-
-	char *read_color;
-	char *write_color;
-
-	struct graph_line_data *tput_gld;
-	struct graph_line_data *iop_gld;
-	struct graph_line_data *latency_gld;
-	struct graph_line_data *queue_depth_gld;
-	struct graph_dot_data *gdd_writes;
-	struct graph_dot_data *gdd_reads;
-
-	int mpstat_min_seconds;
-	int mpstat_max_seconds;
-	int mpstat_stop_seconds;
-	struct graph_line_data **mpstat_gld;
-};
 
 static void alloc_mpstat_gld(struct trace_file *tf)
 {
@@ -281,8 +224,7 @@ static void add_trace_file(char *filename)
 	tf->label = "";
 	tf->filename = strdup(filename);
 	list_add_tail(&tf->list, &all_traces);
-	tf->read_color = pick_color();
-	tf->write_color = pick_color();
+	tf->line_color = "black";
 	num_traces++;
 }
 
@@ -290,14 +232,20 @@ static void setup_trace_file_graphs(void)
 {
 	struct trace_file *tf;
 	int i;
+	int alloc_ptrs;
 
+	if (io_per_process)
+		alloc_ptrs = 16;
+	else
+		alloc_ptrs = 1;
 	list_for_each_entry(tf, &all_traces, list) {
 		tf->tput_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->latency_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->queue_depth_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->iop_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
-		tf->gdd_writes = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
-		tf->gdd_reads = alloc_dot_data(tf->min_seconds, tf->max_seconds, tf->min_offset, tf->max_offset, tf->stop_seconds);
+		tf->gdd_writes = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
+		tf->gdd_reads = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
+		tf->io_plots_allocated = alloc_ptrs;
 
 		if (tf->trace->mpstat_num_cpus == 0)
 			continue;
@@ -346,6 +294,25 @@ static void read_traces(void)
 	}
 }
 
+static void pick_line_graph_color(void)
+{
+	struct trace_file *tf;
+	int i;
+
+	list_for_each_entry(tf, &all_traces, list) {
+		for (i = 0; i < tf->io_plots; i++) {
+			if (tf->gdd_reads[i]) {
+				tf->line_color = tf->gdd_reads[i]->color;
+				break;
+			}
+			if (tf->gdd_writes[i]) {
+				tf->line_color = tf->gdd_writes[i]->color;
+				break;
+			}
+		}
+	}
+}
+
 static void read_trace_events(void)
 {
 
@@ -365,7 +332,7 @@ static void read_trace_events(void)
 			check_record(trace);
 			add_tput(trace, tf->tput_gld);
 			add_iop(trace, tf->iop_gld);
-			add_io(trace, tf->gdd_writes, tf->gdd_reads);
+			add_io(trace, tf);
 			add_pending_io(trace, tf->queue_depth_gld);
 			add_completed_io(trace, tf->latency_gld);
 			ret = next_record(trace);
@@ -508,27 +475,72 @@ static char *create_movie_temp_dir(void)
 	return ret;
 }
 
-static struct plot_history *alloc_plot_history(char *color)
+static struct pid_plot_history *alloc_pid_plot_history(char *color)
+{
+	struct pid_plot_history *pph;
+
+	pph = calloc(1, sizeof(struct pid_plot_history));
+	if (!pph) {
+		perror("memory allocation failed");
+		exit(1);
+	}
+	pph->history = malloc(sizeof(double) * 4096);
+	if (!pph->history) {
+		perror("memory allocation failed");
+		exit(1);
+	}
+	pph->history_len = 4096;
+	pph->color = color;
+
+	return pph;
+}
+
+static struct plot_history *alloc_plot_history(struct trace_file *tf)
 {
 	struct plot_history *ph = calloc(1, sizeof(struct plot_history));
+	int i;
 
 	if (!ph) {
 		perror("memory allocation failed");
 		exit(1);
 	}
-	ph->history = calloc(4096, sizeof(double));
-	if (!ph->history) {
+	ph->read_pid_history = calloc(tf->io_plots, sizeof(struct pid_plot_history *));
+	if (!ph->read_pid_history) {
 		perror("memory allocation failed");
 		exit(1);
 	}
-	ph->history_len = 4096;
-	ph->color = color;
+	ph->write_pid_history = calloc(tf->io_plots, sizeof(struct pid_plot_history *));
+	if (!ph->write_pid_history) {
+		perror("memory allocation failed");
+		exit(1);
+	}
+	ph->pid_history_count = tf->io_plots;
+	for (i = 0; i < tf->io_plots; i++) {
+		if (tf->gdd_reads[i])
+			ph->read_pid_history[i] = alloc_pid_plot_history(tf->gdd_reads[i]->color);
+		if (tf->gdd_writes[i])
+			ph->write_pid_history[i] = alloc_pid_plot_history(tf->gdd_writes[i]->color);
+	}
 	return ph;
 }
 
-LIST_HEAD(movie_history_writes);
-LIST_HEAD(movie_history_reads);
+LIST_HEAD(movie_history);
 int num_histories = 0;
+
+static void free_plot_history(struct plot_history *ph)
+{
+	int pid;
+
+	for (pid = 0; pid < ph->pid_history_count; pid++) {
+		if (ph->read_pid_history[pid])
+			free(ph->read_pid_history[pid]);
+		if (ph->write_pid_history[pid])
+			free(ph->write_pid_history[pid]);
+	}
+	free(ph->read_pid_history);
+	free(ph->write_pid_history);
+	free(ph);
+}
 
 static void add_history(struct plot_history *ph, struct list_head *list)
 {
@@ -541,47 +553,81 @@ static void add_history(struct plot_history *ph, struct list_head *list)
 		num_histories--;
 		entry = list_entry(list->next, struct plot_history, list);
 		list_del(&entry->list);
-		free(entry->history);
-		free(entry);
+		free_plot_history(entry);
 	}
 }
 
 static void plot_movie_history(struct plot *plot, struct list_head *list)
 {
 	struct plot_history *ph;
+	int pid;
 
 	if (num_histories > 2)
 		rewind_spindle_steps(num_histories - 1);
 
 	list_for_each_entry(ph, list, list) {
-		if (movie_style == MOVIE_SPINDLE)
-			svg_io_graph_movie_array_spindle(plot, ph);
-		else
-			svg_io_graph_movie_array(plot, ph);
+		for (pid = 0; pid < ph->pid_history_count; pid++) {
+			if (ph->read_pid_history[pid]) {
+				if (movie_style == MOVIE_SPINDLE) {
+					svg_io_graph_movie_array_spindle(plot,
+						ph->read_pid_history[pid]);
+				} else {
+					svg_io_graph_movie_array(plot,
+						ph->read_pid_history[pid]);
+				}
+			}
+			if (ph->write_pid_history[pid]) {
+				if (movie_style == MOVIE_SPINDLE) {
+					svg_io_graph_movie_array_spindle(plot,
+						ph->write_pid_history[pid]);
+				} else {
+					svg_io_graph_movie_array(plot,
+						ph->write_pid_history[pid]);
+				}
+			}
+		}
 	 }
 }
 
 static void free_all_plot_history(struct list_head *head)
 {
 	struct plot_history *entry;
+
 	while (!list_empty(head)) {
 		entry = list_entry(head->next, struct plot_history, list);
 		list_del(&entry->list);
-		free(entry->history);
-		free(entry);
+		free_plot_history(entry);
 	}
+}
+
+static int count_io_plot_types(void)
+{
+	struct trace_file *tf;
+	int i;
+	int total_io_types = 0;
+
+	list_for_each_entry(tf, &all_traces, list) {
+		for (i = 0; i < tf->io_plots; i++) {
+			if (tf->gdd_reads[i])
+				total_io_types++;
+			if (tf->gdd_writes[i])
+				total_io_types++;
+		}
+	}
+	return total_io_types;
 }
 
 static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
+	int i;
 
 	if (active_graphs[IO_GRAPH_INDEX] == 0)
 		return;
 
 	setup_axis(plot);
 
-	svg_alloc_legend(plot, num_traces * 2);
+	svg_alloc_legend(plot, count_io_plot_types() * 2);
 
 	set_plot_label(plot, "Device IO");
 	set_ylabel(plot, "Offset (MB)");
@@ -590,17 +636,32 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		char *label = tf->label;
+		char label[256];
+		char *pos;
 
-		if (!label)
-			label = "";
-		svg_io_graph(plot, tf->gdd_reads, tf->read_color);
-		if (tf->gdd_reads->total_ios)
-			svg_add_legend(plot, label, " Reads", tf->read_color);
+		if (!tf->label)
+			label[0] = 0;
+		else {
+			strcpy(label, tf->label);
+			if (io_per_process)
+				strcat(label, " ");
+		}
+		pos = label + strlen(label);
 
-		svg_io_graph(plot, tf->gdd_writes, tf->write_color);
-		if (tf->gdd_writes->total_ios) {
-			svg_add_legend(plot, label, " Writes", tf->write_color);
+		for (i = 0; i < tf->io_plots; i++) {
+			if (tf->gdd_reads[i]) {
+				svg_io_graph(plot, tf->gdd_reads[i]);
+				if (io_per_process)
+					strcpy(pos, tf->gdd_reads[i]->label);
+				svg_add_legend(plot, label, " Reads", tf->gdd_reads[i]->color);
+			}
+
+			if (tf->gdd_writes[i]) {
+				svg_io_graph(plot, tf->gdd_writes[i]);
+				if (io_per_process)
+					strcpy(pos, tf->gdd_writes[i]->label);
+				svg_add_legend(plot, label, " Writes", tf->gdd_writes[i]->color);
+			}
 		}
 	}
 	if (plot->add_xlabel)
@@ -640,9 +701,9 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->tput_gld, tf->read_color, 0, 0);
+		svg_line_graph(plot, tf->tput_gld, tf->line_color, 0, 0);
 		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->read_color);
+			svg_add_legend(plot, tf->label, "", tf->line_color);
 	}
 
 	if (plot->add_xlabel)
@@ -692,7 +753,7 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 	set_ylabel(plot, "Percent");
 	set_xticks(plot, num_xticks, tf->mpstat_min_seconds, max_seconds);
 
-	cpu_color_index = 0;
+	reset_cpu_color();
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->mpstat_gld == 0)
 			break;
@@ -774,9 +835,9 @@ static void plot_queue_depth(struct plot *plot, int min_seconds, int max_seconds
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->queue_depth_gld, tf->read_color, 0, 0);
+		svg_line_graph(plot, tf->queue_depth_gld, tf->line_color, 0, 0);
 		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->read_color);
+			svg_add_legend(plot, tf->label, "", tf->line_color);
 	}
 
 	if (plot->add_xlabel)
@@ -817,9 +878,8 @@ static void plot_io_movie(struct plot *plot)
 {
 	struct trace_file *tf;
 	char *movie_dir = create_movie_temp_dir();
-	int i;
-	struct plot_history *read_history;
-	struct plot_history *write_history;
+	int i, pid;
+	struct plot_history *history;
 	int batch_i;
 	int movie_len = 30;
 	int movie_frames_per_sec = 20;
@@ -836,9 +896,17 @@ static void plot_io_movie(struct plot *plot)
 		batch_count = 1;
 
 	list_for_each_entry(tf, &all_traces, list) {
-		char *label = tf->label;
-		if (!label)
-			label = "";
+		char label[256];
+		char *pos;
+
+		if (!tf->label)
+			label[0] = 0;
+		else {
+			strcpy(label, tf->label);
+			if (io_per_process)
+				strcat(label, " ");
+		}
+		pos = label + strlen(label);
 
 		i = 0;
 		while (i < cols) {
@@ -852,15 +920,14 @@ static void plot_io_movie(struct plot *plot)
 			set_graph_size(cols / graph_width_factor, rows / 8);
 			plot->timeline = i / graph_width_factor;
 
-			plot_tput(plot, tf->gdd_reads->min_seconds,
-				  tf->gdd_reads->max_seconds);
+			plot_tput(plot, tf->min_seconds,
+				  tf->max_seconds);
 
-			plot_cpu(plot, tf->gdd_reads->max_seconds,
+			plot_cpu(plot, tf->max_seconds,
 				   "CPU System Time", CPU_SYS_GRAPH_INDEX, MPSTAT_SYS);
 
 			plot->direction = PLOT_ACROSS;
-			plot_queue_depth(plot, tf->gdd_reads->min_seconds,
-					 tf->gdd_reads->max_seconds);
+			plot_queue_depth(plot, tf->min_seconds, tf->max_seconds);
 
 			/* movie graph starts here */
 			plot->start_y_offset = orig_y_offset;
@@ -874,31 +941,45 @@ static void plot_io_movie(struct plot *plot)
 			else
 				setup_axis(plot);
 
-			svg_alloc_legend(plot, num_traces * 2);
+			svg_alloc_legend(plot, count_io_plot_types() * 2);
 
-			read_history = alloc_plot_history(tf->read_color);
-			write_history = alloc_plot_history(tf->write_color);
-			read_history->col = i;
-			write_history->col = i;
+			history = alloc_plot_history(tf);
+			history->col = i;
 
-			if (tf->gdd_reads->total_ios)
-				svg_add_legend(plot, label, " Reads", tf->read_color);
-			if (tf->gdd_writes->total_ios)
-				svg_add_legend(plot, label, " Writes", tf->write_color);
+			for (pid = 0; pid < tf->io_plots; pid++) {
+				if (tf->gdd_reads[pid]) {
+					if (io_per_process)
+						strcpy(pos, tf->gdd_reads[pid]->label);
+					svg_add_legend(plot, label, " Reads", tf->gdd_reads[pid]->color);
+				}
+				if (tf->gdd_writes[pid]) {
+					if (io_per_process)
+						strcpy(pos, tf->gdd_writes[pid]->label);
+					svg_add_legend(plot, label, " Writes", tf->gdd_writes[pid]->color);
+				}
+			}
 
 			batch_i = 0;
 			while (i < cols && batch_i < batch_count) {
-				svg_io_graph_movie(tf->gdd_reads, read_history, i);
-				svg_io_graph_movie(tf->gdd_writes, write_history, i);
+				for (pid = 0; pid < tf->io_plots; pid++) {
+					if (tf->gdd_reads[pid]) {
+						svg_io_graph_movie(tf->gdd_reads[pid],
+								   history->read_pid_history[pid],
+								   i);
+					}
+					if (tf->gdd_writes[pid]) {
+						svg_io_graph_movie(tf->gdd_writes[pid],
+								   history->write_pid_history[pid],
+								   i);
+					}
+				}
 				i++;
 				batch_i++;
 			}
 
-			add_history(read_history, &movie_history_reads);
-			add_history(write_history, &movie_history_writes);
+			add_history(history, &movie_history);
 
-			plot_movie_history(plot, &movie_history_reads);
-			plot_movie_history(plot, &movie_history_writes);
+			plot_movie_history(plot, &movie_history);
 
 			svg_write_legend(plot);
 			close_plot(plot);
@@ -906,8 +987,7 @@ static void plot_io_movie(struct plot *plot)
 
 			close_plot_file(plot);
 		}
-		free_all_plot_history(&movie_history_reads);
-		free_all_plot_history(&movie_history_writes);
+		free_all_plot_history(&movie_history);
 	}
 	convert_movie_files(movie_dir);
 	mencode_movie(movie_dir);
@@ -948,9 +1028,9 @@ static void plot_latency(struct plot *plot, int min_seconds, int max_seconds)
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->latency_gld, tf->read_color, 0, 0);
+		svg_line_graph(plot, tf->latency_gld, tf->line_color, 0, 0);
 		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->read_color);
+			svg_add_legend(plot, tf->label, "", tf->line_color);
 	}
 
 	if (plot->add_xlabel)
@@ -992,9 +1072,9 @@ static void plot_iops(struct plot *plot, int min_seconds, int max_seconds)
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->iop_gld, tf->read_color, 0, 0);
+		svg_line_graph(plot, tf->iop_gld, tf->line_color, 0, 0);
 		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->read_color);
+			svg_add_legend(plot, tf->label, "", tf->line_color);
 	}
 
 	if (plot->add_xlabel)
@@ -1032,7 +1112,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:a:";
+char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:a:P";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1050,6 +1130,7 @@ static struct option long_options[] = {
 	{"xzoom", required_argument, 0, 'x'},
 	{"yzoom", required_argument, 0, 'y'},
 	{"io-plot-action", required_argument, 0, 'a'},
+	{"per-process-io", no_argument, 0, 'P'},
 	{"help", no_argument, 0, HELP_LONG_OPT},
 	{0, 0, 0, 0}
 };
@@ -1074,6 +1155,7 @@ static void print_usage(void)
 		"\t-x (--xzoom): limit processed time to min:max\n"
 		"\t-y (--yzoom): limit processed sectors to min:max\n"
 		"\t-a (--io-plot-action): plot given action (one of Q,D,C) in IO graph\n"
+		"\t-P (--per-process-io): distinguish between processes in IO graph\n"
 	       );
 	exit(1);
 }
@@ -1233,6 +1315,9 @@ action_err:
 			if (plot_io_action < 0)
 				goto action_err;
 			break;
+		case 'P':
+			io_per_process = 1;
+			break;
 		case '?':
 		case HELP_LONG_OPT:
 			print_usage();
@@ -1257,6 +1342,7 @@ int main(int ac, char **av)
 	int rows, cols;
 
 	init_io_hash_table();
+	init_process_hash_table();
 
 	enable_all_graphs();
 
@@ -1335,9 +1421,12 @@ int main(int ac, char **av)
 	/* run through all the traces and read their events */
 	read_trace_events();
 
+	pick_line_graph_color();
+
 	plot = alloc_plot();
 
 	if (make_movie) {
+		set_legend_width(longest_label + longest_proc_name + 1 + strlen("writes"));
 		plot_io_movie(plot);
 		exit(0);
 	}
@@ -1345,7 +1434,7 @@ int main(int ac, char **av)
 	set_plot_output(plot, output_filename);
 
 	if (active_graphs[IO_GRAPH_INDEX] || found_mpstat)
-		set_legend_width(longest_label + strlen("writes"));
+		set_legend_width(longest_label + longest_proc_name + 1 + strlen("writes"));
 	else if (num_traces > 1)
 		set_legend_width(longest_label);
 	else
