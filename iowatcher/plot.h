@@ -68,8 +68,11 @@ struct graph_line_pair {
 };
 
 struct graph_line_data {
-	/* total number of seconds in this graph */
-	int seconds;
+	/* beginning of an interval displayed by this graph */
+	int min_seconds;
+
+	/* end of an interval displayed by this graph */
+	int max_seconds;
 
 	int stop_seconds;
 
@@ -82,6 +85,7 @@ struct graph_line_data {
 };
 
 struct graph_dot_data {
+	u64 min_offset;
 	u64 max_offset;
 	u64 max_bank;
 	u64 max_bank_offset;
@@ -95,8 +99,11 @@ struct graph_dot_data {
 	/* in pixels, number of cols in our bitmap */
 	int cols;
 
-	/* total number of seconds in this graph */
-	int seconds;
+	/* beginning of an interval displayed by this graph */
+	int min_seconds;
+
+	/* end of an interval displayed by this graph */
+	int max_seconds;
 	int stop_seconds;
 
 	/* label for the legend */
@@ -118,9 +125,9 @@ struct plot_history {
 
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd, char *color);
 int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2);
-struct graph_line_data *alloc_line_data(int seconds, int stop_seconds);
+struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds);
 void free_line_data(struct graph_line_data *gld);
-struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seconds);
+struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds);
 void free_dot_data(struct graph_dot_data *gdd);
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time);
 void print_gdd(struct graph_dot_data *gdd);

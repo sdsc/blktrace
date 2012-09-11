@@ -69,7 +69,7 @@ static char line[1024];
 static int final_height = 0;
 static int final_width = 0;
 
-struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
+struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds)
 {
 	int size = sizeof(struct graph_line_data) + (stop_seconds + 1) * sizeof(struct graph_line_pair);
 	struct graph_line_data *gld;
@@ -79,7 +79,8 @@ struct graph_line_data *alloc_line_data(int seconds, int stop_seconds)
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
-	gld->seconds = seconds;
+	gld->min_seconds = min_seconds;
+	gld->max_seconds = max_seconds;
 	gld->stop_seconds = stop_seconds;
 	return gld;
 }
@@ -90,7 +91,7 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seconds)
+struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds)
 {
 	int size;
 	int arr_size;
@@ -111,10 +112,12 @@ struct graph_dot_data *alloc_dot_data(int seconds, u64 max_offset, int stop_seco
 		fprintf(stderr, "Unable to allocate memory for graph data\n");
 		exit(1);
 	}
-	gdd->seconds = seconds;
+	gdd->min_seconds = min_seconds;
+	gdd->max_seconds = max_seconds;
 	gdd->stop_seconds = stop_seconds;
 	gdd->rows = rows;
 	gdd->cols = cols;
+	gdd->min_offset = min_offset;
 	gdd->max_offset = max_offset;
 	return gdd;
 }
@@ -126,9 +129,8 @@ void free_dot_data(struct graph_dot_data *gdd)
 
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
-	double bytes_per_row = (double)gdd->max_offset / gdd->rows;
-
-	double secs_per_col = (double)gdd->seconds / gdd->cols;
+	double bytes_per_row = (double)(gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
+	double secs_per_col = (double)(gdd->max_seconds - gdd->min_seconds) / gdd->cols;
 	double col;
 	double row;
 	int col_int;
@@ -138,14 +140,14 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 	int bit_mod;
 	double mod = bytes_per_row;
 
-	if (offset > gdd->max_offset)
+	if (offset > gdd->max_offset || offset < gdd->min_offset)
 		return;
 
 	gdd->total_ios++;
 	time = time / 1000000000.0;
 	while (bytes > 0) {
-		row = (double)offset / bytes_per_row;
-		col = time / secs_per_col;
+		row = (double)(offset - gdd->min_offset) / bytes_per_row;
+		col = (time - gdd->min_seconds) / secs_per_col;
 
 		col_int = floor(col);
 		row_int = floor(row);
@@ -453,14 +455,34 @@ void set_plot_title(struct plot *plot, char *title)
 	write(fd, line, len);
 }
 
+#define TICK_MINI_STEPS 3
+
+static double find_step(double first, double last, int num_ticks)
+{
+	int mini_step[TICK_MINI_STEPS] = { 1, 2, 5 };
+	int cur_mini_step = 0;
+	double step = (last - first) / num_ticks;
+	double log10 = log(10);
+
+	/* Round to power of 10 */
+	step = exp(floor(log(step) / log10) * log10);
+	/* Scale down step to provide enough ticks */
+	while ((last - first) / (step * mini_step[cur_mini_step]) > num_ticks
+	       && cur_mini_step < TICK_MINI_STEPS)
+		cur_mini_step++;
+	step *= mini_step[cur_mini_step - 1];
+
+	return step;
+}
+
 /*
  * create evenly spread out ticks along the xaxis.  if tick only is set
  * this just makes the ticks, otherwise it labels each tick as it goes
  */
 void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 {
-	int pixels_per_tick = graph_width / num_ticks;
-	int step = (last - first) / num_ticks;
+	int pixels_per_tick;
+	double step;
 	int i;
 	int tick_y = axis_y_off(graph_tick_len) + graph_inner_y_margin;
 	int tick_x = axis_x();
@@ -470,6 +492,14 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 
 	char *middle = "middle";
 	char *start = "start";
+
+	step = find_step(first, last, num_ticks);
+	/*
+	 * We don't want last two ticks to be too close together so subtract
+	 * 20% of the step from the interval
+	 */
+	num_ticks = (double)(last - first - step / 5) / step + 1;
+	pixels_per_tick = graph_width * step / (double)(last - first);
 
 	for (i = 0; i < num_ticks; i++) {
 		char *anchor;
@@ -483,19 +513,32 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 		}
 
 		if (!tick_only) {
-			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
-				"fill=\"black\" style=\"text-anchor: %s\">%d</text>\n",
-				tick_x, text_y, font_family, tick_font_size, anchor, step * i);
+			if (step >= 1)
+				snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+					"fill=\"black\" style=\"text-anchor: %s\">%d</text>\n",
+					tick_x, text_y, font_family, tick_font_size, anchor,
+					(int)(first + step * i));
+			else
+				snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+					"fill=\"black\" style=\"text-anchor: %s\">%.2f</text>\n",
+					tick_x, text_y, font_family, tick_font_size, anchor,
+					first + step * i);
 			write(plot->fd, line, strlen(line));
 		}
 		tick_x += pixels_per_tick;
 	}
 
 	if (!tick_only) {
-		snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
-			"fill=\"black\" style=\"text-anchor: middle\">%d</text>\n",
-			axis_x_off(graph_width - 2),
-			text_y, font_family, tick_font_size, last);
+		if (step >= 1)
+			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+				"fill=\"black\" style=\"text-anchor: middle\">%d</text>\n",
+				axis_x_off(graph_width - 2),
+				text_y, font_family, tick_font_size, last);
+		else
+			snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
+				"fill=\"black\" style=\"text-anchor: middle\">%.2f</text>\n",
+				axis_x_off(graph_width - 2),
+				text_y, font_family, tick_font_size, (double)last);
 		write(plot->fd, line, strlen(line));
 	}
 }
@@ -561,7 +604,7 @@ void set_yticks(struct plot *plot, int num_ticks, int first, int last, char *uni
 			 "fill=\"black\" style=\"text-anchor: %s\">%d%s</text>\n",
 			text_x,
 			axis_y_off(tick_y - tick_font_size / 2),
-			font_family, tick_font_size, anchor, step * i, units);
+			font_family, tick_font_size, anchor, first + step * i, units);
 		write(plot->fd, line, strlen(line));
 		tick_y += pixels_per_tick;
 	}
@@ -706,7 +749,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	int fd = plot->fd;
 	char *start = "<path d=\"";
 	double yscale = ((double)gld->max) / graph_height;
-	double xscale = (double)(gld->seconds - 1) / graph_width;
+	double xscale = (double)(gld->max_seconds - gld->min_seconds - 1) / graph_width;
 	char c = 'M';
 	double x;
 	int printed_header = 0;
@@ -717,9 +760,9 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 	else if (rolling_avg_secs)
 		rolling = rolling_avg_secs;
 	else
-		rolling = gld->stop_seconds / 25;
+		rolling = (gld->stop_seconds - gld->min_seconds) / 25;
 
-	for (i = 0; i < gld->stop_seconds; i++) {
+	for (i = gld->min_seconds; i < gld->stop_seconds; i++) {
 		avg = rolling_avg(gld->data, i, rolling);
 		if (yscale == 0)
 			val = 0;
@@ -731,7 +774,7 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 		if (val < 0)
 			val = 0;
 
-		x = (double)i / xscale;
+		x = (double)(i - gld->min_seconds) / xscale;
 		if (!thresh1 && !thresh2) {
 
 			if (!printed_header) {
@@ -904,13 +947,13 @@ int svg_io_graph_movie(struct graph_dot_data *gdd, struct plot_history *ph, int 
 	unsigned char val;
 	int bit_index;
 	int bit_mod;
-	double blocks_per_row = gdd->max_offset / gdd->rows;
-	double movie_blocks_per_cell = gdd->max_offset / (graph_width * graph_height);
+	double blocks_per_row = (gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
+	double movie_blocks_per_cell = (gdd->max_offset - gdd->min_offset + 1) / (graph_width * graph_height);
 	double cell_index;
 	int margin_orig = graph_inner_y_margin;
 
 	graph_inner_y_margin += 5;
-	ph->history_max = gdd->max_offset / movie_blocks_per_cell;
+	ph->history_max = (gdd->max_offset - gdd->min_offset + 1) / movie_blocks_per_cell;
 
 	for (row = gdd->rows - 1; row >= 0; row--) {
 		bit_index = row * gdd->cols + col;
