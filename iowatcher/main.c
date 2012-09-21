@@ -1356,6 +1356,7 @@ int main(int ac, char **av)
 		plot->add_xlabel = 1;
 	set_plot_title(plot, graph_title);
 
+	check_plot_columns(plot, IO_GRAPH_INDEX);
 	plot_io(plot, min_seconds, max_seconds, min_offset, max_offset);
 	plot->add_xlabel = 0;
 
