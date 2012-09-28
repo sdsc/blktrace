@@ -136,6 +136,13 @@ static int label_index = 0;
 static int num_traces = 0;
 static int longest_label = 0;
 
+static char *graph_title = "";
+static char *output_filename = "trace.svg";
+static char *blktrace_device = NULL;
+static char *blktrace_outfile = "trace";
+static char *blktrace_dest_dir = ".";
+static char *program_to_run = NULL;
+
 static void alloc_mpstat_gld(struct trace_file *tf)
 {
 	struct graph_line_data **ptr;
@@ -212,6 +219,12 @@ static int graphs_left(int cur)
 	return left;
 }
 
+static void join_path(char *path, char *filename)
+{
+	path = strcat(path, "/");
+	path = strcat(path, filename);
+}
+
 static void add_trace_file(char *filename)
 {
 	struct trace_file *tf;
@@ -270,9 +283,13 @@ static void read_traces(void)
 	u64 ymax;
 	u64 max_bank;
 	u64 max_bank_offset;
+	char *path = NULL;
 
 	list_for_each_entry(tf, &all_traces, list) {
-		trace = open_trace(tf->filename);
+		path = strdup(blktrace_dest_dir);
+		join_path(path, tf->filename);
+
+		trace = open_trace(path);
 		if (!trace)
 			exit(1);
 
@@ -286,11 +303,12 @@ static void read_traces(void)
 		tf->min_offset = ymin;
 		tf->max_offset = ymax;
 
-		read_mpstat(trace, tf->filename);
+		read_mpstat(trace, path);
 		tf->mpstat_stop_seconds = trace->mpstat_seconds;
 		tf->mpstat_max_seconds = trace->mpstat_seconds;
 		if (tf->mpstat_max_seconds)
 			found_mpstat = 1;
+		path = NULL;
 	}
 }
 
@@ -411,13 +429,6 @@ static void set_trace_label(char *label)
 		cur++;
 	}
 }
-
-static char *graph_title = "";
-static char *output_filename = "trace.svg";
-static char *blktrace_device = NULL;
-static char *blktrace_outfile = "trace";
-static char *blktrace_dest_dir = ".";
-static char *program_to_run = NULL;
 
 static void set_blktrace_outfile(char *arg)
 {
@@ -1112,7 +1123,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:p:m::h:w:c:x:y:a:P";
+char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:P";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1123,6 +1134,7 @@ static struct option long_options[] = {
 	{"no-graph", required_argument, 0, 'N'},
 	{"only-graph", required_argument, 0, 'O'},
 	{"device", required_argument, 0, 'd'},
+	{"blktrace-destination", required_argument, 0, 'D'},
 	{"prog", required_argument, 0, 'p'},
 	{"movie", optional_argument, 0, 'm'},
 	{"width", required_argument, 0, 'w'},
@@ -1139,6 +1151,7 @@ static void print_usage(void)
 {
 	fprintf(stderr, "iowatcher usage:\n"
 		"\t-d (--device): device for blktrace to trace\n"
+		"\t-D (--blktrace-destination): destination for blktrace\n"
 		"\t-t (--trace): trace file name (more than one allowed)\n"
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
@@ -1258,6 +1271,13 @@ static int parse_options(int ac, char **av)
 		case 'd':
 			blktrace_device = strdup(optarg);
 			break;
+		case 'D':
+			blktrace_dest_dir = strdup(optarg);
+			if (!strcmp(blktrace_dest_dir, "")) {
+				fprintf(stderr, "Need a directory\n");
+				print_usage();
+			}
+			break;
 		case 'p':
 			program_to_run = strdup(optarg);
 			break;
@@ -1329,6 +1349,16 @@ action_err:
 	return 0;
 }
 
+static void dest_mkdir()
+{
+	int ret;
+
+	ret = mkdir(blktrace_dest_dir, 0777);
+	if (ret && errno != EEXIST) {
+		fprintf(stderr, "failed to mkdir error %s\n", strerror(errno));
+		exit(errno);
+	}
+}
 
 int main(int ac, char **av)
 {
@@ -1374,13 +1404,19 @@ int main(int ac, char **av)
 	}
 
 	if (blktrace_device) {
+		char *path = strdup(blktrace_dest_dir);
+
+		dest_mkdir();
+		join_path(path, blktrace_outfile);
+
 		ret = start_blktrace(blktrace_device, blktrace_outfile,
 				     blktrace_dest_dir);
 		if (ret) {
 			fprintf(stderr, "exiting due to blktrace failure\n");
 			exit(1);
 		}
-		start_mpstat(blktrace_outfile);
+
+		start_mpstat(path);
 		if (program_to_run) {
 			ret = run_program(program_to_run);
 			if (ret) {
@@ -1389,7 +1425,7 @@ int main(int ac, char **av)
 				exit(1);
 			}
 			wait_for_tracers();
-			blktrace_to_dump(blktrace_outfile);
+			blktrace_to_dump(path);
 		} else {
 			/* no program specified, just wait for
 			 * blktrace to exit
