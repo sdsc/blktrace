@@ -219,10 +219,13 @@ static int graphs_left(int cur)
 	return left;
 }
 
-static void join_path(char *path, char *filename)
+static char * join_path(char *dest_dir, char *filename)
 {
-	path = strcat(path, "/");
-	path = strcat(path, filename);
+	/* alloc 2 extra bytes for '/' and '\0' */
+	char *path = malloc(strlen(dest_dir) + strlen(filename) + 2);
+	sprintf(path, "%s%s%s", dest_dir, "/", filename);
+
+	return path;
 }
 
 static void add_trace_file(char *filename)
@@ -286,9 +289,7 @@ static void read_traces(void)
 	char *path = NULL;
 
 	list_for_each_entry(tf, &all_traces, list) {
-		path = strdup(blktrace_dest_dir);
-		join_path(path, tf->filename);
-
+		path = join_path(blktrace_dest_dir, tf->filename);
 		trace = open_trace(path);
 		if (!trace)
 			exit(1);
@@ -308,7 +309,7 @@ static void read_traces(void)
 		tf->mpstat_max_seconds = trace->mpstat_seconds;
 		if (tf->mpstat_max_seconds)
 			found_mpstat = 1;
-		path = NULL;
+		free(path);
 	}
 }
 
@@ -1404,10 +1405,10 @@ int main(int ac, char **av)
 	}
 
 	if (blktrace_device) {
-		char *path = strdup(blktrace_dest_dir);
+		char *path;
 
 		dest_mkdir();
-		join_path(path, blktrace_outfile);
+		path = join_path(blktrace_dest_dir, blktrace_outfile);
 
 		ret = start_blktrace(blktrace_device, blktrace_outfile,
 				     blktrace_dest_dir);
@@ -1432,6 +1433,7 @@ int main(int ac, char **av)
 			 */
 			wait_for_tracers();
 		}
+		free(path);
 	}
 
 	/* step one, read all the traces */
