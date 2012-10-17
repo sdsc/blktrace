@@ -633,7 +633,7 @@ static char *find_trace_file(char *filename)
 	try = strdup(filename);
 	dot = strrchr(try, '.');
 	if (!dot || strcmp(".dump", dot) != 0) {
-		if (dot)
+		if (dot && dot != try)
 			*dot = '\0';
 		snprintf(line, 1024, "%s%s", try, ".blktrace.0");
 		ret = stat(line, &st);
