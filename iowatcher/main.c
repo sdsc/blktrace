@@ -870,10 +870,29 @@ static void convert_movie_files(char *movie_dir)
 
 static void mencode_movie(char *movie_dir)
 {
-	fprintf(stderr, "Creating movie %s\n", movie_dir);
+	fprintf(stderr, "Creating movie %s with ffmpeg\n", movie_dir);
 	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
 		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
 	system(line);
+}
+
+static void tencode_movie(char *movie_dir)
+{
+	fprintf(stderr, "Creating movie %s with png2theora\n", movie_dir);
+	snprintf(line, line_len, "png2theora -o %s %s/%%010d-%s.svg.png",
+			output_filename, movie_dir, output_filename);
+	system(line);
+}
+
+static void encode_movie(char *movie_dir)
+{
+	char *last_dot = strrchr(output_filename, '.');
+
+	if (last_dot &&
+	    (!strncmp(last_dot, ".ogg", 4) || !strncmp(last_dot, ".ogv", 4))) {
+		tencode_movie(movie_dir);
+	} else
+		mencode_movie(movie_dir);
 }
 
 static void cleanup_movie(char *movie_dir)
@@ -1002,7 +1021,7 @@ static void plot_io_movie(struct plot *plot)
 		free_all_plot_history(&movie_history);
 	}
 	convert_movie_files(movie_dir);
-	mencode_movie(movie_dir);
+	encode_movie(movie_dir);
 	cleanup_movie(movie_dir);
 	free(movie_dir);
 }

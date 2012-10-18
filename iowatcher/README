@@ -16,8 +16,8 @@ Output:
 
 Building:
 
-	Type make and make install.  We need ffmpeg and librsvg to make
-	movies, otherwise there are no dependencies.
+	Type make and make install.  We need ffmpeg or png2theora, and
+	librsvg to make movies, otherwise there are no dependencies.
 
 The basic options:
 
@@ -35,9 +35,12 @@ The basic options:
 	-l Sets a label in the graph for a trace file.  The labels are added in
 	   the same order the trace files are added.
 
-	-m Create a movie.  This defaults to the mp4 file format, and you
-	   should also use -o filename.mp4.  You can use any other filename,
-	   but the end result will be an mp4.
+	-m Create a movie.  The file format depends on the extension used in the
+	   -o filename.* option.  If you specify an .ogv or .ogg extension, the
+	   result will be Ogg Theora video, if png2theora is available.
+	   If you use an .mp4 extension, the result will be an mp4 video if
+	   ffmpeg is avilable.  You can use any other extension, but the end
+	   result will be an mp4.
 
 	   You can use --movie=spindle or --movie=rect, which changes the
 	   style of the IO mapping.
