@@ -264,17 +264,15 @@ static int hash_queued_io(struct blk_io_trace *io)
 	return 0;
 }
 
-static int hash_dispatched_io(struct blk_io_trace *io)
+static struct pending_io *hash_dispatched_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 
 	pio = io_hash_table_search(io->sector);
-	if (!pio) {
-		/* crud, the IO isn't here */
-		return -EEXIST;
-	}
+	if (!pio)
+		hash_queued_io(io);
 	pio->dispatch_time = io->time;
-	return 0;
+	return pio;
 }
 
 static struct pending_io *hash_completed_io(struct blk_io_trace *io)
@@ -551,6 +549,27 @@ void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret, u64 *
 	*max_offset_ret = max_bank_offset;
 }
 
+static void check_io_types(struct trace *trace)
+{
+	struct blk_io_trace *io = trace->io;
+	int action = io->action & BLK_TA_MASK;
+
+	if (!(io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
+		switch (action) {
+		case __BLK_TA_COMPLETE:
+			trace->found_completion = 1;
+			break;
+		case __BLK_TA_ISSUE:
+			trace->found_issue = 1;
+			break;
+		case __BLK_TA_QUEUE:
+			trace->found_queue = 1;
+			break;
+		};
+	}
+}
+
+
 int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 		    u64 *yzoom_min, u64 *yzoom_max)
 {
@@ -566,6 +585,7 @@ int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 	memset(min_per_bucket, 0xff, sizeof(u64) * 11);
 	first_record(trace);
 	while (1) {
+		check_io_types(trace);
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY)) &&
 		    (trace->io->action & BLK_TA_MASK) == __BLK_TA_QUEUE) {
 			u64 off = (trace->io->sector << 9) - min_offset;
@@ -575,7 +595,7 @@ int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 			if (off < min_per_bucket[slot])
 				min_per_bucket[slot] = off;
 
- 			off += trace->io->bytes;
+			off += trace->io->bytes;
 			slot = (int)(off / bytes_per_bucket);
 			hits[slot]++;
 			if (off > max_per_bucket[slot])
@@ -834,17 +854,18 @@ void add_io(struct trace *trace, struct trace_file *tf)
 
 void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 {
-	int ret;
 	int seconds;
 	struct blk_io_trace *io = trace->io;
 	int action = io->action & BLK_TA_MASK;
 	double avg;
+	struct pending_io *pio;
 
 	if (io->action & BLK_TC_ACT(BLK_TC_NOTIFY))
 		return;
 
 	if (action == __BLK_TA_QUEUE) {
-		hash_queued_io(trace->io);
+		if (trace->found_issue || trace->found_completion)
+			hash_queued_io(trace->io);
 		return;
 	}
 	if (action != __BLK_TA_ISSUE)
@@ -854,9 +875,14 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 	if (seconds > gld->max_seconds)
 		return;
 
-	ret = hash_dispatched_io(trace->io);
-	if (ret)
+	pio = hash_dispatched_io(trace->io);
+	if (!pio)
 		return;
+
+	if (!trace->found_completion) {
+		list_del(&pio->hash_list);
+		free(pio);
+	}
 
 	ios_in_flight++;
 
@@ -934,21 +960,5 @@ void add_iop(struct trace *trace, struct graph_line_data *gld)
 
 void check_record(struct trace *trace)
 {
-	struct blk_io_trace *io = trace->io;
-	int action = io->action & BLK_TA_MASK;
-
-	if (!(io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
-		switch (action) {
-		case __BLK_TA_COMPLETE:
-			trace->found_completion = 1;
-			break;
-		case __BLK_TA_ISSUE:
-			trace->found_issue = 1;
-			break;
-		case __BLK_TA_QUEUE:
-			trace->found_queue = 1;
-			break;
-		};
-	}
 	handle_notify(trace);
 }
