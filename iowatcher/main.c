@@ -46,6 +46,7 @@ static char line[1024];
 static int line_len = 1024;
 static int found_mpstat = 0;
 static int make_movie = 0;
+static int keep_movie_svgs = 0;
 static int opt_graph_width = 0;
 static int opt_graph_height = 0;
 
@@ -897,6 +898,10 @@ static void encode_movie(char *movie_dir)
 
 static void cleanup_movie(char *movie_dir)
 {
+	if (keep_movie_svgs) {
+		fprintf(stderr, "Keeping movie dir %s\n", movie_dir);
+		return;
+	}
 	fprintf(stderr, "Removing movie dir %s\n", movie_dir);
 	snprintf(line, line_len, "rm %s/*", movie_dir);
 	system(line);
@@ -1143,7 +1148,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:P";
+char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:PK";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1157,6 +1162,7 @@ static struct option long_options[] = {
 	{"blktrace-destination", required_argument, 0, 'D'},
 	{"prog", required_argument, 0, 'p'},
 	{"movie", optional_argument, 0, 'm'},
+	{"keep-movie-svgs", no_argument, 0, 'K'},
 	{"width", required_argument, 0, 'w'},
 	{"height", required_argument, 0, 'h'},
 	{"xzoom", required_argument, 0, 'x'},
@@ -1176,6 +1182,7 @@ static void print_usage(void)
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
 		"\t-p (--prog): program to run while blktrace is run\n"
+		"\t-K (--keep-movie-svgs keep svgs generated for movie mode\n"
 		"\t-m (--movie [=spindle|rect]): create IO animations\n"
 		"\t-r (--rolling): number of seconds in the rolling averge\n"
 		"\t-T (--title): graph title\n"
@@ -1300,6 +1307,9 @@ static int parse_options(int ac, char **av)
 			break;
 		case 'p':
 			program_to_run = strdup(optarg);
+			break;
+		case 'K':
+			keep_movie_svgs = 1;
 			break;
 		case 'm':
 			make_movie = 1;
