@@ -246,7 +246,7 @@ static struct pending_io *io_hash_table_search(u64 sector)
 	return NULL;
 }
 
-static int hash_queued_io(struct blk_io_trace *io)
+static struct pending_io *hash_queued_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 	int ret;
@@ -259,9 +259,9 @@ static int hash_queued_io(struct blk_io_trace *io)
 	if (ret < 0) {
 		/* crud, the IO is there already */
 		free(pio);
-		return ret;
+		return NULL;
 	}
-	return 0;
+	return pio;
 }
 
 static struct pending_io *hash_dispatched_io(struct blk_io_trace *io)
@@ -269,8 +269,11 @@ static struct pending_io *hash_dispatched_io(struct blk_io_trace *io)
 	struct pending_io *pio;
 
 	pio = io_hash_table_search(io->sector);
-	if (!pio)
-		hash_queued_io(io);
+	if (!pio) {
+		pio = hash_queued_io(io);
+		if (!pio)
+			return NULL;
+	}
 	pio->dispatch_time = io->time;
 	return pio;
 }
