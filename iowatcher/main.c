@@ -297,8 +297,8 @@ static void read_traces(void)
 
 		last_time = find_last_time(trace);
 		tf->trace = trace;
-		tf->max_seconds = SECONDS(last_time);
-		tf->stop_seconds = SECONDS(last_time);
+		tf->max_seconds = SECONDS(last_time) + 1;
+		tf->stop_seconds = SECONDS(last_time) + 1;
 		find_extreme_offsets(trace, &tf->min_offset, &tf->max_offset,
 				    &max_bank, &max_bank_offset);
 		filter_outliers(trace, tf->min_offset, tf->max_offset, &ymin, &ymax);

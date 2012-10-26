@@ -148,7 +148,7 @@ struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_
 	arr_size = (rows + 1) * cols;
 
 	/* the number of bytes */
-	arr_size /= 8;
+	arr_size = (arr_size + 7) / 8;
 
 	gdd = calloc(1, size + arr_size);
 	if (!gdd) {
@@ -191,10 +191,9 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 
 	if (offset > gdd->max_offset || offset < gdd->min_offset)
 		return;
-
 	gdd->total_ios++;
 	time = time / 1000000000.0;
-	while (bytes > 0) {
+	while (bytes > 0 && offset <= gdd->max_offset) {
 		row = (double)(offset - gdd->min_offset) / bytes_per_row;
 		col = (time - gdd->min_seconds) / secs_per_col;
 
