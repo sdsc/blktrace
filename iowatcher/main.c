@@ -143,6 +143,7 @@ static char *blktrace_device = NULL;
 static char *blktrace_outfile = "trace";
 static char *blktrace_dest_dir = ".";
 static char *program_to_run = NULL;
+static char *ffmpeg_codec = "libx264";
 
 static void alloc_mpstat_gld(struct trace_file *tf)
 {
@@ -873,7 +874,8 @@ static void mencode_movie(char *movie_dir)
 {
 	fprintf(stderr, "Creating movie %s with ffmpeg\n", movie_dir);
 	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
-		 "-vcodec libx264 %s", movie_dir, output_filename, output_filename);
+		 "-vcodec %s %s", movie_dir, output_filename, ffmpeg_codec,
+		 output_filename);
 	system(line);
 }
 
@@ -1148,7 +1150,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:PK";
+char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:C:PK";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"title", required_argument, 0, 'T'},
@@ -1162,6 +1164,7 @@ static struct option long_options[] = {
 	{"blktrace-destination", required_argument, 0, 'D'},
 	{"prog", required_argument, 0, 'p'},
 	{"movie", optional_argument, 0, 'm'},
+	{"codec", optional_argument, 0, 'C'},
 	{"keep-movie-svgs", no_argument, 0, 'K'},
 	{"width", required_argument, 0, 'w'},
 	{"height", required_argument, 0, 'h'},
@@ -1184,6 +1187,7 @@ static void print_usage(void)
 		"\t-p (--prog): program to run while blktrace is run\n"
 		"\t-K (--keep-movie-svgs keep svgs generated for movie mode\n"
 		"\t-m (--movie [=spindle|rect]): create IO animations\n"
+		"\t-C (--codec): ffmpeg codec. Use ffmpeg -codecs to list\n"
 		"\t-r (--rolling): number of seconds in the rolling averge\n"
 		"\t-T (--title): graph title\n"
 		"\t-N (--no-graph): skip a single graph (io, tput, latency, queue_depth, \n"
@@ -1322,6 +1326,9 @@ static int parse_options(int ac, char **av)
 			}
 			fprintf(stderr, "Using movie style: %s\n",
 				movie_styles[movie_style]);
+			break;
+		case 'C':
+			ffmpeg_codec = strdup(optarg);
 			break;
 		case 'h':
 			opt_graph_height = atoi(optarg);
