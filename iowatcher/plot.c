@@ -939,7 +939,7 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history 
 		 "<circle cx=\"%.2f\" cy=\"%.2f\" "
 		 "stroke=\"black\" stroke-width=\"6\" "
 		 "r=\"%.2f\" fill=\"none\"/>\n",
-		 -spindle_steps * 1.2, center_x, center_y, center_x, center_y, graph_width_extra / 2);
+		 spindle_steps * 1.2, center_x, center_y, center_x, center_y, graph_width_extra / 2);
 	write(plot->fd, line, strlen(line));
 	snprintf(line, line_len, "<circle cx=\"%.2f\" cy=\"%.2f\" "
 		"stroke=\"none\" fill=\"red\" r=\"%.2f\"/>\n</g>\n",
@@ -964,7 +964,7 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history 
 		snprintf(line, line_len, "<path transform=\"rotate(%.4f, %.2f, %.2f)\" "
 			 "d=\"M %.2f %.2f a %.2f %.2f 0 0 1 0 5\" "
 			 "stroke=\"%s\" stroke-width=\"4\"/>\n",
-			 rot, center_x, center_y,
+			 -rot, center_x, center_y,
 			 axis_x_off_double(graph_width_extra / 2 + radius) + 8, center_y,
 			 radius, radius, pph->color);
 
