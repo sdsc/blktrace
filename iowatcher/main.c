@@ -139,7 +139,8 @@ static int longest_label = 0;
 
 static char *graph_title = "";
 static char *output_filename = "trace.svg";
-static char *blktrace_device = NULL;
+static char *blktrace_devices[MAX_DEVICES_PER_TRACE];
+static int num_blktrace_devices = 0;
 static char *blktrace_outfile = "trace";
 static char *blktrace_dest_dir = ".";
 static char *program_to_run = NULL;
@@ -257,7 +258,8 @@ static void setup_trace_file_graphs(void)
 	else
 		alloc_ptrs = 1;
 	list_for_each_entry(tf, &all_traces, list) {
-		tf->tput_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->tput_reads_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+		tf->tput_writes_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->latency_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->queue_depth_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->iop_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
@@ -300,6 +302,7 @@ static void read_traces(void)
 		tf->trace = trace;
 		tf->max_seconds = SECONDS(last_time) + 1;
 		tf->stop_seconds = SECONDS(last_time) + 1;
+
 		find_extreme_offsets(trace, &tf->min_offset, &tf->max_offset,
 				    &max_bank, &max_bank_offset);
 		filter_outliers(trace, tf->min_offset, tf->max_offset, &ymin, &ymax);
@@ -324,13 +327,19 @@ static void pick_line_graph_color(void)
 		for (i = 0; i < tf->io_plots; i++) {
 			if (tf->gdd_reads[i]) {
 				tf->line_color = tf->gdd_reads[i]->color;
-				break;
+				tf->reads_color = tf->gdd_reads[i]->color;
 			}
 			if (tf->gdd_writes[i]) {
 				tf->line_color = tf->gdd_writes[i]->color;
-				break;
+				tf->writes_color = tf->gdd_writes[i]->color;
 			}
+			if (tf->writes_color && tf->reads_color)
+				break;
 		}
+		if (!tf->reads_color)
+			tf->reads_color = tf->line_color;
+		if (!tf->writes_color)
+			tf->writes_color = tf->line_color;
 	}
 }
 
@@ -351,7 +360,7 @@ static void read_trace_events(void)
 		first_record(trace);
 		while (1) {
 			check_record(trace);
-			add_tput(trace, tf->tput_gld);
+			add_tput(trace, tf->tput_writes_gld, tf->tput_reads_gld);
 			add_iop(trace, tf->iop_gld);
 			add_io(trace, tf);
 			add_pending_io(trace, tf->queue_depth_gld);
@@ -663,6 +672,12 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 		pos = label + strlen(label);
 
 		for (i = 0; i < tf->io_plots; i++) {
+			if (tf->gdd_writes[i]) {
+				svg_io_graph(plot, tf->gdd_writes[i]);
+				if (io_per_process)
+					strcpy(pos, tf->gdd_writes[i]->label);
+				svg_add_legend(plot, label, " Writes", tf->gdd_writes[i]->color);
+			}
 			if (tf->gdd_reads[i]) {
 				svg_io_graph(plot, tf->gdd_reads[i]);
 				if (io_per_process)
@@ -670,12 +685,6 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 				svg_add_legend(plot, label, " Reads", tf->gdd_reads[i]->color);
 			}
 
-			if (tf->gdd_writes[i]) {
-				svg_io_graph(plot, tf->gdd_writes[i]);
-				if (io_per_process)
-					strcpy(pos, tf->gdd_writes[i]->label);
-				svg_add_legend(plot, label, " Writes", tf->gdd_writes[i]->color);
-			}
 		}
 	}
 	if (plot->add_xlabel)
@@ -694,14 +703,20 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 	if (active_graphs[TPUT_GRAPH_INDEX] == 0)
 		return;
 
-	if (num_traces > 1)
-		svg_alloc_legend(plot, num_traces);
+	svg_alloc_legend(plot, num_traces * 2);
+
 	list_for_each_entry(tf, &all_traces, list) {
-		if (tf->tput_gld->max > max)
-			max = tf->tput_gld->max;
+		if (tf->tput_writes_gld->max > max)
+			max = tf->tput_writes_gld->max;
+		if (tf->tput_reads_gld->max > max)
+			max = tf->tput_reads_gld->max;
 	}
-	list_for_each_entry(tf, &all_traces, list)
-		tf->tput_gld->max = max;
+	list_for_each_entry(tf, &all_traces, list) {
+		if (tf->tput_writes_gld->max > 0)
+			tf->tput_writes_gld->max = max;
+		if (tf->tput_reads_gld->max > 0)
+			tf->tput_reads_gld->max = max;
+	}
 
 	setup_axis(plot);
 	set_plot_label(plot, "Throughput");
@@ -715,15 +730,20 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		svg_line_graph(plot, tf->tput_gld, tf->line_color, 0, 0);
-		if (num_traces > 1)
-			svg_add_legend(plot, tf->label, "", tf->line_color);
+		if (tf->tput_writes_gld->max > 0) {
+			svg_line_graph(plot, tf->tput_writes_gld, tf->writes_color, 0, 0);
+			svg_add_legend(plot, tf->label, "Writes", tf->writes_color);
+		}
+		if (tf->tput_reads_gld->max > 0) {
+			svg_line_graph(plot, tf->tput_reads_gld, tf->reads_color, 0, 0);
+			svg_add_legend(plot, tf->label, "Reads", tf->reads_color);
+		}
 	}
 
 	if (plot->add_xlabel)
 		set_xlabel(plot, "Time (seconds)");
-	if (num_traces > 1)
-		svg_write_legend(plot);
+
+	svg_write_legend(plot);
 	close_plot(plot);
 	total_graphs_written++;
 }
@@ -1300,7 +1320,11 @@ static int parse_options(int ac, char **av)
 			disable_one_graph(optarg);
 			break;
 		case 'd':
-			blktrace_device = strdup(optarg);
+			if (num_blktrace_devices == MAX_DEVICES_PER_TRACE - 1) {
+				fprintf(stderr, "Too many blktrace devices provided\n");
+				exit(1);
+			}
+			blktrace_devices[num_blktrace_devices++] = strdup(optarg);
 			break;
 		case 'D':
 			blktrace_dest_dir = strdup(optarg);
@@ -1386,11 +1410,11 @@ action_err:
 	return 0;
 }
 
-static void dest_mkdir()
+static void dest_mkdir(char *dir)
 {
 	int ret;
 
-	ret = mkdir(blktrace_dest_dir, 0777);
+	ret = mkdir(dir, 0777);
 	if (ret && errno != EEXIST) {
 		fprintf(stderr, "failed to mkdir error %s\n", strerror(errno));
 		exit(errno);
@@ -1440,14 +1464,23 @@ int main(int ac, char **av)
 		exit(1);
 	}
 
-	if (blktrace_device) {
+	if (num_blktrace_devices) {
 		char *path;
 
-		dest_mkdir();
+		dest_mkdir(blktrace_dest_dir);
+		if (num_blktrace_devices > 1) {
+			snprintf(line, line_len, "%s/%s", blktrace_dest_dir,
+				 blktrace_outfile);
+			dest_mkdir(line);
+		}
+
 		path = join_path(blktrace_dest_dir, blktrace_outfile);
 
-		ret = start_blktrace(blktrace_device, blktrace_outfile,
-				     blktrace_dest_dir);
+		snprintf(line, line_len, "%s.dump", path);
+		unlink(line);
+
+		ret = start_blktrace(blktrace_devices, num_blktrace_devices,
+				     blktrace_outfile, blktrace_dest_dir);
 		if (ret) {
 			fprintf(stderr, "exiting due to blktrace failure\n");
 			exit(1);
@@ -1462,7 +1495,6 @@ int main(int ac, char **av)
 				exit(1);
 			}
 			wait_for_tracers();
-			blktrace_to_dump(path);
 		} else {
 			/* no program specified, just wait for
 			 * blktrace to exit

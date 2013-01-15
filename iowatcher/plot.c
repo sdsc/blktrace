@@ -71,8 +71,10 @@ static int final_width = 0;
 
 static char *colors[] = {
 	"blue", "darkgreen",
-	"red", "aqua",
-	"orange", "darkviolet",
+	"red",
+	"darkviolet",
+	"orange",
+	"aqua",
 	"brown", "#00FF00",
 	"yellow", "coral",
 	"black", "darkred",

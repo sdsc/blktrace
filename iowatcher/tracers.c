@@ -42,16 +42,14 @@ static char line[1024];
 static pid_t blktrace_pid = 0;
 static pid_t mpstat_pid = 0;
 
-char *blktrace_args[] = {
+char *blktrace_args[17 + MAX_DEVICES_PER_TRACE * 2] = {
 	"blktrace",
-	"-d", NULL,
-	"-b", "16384",
-	"-o", "trace",
-	"-D", ".",
+	"-b", "8192",
 	"-a", "queue",
 	"-a", "complete",
 	"-a", "issue",
 	"-a", "notify",
+	"-D", ".",
 	NULL,
 };
 
@@ -61,9 +59,8 @@ char *mpstat_args[] = {
 	NULL,
 };
 
-#define DEVICE_INDEX 2
-#define DEST_DIR_INDEX 8
-#define TRACE_NAME_INDEX 6
+#define DEST_DIR_INDEX 12
+#define LAST_ARG 13
 
 int stop_tracer(pid_t *tracer_pid)
 {
@@ -103,18 +100,42 @@ void sig_handler_for_quit(int val)
 }
 
 
-int start_blktrace(char *device, char *trace_name, char *dest)
+int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest)
 {
 	pid_t pid;
 	int ret;
 	char **arg = blktrace_args;
-	blktrace_args[DEVICE_INDEX] = device;
+	int i;
+	int arg_index;
 
 	fprintf(stderr, "running blktrace");
-	if (dest)
-		blktrace_args[DEST_DIR_INDEX] = dest;
-	if (trace_name)
-		blktrace_args[TRACE_NAME_INDEX] = trace_name;
+	if (!trace_name)
+		trace_name = "trace";
+
+	arg_index = LAST_ARG;
+	for (i = 0; i < num_devices; i++) {
+		blktrace_args[arg_index++] = "-d";
+		blktrace_args[arg_index++] = devices[i];
+	}
+
+	/*
+	 * single device traces use -o and are put into
+	 * the dest dir if provided
+	 */
+	if (num_devices == 1) {
+		blktrace_args[arg_index++] = "-o";
+		blktrace_args[arg_index++] = trace_name;
+		if (dest)
+			blktrace_args[DEST_DIR_INDEX] = dest;
+	} else {
+		/*
+		 * multi device traces are put into a dest
+		 * dir based on the trace name
+		 */
+		blktrace_args[DEST_DIR_INDEX] = trace_name;
+	}
+
+	blktrace_args[arg_index] = NULL;
 
 	while(*arg) {
 		fprintf(stderr, " %s", *arg);

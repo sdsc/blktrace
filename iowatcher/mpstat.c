@@ -38,8 +38,11 @@
 char line[1024];
 int line_len = 1024;
 
-char *record_header = "CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest   %idle\n";
-int record_header_len = 0;
+static char record_header[] = "CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest   %idle\n";
+static char record_header_v2[] = "CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle\n";
+
+int record_header_len = sizeof(record_header);
+int record_header_v2_len = sizeof(record_header_v2);
 
 static int past_eof(struct trace *trace, char *cur)
 {
@@ -67,11 +70,17 @@ char *next_mpstat(struct trace *trace)
 {
 	char *cur = trace->mpstat_cur;
 
-	cur = strstr(cur, record_header);
+	cur = strstr(trace->mpstat_cur, record_header);
+	if (cur) {
+		cur += record_header_len;
+	} else {
+		cur = strstr(trace->mpstat_cur, record_header_v2);
+		if (cur)
+			cur += record_header_v2_len;
+	}
 	if (!cur)
 		return NULL;
 
-	cur += record_header_len;
 	if (past_eof(trace, cur))
 		return NULL;
 	trace->mpstat_cur = cur;
@@ -111,8 +120,7 @@ static int count_mpstat_cpus(struct trace *trace)
 	char *cur = trace->mpstat_start;
 	char *cpu;
 	char *record;
-	int len;
-	char *line;
+	int len; char *line;
 
 	first_mpstat(trace);
 
@@ -134,6 +142,7 @@ static int count_mpstat_cpus(struct trace *trace)
 	trace->mpstat_num_cpus = atoi(cur);
 	first_mpstat(trace);
 	free(line);
+
 	return trace->mpstat_num_cpus;
 }
 
@@ -176,7 +185,6 @@ int read_mpstat(struct trace *trace, char *trace_name)
 	}
 
 	snprintf(line, line_len, "%s.mpstat", guess_filename(trace_name));
-
 	fd = open(line, O_RDONLY);
 	if (fd < 0)
 		return 0;
@@ -191,7 +199,6 @@ int read_mpstat(struct trace *trace, char *trace_name)
 		fprintf(stderr, "Unable to mmap trace file %s, err %s\n", line, strerror(errno));
 		goto fail_fd;
 	}
-
 	trace->mpstat_start = p;
 	trace->mpstat_len = st.st_size;
 	trace->mpstat_cur = p;
@@ -210,6 +217,11 @@ fail_fd:
 
 /*
  * 09:56:26 AM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest   %idle
+ *
+ * or
+ *
+ * 10:18:51 AM  CPU    %usr   %nice    %sys %iowait    %irq   %soft  %steal  %guest  %gnice   %idle
+ *
  *
  * this reads just one line in the mpstat
  */

@@ -25,6 +25,15 @@
 #define DOUBLE_TO_NANO_ULL(d)   ((unsigned long long)((d) * 1000000000))
 #define CHECK_MAGIC(t)          (((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 
+struct dev_info {
+	u32 device;
+	u64 min;
+	u64 max;
+	u64 map;
+};
+
+#define MAX_DEVICES_PER_TRACE 64
+
 struct trace {
 	int fd;
 	u64 len;
@@ -48,6 +57,8 @@ struct trace {
 	int mpstat_fd;
 	int mpstat_seconds;
 	int mpstat_num_cpus;
+	int num_devices;
+	struct dev_info devices[MAX_DEVICES_PER_TRACE];
 };
 
 struct trace_file {
@@ -61,9 +72,12 @@ struct trace_file {
 	u64 min_offset;
 	u64 max_offset;
 
+	char *reads_color;
+	char *writes_color;
 	char *line_color;
 
-	struct graph_line_data *tput_gld;
+	struct graph_line_data *tput_writes_gld;
+	struct graph_line_data *tput_reads_gld;
 	struct graph_line_data *iop_gld;
 	struct graph_line_data *latency_gld;
 	struct graph_line_data *queue_depth_gld;
@@ -104,7 +118,8 @@ void check_record(struct trace *trace);
 void add_completed_io(struct trace *trace,
 		      struct graph_line_data *latency_gld);
 void add_io(struct trace *trace, struct trace_file *tf);
-void add_tput(struct trace *trace, struct graph_line_data *gld);
+void add_tput(struct trace *trace, struct graph_line_data *writes_gld,
+	      struct graph_line_data *reads_gld);
 void add_pending_io(struct trace *trace, struct graph_line_data *gld);
 int next_record(struct trace *trace);
 void first_record(struct trace *trace);

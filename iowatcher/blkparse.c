@@ -30,6 +30,7 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <math.h>
+#include <dirent.h>
 
 #include "plot.h"
 #include "blkparse.h"
@@ -47,6 +48,9 @@ static struct list_head process_hash_table[PROCESS_HASH_TABLE_SIZE];
 
 extern int plot_io_action;
 extern int io_per_process;
+
+static const int line_len = 1024;
+static char line[1024];
 
 /*
  * Trace categories
@@ -158,6 +162,9 @@ struct pending_io {
 	/* sector offset of this IO */
 	u64 sector;
 
+	/* dev_t for this IO */
+	u32 device;
+
 	/* time this IO was dispatched */
 	u64 dispatch_time;
 	/* time this IO was finished */
@@ -219,20 +226,21 @@ static inline u64 hash_sector(u64 val)
 static int io_hash_table_insert(struct pending_io *ins_pio)
 {
 	u64 sector = ins_pio->sector;
+	u32 dev = ins_pio->device;
 	int slot = hash_sector(sector);
 	struct list_head *head;
 	struct pending_io *pio;
 
 	head = io_hash_table + slot;
 	list_for_each_entry(pio, head, hash_list) {
-		if (pio->sector == sector)
+		if (pio->sector == sector && pio->device == dev)
 			return -EEXIST;
 	}
 	list_add_tail(&ins_pio->hash_list, head);
 	return 0;
 }
 
-static struct pending_io *io_hash_table_search(u64 sector)
+static struct pending_io *io_hash_table_search(u64 sector, u32 dev)
 {
 	int slot = hash_sector(sector);
 	struct list_head *head;
@@ -240,7 +248,7 @@ static struct pending_io *io_hash_table_search(u64 sector)
 
 	head = io_hash_table + slot;
 	list_for_each_entry(pio, head, hash_list) {
-		if (pio->sector == sector)
+		if (pio->sector == sector && pio->device == dev)
 			return pio;
 	}
 	return NULL;
@@ -253,6 +261,7 @@ static struct pending_io *hash_queued_io(struct blk_io_trace *io)
 
 	pio = calloc(1, sizeof(*pio));
 	pio->sector = io->sector;
+	pio->device = io->device;
 	pio->pid = io->pid;
 
 	ret = io_hash_table_insert(pio);
@@ -268,7 +277,7 @@ static struct pending_io *hash_dispatched_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 
-	pio = io_hash_table_search(io->sector);
+	pio = io_hash_table_search(io->sector, io->device);
 	if (!pio) {
 		pio = hash_queued_io(io);
 		if (!pio)
@@ -282,7 +291,7 @@ static struct pending_io *hash_completed_io(struct blk_io_trace *io)
 {
 	struct pending_io *pio;
 
-	pio = io_hash_table_search(io->sector);
+	pio = io_hash_table_search(io->sector, io->device);
 
 	if (!pio)
 		return NULL;
@@ -513,6 +522,66 @@ out:
 	return -1;
 }
 
+static struct dev_info *lookup_dev(struct trace *trace, struct blk_io_trace *io)
+{
+	u32 dev = io->device;
+	int i;
+	struct dev_info *di = NULL;
+
+	for (i = 0; i < trace->num_devices; i++) {
+		if (trace->devices[i].device == dev) {
+			di = trace->devices + i;
+			goto found;
+		}
+	}
+	i = trace->num_devices++;
+	if (i >= MAX_DEVICES_PER_TRACE) {
+		fprintf(stderr, "Trace contains too many devices (%d)\n", i);
+		exit(1);
+	}
+	di = trace->devices + i;
+	di->device = dev;
+found:
+	return di;
+}
+
+static void map_devices(struct trace *trace)
+{
+	struct dev_info *di;
+	u64 found;
+	u64 map_start = 0;
+	int i;
+
+	first_record(trace);
+	while (1) {
+		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
+			di = lookup_dev(trace, trace->io);
+			found = trace->io->sector << 9;
+			if (found < di->min)
+				di->min = found;
+
+			found += trace->io->bytes;
+			if (di->max < found)
+				di->max = found;
+		}
+		if (next_record(trace))
+			break;
+	}
+	first_record(trace);
+	for (i = 0; i < trace->num_devices; i++) {
+		di = trace->devices + i;
+		di->map = map_start;
+		map_start += di->max - di->min;
+	}
+}
+
+u64 map_io(struct trace *trace, struct blk_io_trace *io)
+{
+	struct dev_info *di = lookup_dev(trace, io);
+	u64 val = trace->io->sector << 9;
+	return di->map + val - di->min;
+}
+
 void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret, u64 *max_bank_ret,
 			  u64 *max_offset_ret)
 {
@@ -521,10 +590,13 @@ void find_extreme_offsets(struct trace *trace, u64 *min_ret, u64 *max_ret, u64 *
 	u64 max_bank = 0;
 	u64 max_bank_offset = 0;
 	u64 num_banks = 0;
+
+	map_devices(trace);
+
 	first_record(trace);
 	while (1) {
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY))) {
-			found = trace->io->sector << 9;
+			found = map_io(trace, trace->io);
 			if (found < min)
 				min = found;
 
@@ -591,7 +663,7 @@ int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 		check_io_types(trace);
 		if (!(trace->io->action & BLK_TC_ACT(BLK_TC_NOTIFY)) &&
 		    (trace->io->action & BLK_TA_MASK) == __BLK_TA_QUEUE) {
-			u64 off = (trace->io->sector << 9) - min_offset;
+			u64 off = map_io(trace, trace->io) - min_offset;
 
 			slot = (int)(off / bytes_per_bucket);
 			hits[slot]++;
@@ -636,33 +708,139 @@ int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 	return 0;
 }
 
+static char footer[] = ".blktrace.0";
+static int footer_len = sizeof(footer);
+
+static void match_trace(char *name, char **traces)
+{
+	int match_len;
+	char *match;
+	int footer_start;
+
+	match_len = strlen(name);
+	if (match_len <= footer_len)
+		return;
+
+	footer_start = match_len - footer_len;
+	if (strcmp(name + footer_start + 1, footer) != 0)
+		return;
+
+	match = strdup(name);
+	if (!match)
+		goto enomem;
+
+	match[footer_start + 1] = '\0';
+	snprintf(line, line_len, "%s -i '%s'", *traces ? *traces : "", match);
+	free(match);
+
+	match = strdup(line);
+	if (!match)
+		goto enomem;
+
+	free(*traces);
+	*traces = match;
+	return;
+
+enomem:
+	perror("memory allocation failed");
+	exit(1);
+	return;
+}
+
+static char *combine_blktrace_devs(char *dir_name)
+{
+	DIR *dir;
+	char *traces = NULL;
+	struct dirent *d;
+	int len;
+	int ret;
+
+	dir = opendir(dir_name);
+	if (!dir)
+		return NULL;
+
+	while (1) {
+		d = readdir(dir);
+		if (!d)
+			break;
+
+		len = strlen(d->d_name);
+		if (len > footer_len)
+			match_trace(d->d_name, &traces);
+	}
+
+	closedir(dir);
+
+	if (!traces)
+		return NULL;
+
+	snprintf(line, line_len, "blkparse -O %s -D %s -d '%s.%s'",
+		 traces, dir_name, dir_name, "dump");
+
+	ret = system(line);
+	if (ret) {
+		fprintf(stderr, "blkparse failure %s\n", line);
+		exit(1);
+	}
+	snprintf(line, line_len, "%s.%s", dir_name, "dump");
+	return strdup(line);
+}
+
 static char *find_trace_file(char *filename)
 {
 	int ret;
 	struct stat st;
-	char line[1024];
 	char *dot;
 	char *try;
+	int found_dir = 0;
 
+	/* look for an exact match of whatever they pass in.
+	 * If it is a file, assume it is the dump file.
+	 * If a directory, remember that it existed so we
+	 * can combine traces in that directory later
+	 */
 	ret = stat(filename, &st);
-	if (ret == 0)
-		return strdup(filename);
+	if (ret == 0) {
+		if (S_ISREG(st.st_mode))
+			return strdup(filename);
 
-	snprintf(line, 1024, "%s.%s", filename, "dump");
+		if (S_ISDIR(st.st_mode))
+			found_dir = 1;
+	}
+
+	/*
+	 * try tacking .dump onto the end and see if that already
+	 * has been generated
+	 */
+	snprintf(line, line_len, "%s.%s", filename, "dump");
 	ret = stat(line, &st);
 	if (ret == 0)
 		return strdup(line);
 
+	/*
+	 * try to generate the .dump from all the traces in
+	 * a single dir.
+	 */
+	if (found_dir) {
+		try = combine_blktrace_devs(filename);
+		if (try)
+			return try;
+	}
+
+	/*
+	 * try to generate the .dump from all the blktrace
+	 * files for a named trace
+	 */
 	try = strdup(filename);
 	dot = strrchr(try, '.');
 	if (!dot || strcmp(".dump", dot) != 0) {
 		if (dot && dot != try)
 			*dot = '\0';
-		snprintf(line, 1024, "%s%s", try, ".blktrace.0");
+		snprintf(line, line_len, "%s%s", try, ".blktrace.0");
 		ret = stat(line, &st);
 		if (ret == 0) {
 			blktrace_to_dump(try);
-			snprintf(line, 1024, "%s.%s", try, "dump");
+			snprintf(line, line_len, "%s.%s", try, "dump");
 			ret = stat(line, &st);
 			if (ret == 0) {
 				free(try);
@@ -762,9 +940,11 @@ static inline int io_event(struct trace *trace)
 	return __BLK_TA_COMPLETE;
 }
 
-void add_tput(struct trace *trace, struct graph_line_data *gld)
+void add_tput(struct trace *trace, struct graph_line_data *writes_gld,
+	      struct graph_line_data *reads_gld)
 {
 	struct blk_io_trace *io = trace->io;
+	struct graph_line_data *gld;
 	int action = io->action & BLK_TA_MASK;
 	int seconds;
 
@@ -774,11 +954,17 @@ void add_tput(struct trace *trace, struct graph_line_data *gld)
 	if (action != tput_event(trace))
 		return;
 
+	if (BLK_DATADIR(io->action) & BLK_TC_READ)
+		gld = reads_gld;
+	else
+		gld = writes_gld;
+
 	seconds = SECONDS(io->time);
 	if (seconds > gld->max_seconds)
 		return;
 
 	gld->data[seconds].sum += io->bytes;
+
 	gld->data[seconds].count = 1;
 	if (gld->data[seconds].sum > gld->max)
 		gld->max = gld->data[seconds].sum;
@@ -834,7 +1020,7 @@ void add_io(struct trace *trace, struct trace_file *tf)
 	if (action != io_event(trace))
 		return;
 
-	offset = io->sector << 9;
+	offset = map_io(trace, io);
 
 	pm = get_pid_map(tf, io->pid);
 	if (!pm) {
