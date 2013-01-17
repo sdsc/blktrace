@@ -68,7 +68,7 @@ int next_mpstat_line(struct trace *trace)
 
 char *next_mpstat(struct trace *trace)
 {
-	char *cur = trace->mpstat_cur;
+	char *cur;
 
 	cur = strstr(trace->mpstat_cur, record_header);
 	if (cur) {
@@ -115,6 +115,34 @@ static void find_last_mpstat_time(struct trace *trace)
 	trace->mpstat_seconds = num_mpstats;
 }
 
+static int guess_mpstat_cpus(struct trace *trace)
+{
+	char *cur;
+	int ret;
+	int count = 0;
+
+	cur = first_mpstat(trace);
+	if (!cur)
+		return 0;
+
+	while (1) {
+		ret = next_mpstat_line(trace);
+		if (ret)
+			break;
+
+		cur = trace->mpstat_cur;
+		count++;
+
+		if (!cur)
+			break;
+
+		if (cur[0] == '\n')
+			break;
+	}
+	trace->mpstat_num_cpus = count - 1;
+	return 0;
+}
+
 static int count_mpstat_cpus(struct trace *trace)
 {
 	char *cur = trace->mpstat_start;
@@ -123,10 +151,10 @@ static int count_mpstat_cpus(struct trace *trace)
 	int len; char *line;
 
 	first_mpstat(trace);
-
 	cpu = strstr(cur, " CPU)");
 	if (!cpu)
-		return 0;
+		return guess_mpstat_cpus(trace);
+
 	line = strndup(cur, cpu - cur);
 
 	record = strrchr(line, '(');
