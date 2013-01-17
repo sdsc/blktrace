@@ -8,7 +8,7 @@ iowatcher - Create visualizations from blktrace results
 \fIOPTIONS...\fR
 
 .SH DESCRIPTION
-iowatcher graphs the results of a blktrace run.  It can graph the result oÿ an existing blktrace, start a new blktrace, or start a new blktrace and a¾nchmark run.  It can then create an image or movie of the IO from a giveÿ trace.  iowatcher can produce either SVG files or movies in mp4 format (wÿth ffmpeg) or ogg format (with png2theora).
+iowatcher graphs the results of a blktrace run.  It can graph the result of an existing blktrace, start a new blktrace, or start a new blktrace and a benchmark run.  It can then create an image or movie of the IO from a given trace.  iowatcher can produce either SVG files or movies in mp4 format (with ffmpeg) or ogg format (with png2theora).
 
 .SH OPTIONS
 .TP
@@ -16,7 +16,7 @@ iowatcher graphs the results of a blktrace run.  It can graph the result oÿ an e
 Print a brief usage summary.
 .TP
 \fB-d, --device\fP <device>
-Controls which device you are tracing.  You can only trace one device at aÿme for now.  It is sent directly to blktrace, and only needed when you aÿe making a new trace.
+Controls which device you are tracing.  You can only trace one device at a time for now.  It is sent directly to blktrace, and only needed when you are making a new trace.
 .TP
 \fB-D, --blktrace-destination\fP <destination>
 Destination for blktrace.
@@ -28,16 +28,16 @@ Program to run while blktrace is run.
 Keep the SVG files generated for movie mode.
 .TP
 \fB-t, --trace\fP <file>
-Controls the name of the blktrace file.  iowatcher uses a dump from blkparþ, so -t tries to guess the name of the corresponding per CPU blktrace datú files if the dump file doesn't already exist.
-If you want more than one trace in a given graph, you can specify -t more ÿhan once.
+Controls the name of the blktrace file.  iowatcher uses a dump from blkparse, so -t tries to guess the name of the corresponding per CPU blktrace data files if the dump file doesn't already exist.
+If you want more than one trace in a given graph, you can specify -t more than once.
 .TP
 \fB-l, --label\fP <label>
-Sets a label in the graph for a trace file.  The labels are added in the súme order the trace files are added.
+Sets a label in the graph for a trace file.  The labels are added in the same order the trace files are added.
 .TP
 \fB-m, --movie\fP [spindle|rect]
-Create a movie.  The file format depends on the extension used in the -o fÿlename.* option.  If you specify an .ogv or .ogg extension, the result wilÿ be Ogg Theora video, if png2theora is available.
-If you use an .mp4 extension, the result will be an mp4 video if ffmpeg isúvailable.  You can use any other extension, but the end result will be anÿp4.
-You can use --movie=spindle or --movie=rect, which changes the style oÿ the IO mapping.
+Create a movie.  The file format depends on the extension used in the -o filename.* option.  If you specify an .ogv or .ogg extension, the result will be Ogg Theora video, if png2theora is available.
+If you use an .mp4 extension, the result will be an mp4 video if ffmpeg is available.  You can use any other extension, but the end result will be an mp4.
+You can use --movie=spindle or --movie=rect, which changes the style of the IO mapping.
 .TP
 \fB-T, --title\fP <title>
 Set a title to be placed at the top of the graph.
@@ -46,7 +46,7 @@ Set a title to be placed at the top of the graph.
 Output filename (default: trace.svg).
 .TP
 \fB-r, --rolling\fP <seconds>
-Control the duration for the rolling average.  iowatcher tries to smooth oÿt bumpy graphs by averaging the current second with seconds from the past.ÿarger numbers here give you flatter graphs.
+Control the duration for the rolling average.  iowatcher tries to smooth out bumpy graphs by averaging the current second with seconds from the past.  Larger numbers here give you flatter graphs.
 .TP
 \fB-h, --height\fP <height>
 Set the height of each graph
@@ -70,13 +70,13 @@ Plot given action (one of Q,D,C) in IO graph
 Distinguish between processes in IO graph
 .TP
 \fB-O, --only-graph\fP <graph>
-Add a single graph to the output (see GRAPHS).  By default all the graphs úre included, but with -O you get only the graphs you ask for.  -O may be uÿed more than once.
+Add a single graph to the output (see GRAPHS).  By default all the graphs are included, but with -O you get only the graphs you ask for.  -O may be used more than once.
 .TP
 \fB-N, --no-graph\fP <type>
-Remove a single graph from the output (see GRAPHS).  This may also be usedÿore than once.
+Remove a single graph from the output (see GRAPHS).  This may also be used more than once.
 .SH GRAPHS
 Choices for -O and -N are:
-   io, tput, latency, queue_depth, iops, cpu-sys, cpu-io, cpu-irq, cpu-useÿ, cpu-soft
+   io, tput, latency, queue_depth, iops, cpu-sys, cpu-io, cpu-irq, cpu-user, cpu-soft
 
 .SH EXAMPLES
 Generate graph from the existing trace.dump:
@@ -103,10 +103,10 @@ Generate a graph from two runs, and label them:
 iowatcher -t ext4.dump -t xfs.dump -l Ext4 -l XFS -o trace.svg
 .RE
 .PP
-Run a fio benchmark and store the trace in trace.dump, add a title to the ÿop, use /dev/sda for blktrace:
+Run a fio benchmark and store the trace in trace.dump, add a title to the top, use /dev/sda for blktrace:
 .PP
 .RS
-iowatcher -d /dev/sda -t trace.dump -T 'Fio Benchmark' -p 'fio some_job_fiÿe'
+iowatcher -d /dev/sda -t trace.dump -T 'Fio Benchmark' -p 'fio some_job_file'
 .RE
 .PP
 Make a movie from an existing trace:
@@ -114,3 +114,4 @@ Make a movie from an existing trace:
 .RS
 iowatcher -t trace --movie -o trace.mp4
 .RE
+
