@@ -133,6 +133,7 @@ struct plot_history {
 };
 
 char *pick_color(void);
+char *pick_fio_color(void);
 char *pick_cpu_color(void);
 void reset_cpu_color(void);
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd);
@@ -178,4 +179,5 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history 
 void rewind_spindle_steps(int num);
 void setup_axis_spindle(struct plot *plot);
 int close_plot_col(struct plot *plot);
+
 #endif

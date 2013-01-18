@@ -57,6 +57,12 @@ struct trace {
 	int mpstat_fd;
 	int mpstat_seconds;
 	int mpstat_num_cpus;
+
+	char *fio_start;
+	char *fio_cur;
+	u64 fio_len;
+	int fio_fd;
+	int fio_seconds;
 	int num_devices;
 	struct dev_info devices[MAX_DEVICES_PER_TRACE];
 };
@@ -81,8 +87,13 @@ struct trace_file {
 	struct graph_line_data *iop_gld;
 	struct graph_line_data *latency_gld;
 	struct graph_line_data *queue_depth_gld;
+
+	int fio_trace;
+	struct graph_line_data *fio_gld;
+
 	/* Number of entries in gdd_writes / gdd_reads */
 	int io_plots;
+
 	/* Allocated array size for gdd_writes / gdd_reads */
 	int io_plots_allocated;
 	struct graph_dot_data **gdd_writes;

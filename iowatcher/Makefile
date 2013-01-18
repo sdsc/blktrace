@@ -18,7 +18,7 @@ all: $(ALL)
 %.o: %.c
 	$(CC) -o $*.o -c $(ALL_CFLAGS) $<
 
-iowatcher: blkparse.o plot.o main.o tracers.o mpstat.o
+iowatcher: blkparse.o plot.o main.o tracers.o mpstat.o fio.o
 	$(CC) $(ALL_CFLAGS) -o $@ $(filter %.o,$^) -lm
 
 depend:

@@ -39,8 +39,10 @@
 #include "list.h"
 #include "tracers.h"
 #include "mpstat.h"
+#include "fio.h"
 
 LIST_HEAD(all_traces);
+LIST_HEAD(fio_traces);
 
 static char line[1024];
 static int line_len = 1024;
@@ -72,6 +74,7 @@ static int total_graphs_written = 1;
 enum {
 	IO_GRAPH_INDEX = 0,
 	TPUT_GRAPH_INDEX,
+	FIO_GRAPH_INDEX,
 	CPU_SYS_GRAPH_INDEX,
 	CPU_IO_GRAPH_INDEX,
 	CPU_IRQ_GRAPH_INDEX,
@@ -95,6 +98,7 @@ enum {
 static char *graphs_by_name[] = {
 	"io",
 	"tput",
+	"fio",
 	"cpu-sys",
 	"cpu-io",
 	"cpu-irq",
@@ -135,6 +139,7 @@ static int last_active_graph = IOPS_GRAPH_INDEX;
 
 static int label_index = 0;
 static int num_traces = 0;
+static int num_fio_traces = 0;
 static int longest_label = 0;
 
 static char *graph_title = "";
@@ -247,6 +252,23 @@ static void add_trace_file(char *filename)
 	num_traces++;
 }
 
+static void add_fio_trace_file(char *filename)
+{
+	struct trace_file *tf;
+
+	tf = calloc(1, sizeof(*tf));
+	if (!tf) {
+		fprintf(stderr, "Unable to allocate memory\n");
+		exit(1);
+	}
+	tf->label = "";
+	tf->filename = strdup(filename);
+	list_add_tail(&tf->list, &fio_traces);
+	tf->line_color = pick_fio_color();
+	tf->fio_trace = 1;
+	num_fio_traces++;
+}
+
 static void setup_trace_file_graphs(void)
 {
 	struct trace_file *tf;
@@ -257,11 +279,13 @@ static void setup_trace_file_graphs(void)
 		alloc_ptrs = 16;
 	else
 		alloc_ptrs = 1;
+
 	list_for_each_entry(tf, &all_traces, list) {
 		tf->tput_reads_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->tput_writes_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->latency_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->queue_depth_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
+
 		tf->iop_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 		tf->gdd_writes = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
 		tf->gdd_reads = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
@@ -279,6 +303,15 @@ static void setup_trace_file_graphs(void)
 			tf->mpstat_gld[i]->max = 100;
 		}
 	}
+
+	list_for_each_entry(tf, &fio_traces, list) {
+		if (tf->trace->fio_seconds > 0) {
+			tf->fio_gld = alloc_line_data(tf->min_seconds,
+						      tf->max_seconds,
+						      tf->stop_seconds);
+		}
+	}
+
 }
 
 static void read_traces(void)
@@ -294,6 +327,7 @@ static void read_traces(void)
 
 	list_for_each_entry(tf, &all_traces, list) {
 		path = join_path(blktrace_dest_dir, tf->filename);
+
 		trace = open_trace(path);
 		if (!trace)
 			exit(1);
@@ -314,7 +348,17 @@ static void read_traces(void)
 		tf->mpstat_max_seconds = trace->mpstat_seconds;
 		if (tf->mpstat_max_seconds)
 			found_mpstat = 1;
+
 		free(path);
+	}
+
+	list_for_each_entry(tf, &fio_traces, list) {
+		trace = open_fio_trace(tf->filename);
+		if (!trace)
+			exit(1);
+		tf->trace = trace;
+		tf->max_seconds = tf->trace->fio_seconds;
+		tf->stop_seconds = tf->trace->fio_seconds;
 	}
 }
 
@@ -343,6 +387,26 @@ static void pick_line_graph_color(void)
 	}
 }
 
+static void read_fio_events(struct trace_file *tf)
+{
+	u64 bw = 0;
+	int time = 0;
+	int dir = 0;
+	int ret;
+
+	first_fio(tf->trace);
+	while (1) {
+		ret = read_fio_event(tf->trace, &time, &bw, &dir);
+		if (ret)
+			break;
+
+		if (dir <= 1)
+			add_fio_gld(time, bw, tf->fio_gld);
+		if (next_fio_line(tf->trace))
+			break;
+	}
+}
+
 static void read_trace_events(void)
 {
 
@@ -355,8 +419,12 @@ static void read_trace_events(void)
 	double max_user = 0, max_sys = 0, max_iowait = 0,
 	       max_irq = 0, max_soft = 0;
 
+	list_for_each_entry(tf, &fio_traces, list)
+		read_fio_events(tf);
+
 	list_for_each_entry(tf, &all_traces, list) {
 		trace = tf->trace;
+
 		first_record(trace);
 		while (1) {
 			check_record(trace);
@@ -436,6 +504,15 @@ static void set_trace_label(char *label)
 		if (cur == label_index) {
 			tf->label = strdup(label);
 			label_index++;
+			return;
+			break;
+		}
+		cur++;
+	}
+	list_for_each_entry(tf, &fio_traces, list) {
+		if (cur == label_index) {
+			tf->label = strdup(label);
+			label_index++;
 			break;
 		}
 		cur++;
@@ -468,8 +545,9 @@ static void compare_minmax_tf(struct trace_file *tf, int *max_seconds, u64 *min_
 static void set_all_minmax_tf(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
-
-	list_for_each_entry(tf, &all_traces, list) {
+	struct list_head *traces = &all_traces;
+again:
+	list_for_each_entry(tf, traces, list) {
 		tf->min_seconds = min_seconds;
 		tf->max_seconds = max_seconds;
 		if (tf->stop_seconds > max_seconds)
@@ -482,6 +560,10 @@ static void set_all_minmax_tf(int min_seconds, int max_seconds, u64 min_offset, 
 		}
 		tf->min_offset = min_offset;
 		tf->max_offset = max_offset;
+	}
+	if (traces == &all_traces) {
+		traces = &fio_traces;
+		goto again;
 	}
 }
 
@@ -744,6 +826,57 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 		set_xlabel(plot, "Time (seconds)");
 
 	svg_write_legend(plot);
+	close_plot(plot);
+	total_graphs_written++;
+}
+
+static void plot_fio_tput(struct plot *plot, int min_seconds, int max_seconds)
+{
+	struct trace_file *tf;
+	char *units;
+	char line[128];
+	u64 max = 0;
+
+	if (num_fio_traces == 0 || active_graphs[FIO_GRAPH_INDEX] == 0)
+		return;
+
+	if (num_fio_traces > 1)
+		svg_alloc_legend(plot, num_fio_traces);
+
+	list_for_each_entry(tf, &fio_traces, list) {
+		if (tf->fio_gld->max > max)
+			max = tf->fio_gld->max;
+	}
+
+	list_for_each_entry(tf, &fio_traces, list) {
+		if (tf->fio_gld->max > 0)
+			tf->fio_gld->max = max;
+	}
+
+	setup_axis(plot);
+	set_plot_label(plot, "Fio Throughput");
+
+	tf = list_entry(all_traces.next, struct trace_file, list);
+
+	scale_line_graph_bytes(&max, &units, 1024);
+	sprintf(line, "%sB/s", units);
+	set_ylabel(plot, line);
+	set_yticks(plot, num_yticks, 0, max, "");
+
+	set_xticks(plot, num_xticks, min_seconds, max_seconds);
+	list_for_each_entry(tf, &fio_traces, list) {
+		if (tf->fio_gld->max > 0) {
+			svg_line_graph(plot, tf->fio_gld, tf->line_color, 0, 0);
+			if (num_fio_traces > 1)
+				svg_add_legend(plot, tf->label, "", tf->line_color);
+		}
+	}
+
+	if (plot->add_xlabel)
+		set_xlabel(plot, "Time (seconds)");
+
+	if (num_fio_traces > 1)
+		svg_write_legend(plot);
 	close_plot(plot);
 	total_graphs_written++;
 }
@@ -1170,9 +1303,10 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:C:PK";
+char *option_string = "F:T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:C:PK";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
+	{"fio-trace", required_argument, 0, 'F'},
 	{"title", required_argument, 0, 'T'},
 	{"trace", required_argument, 0, 't'},
 	{"output", required_argument, 0, 'o'},
@@ -1202,6 +1336,7 @@ static void print_usage(void)
 		"\t-d (--device): device for blktrace to trace\n"
 		"\t-D (--blktrace-destination): destination for blktrace\n"
 		"\t-t (--trace): trace file name (more than one allowed)\n"
+		"\t-F (--fio-trace): fio bandwidth trace (more than one allowed)\n"
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
 		"\t-p (--prog): program to run while blktrace is run\n"
@@ -1299,6 +1434,9 @@ static int parse_options(int ac, char **av)
 		case 't':
 			add_trace_file(optarg);
 			set_blktrace_outfile(optarg);
+			break;
+		case 'F':
+			add_fio_trace_file(optarg);
 			break;
 		case 'o':
 			output_filename = strdup(optarg);
@@ -1459,7 +1597,7 @@ int main(int ac, char **av)
 	if (opt_graph_width)
 		set_graph_width(opt_graph_width);
 
-	if (list_empty(&all_traces)) {
+	if (list_empty(&all_traces) && list_empty(&fio_traces)) {
 		fprintf(stderr, "No traces found, exiting\n");
 		exit(1);
 	}
@@ -1510,6 +1648,8 @@ int main(int ac, char **av)
 	/* step two, find the maxes for time and offset */
 	list_for_each_entry(tf, &all_traces, list)
 		compare_minmax_tf(tf, &max_seconds, &min_offset, &max_offset);
+	list_for_each_entry(tf, &fio_traces, list)
+		compare_minmax_tf(tf, &max_seconds, &min_offset, &max_offset);
 	min_seconds = min_time;
 	if (max_seconds > max_time)
 		max_seconds = ceil(max_time);
@@ -1541,7 +1681,7 @@ int main(int ac, char **av)
 
 	if (active_graphs[IO_GRAPH_INDEX] || found_mpstat)
 		set_legend_width(longest_label + longest_proc_name + 1 + strlen("writes"));
-	else if (num_traces > 1)
+	else if (num_traces >= 1 || num_fio_traces >= 1)
 		set_legend_width(longest_label);
 	else
 		set_legend_width(0);
@@ -1566,6 +1706,9 @@ int main(int ac, char **av)
 
 	check_plot_columns(plot, TPUT_GRAPH_INDEX);
 	plot_tput(plot, min_seconds, max_seconds);
+
+	check_plot_columns(plot, FIO_GRAPH_INDEX);
+	plot_fio_tput(plot, min_seconds, max_seconds);
 
 	check_plot_columns(plot, CPU_IO_GRAPH_INDEX);
 	plot_cpu(plot, max_seconds, "CPU IO Wait Time",

@@ -96,6 +96,19 @@ char *pick_color(void)
 	return ret;
 }
 
+char *pick_fio_color(void)
+{
+	static int fio_color_index;
+	char *ret = colors[fio_color_index];
+
+	if (!ret) {
+		fio_color_index = 0;
+		ret = colors[fio_color_index];
+	}
+	fio_color_index += 2;
+	return ret;
+}
+
 static int cpu_color_index;
 
 char *pick_cpu_color(void)
