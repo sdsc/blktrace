@@ -775,7 +775,8 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 	close_plot(plot);
 }
 
-static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
+static void plot_tput(struct plot *plot, int min_seconds, int max_seconds,
+		      int with_legend)
 {
 	struct trace_file *tf;
 	char *units;
@@ -785,7 +786,8 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 	if (active_graphs[TPUT_GRAPH_INDEX] == 0)
 		return;
 
-	svg_alloc_legend(plot, num_traces * 2);
+	if (with_legend)
+		svg_alloc_legend(plot, num_traces * 2);
 
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->tput_writes_gld->max > max)
@@ -814,18 +816,22 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds)
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->tput_writes_gld->max > 0) {
 			svg_line_graph(plot, tf->tput_writes_gld, tf->writes_color, 0, 0);
-			svg_add_legend(plot, tf->label, "Writes", tf->writes_color);
+			if (with_legend)
+				svg_add_legend(plot, tf->label, "Writes", tf->writes_color);
 		}
 		if (tf->tput_reads_gld->max > 0) {
 			svg_line_graph(plot, tf->tput_reads_gld, tf->reads_color, 0, 0);
-			svg_add_legend(plot, tf->label, "Reads", tf->reads_color);
+			if (with_legend)
+				svg_add_legend(plot, tf->label, "Reads", tf->reads_color);
 		}
 	}
 
 	if (plot->add_xlabel)
 		set_xlabel(plot, "Time (seconds)");
 
-	svg_write_legend(plot);
+	if (with_legend)
+		svg_write_legend(plot);
+
 	close_plot(plot);
 	total_graphs_written++;
 }
@@ -1111,8 +1117,7 @@ static void plot_io_movie(struct plot *plot)
 			set_graph_size(cols / graph_width_factor, rows / 8);
 			plot->timeline = i / graph_width_factor;
 
-			plot_tput(plot, tf->min_seconds,
-				  tf->max_seconds);
+			plot_tput(plot, tf->min_seconds, tf->max_seconds, 0);
 
 			plot_cpu(plot, tf->max_seconds,
 				   "CPU System Time", CPU_SYS_GRAPH_INDEX, MPSTAT_SYS);
@@ -1705,7 +1710,7 @@ int main(int ac, char **av)
 		num_yticks--;
 
 	check_plot_columns(plot, TPUT_GRAPH_INDEX);
-	plot_tput(plot, min_seconds, max_seconds);
+	plot_tput(plot, min_seconds, max_seconds, 1);
 
 	check_plot_columns(plot, FIO_GRAPH_INDEX);
 	plot_fio_tput(plot, min_seconds, max_seconds);
