@@ -206,8 +206,10 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 
 	if (offset > gdd->max_offset || offset < gdd->min_offset)
 		return;
-	gdd->total_ios++;
 	time = time / 1000000000.0;
+	if (time < gdd->min_seconds || time > gdd->max_seconds)
+		return;
+	gdd->total_ios++;
 	while (bytes > 0 && offset <= gdd->max_offset) {
 		row = (double)(offset - gdd->min_offset) / bytes_per_row;
 		col = (time - gdd->min_seconds) / secs_per_col;
