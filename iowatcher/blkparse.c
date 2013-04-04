@@ -181,13 +181,6 @@ struct pid_map {
 	char name[0];
 };
 
-#define MINORBITS 20
-#define MINORMASK ((1 << MINORBITS) - 1)
-#define SECONDS(x)              ((unsigned long long)(x) / 1000000000)
-#define NANO_SECONDS(x)         ((unsigned long long)(x) % 1000000000)
-#define DOUBLE_TO_NANO_ULL(d)   ((unsigned long long)((d) * 1000000000))
-#define CHECK_MAGIC(t)          (((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
-
 u64 get_record_time(struct trace *trace)
 {
 	return trace->io->time;
