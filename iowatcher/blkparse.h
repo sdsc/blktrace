@@ -133,5 +133,6 @@ void add_tput(struct trace *trace, struct graph_line_data *writes_gld,
 	      struct graph_line_data *reads_gld);
 void add_pending_io(struct trace *trace, struct graph_line_data *gld);
 int next_record(struct trace *trace);
+u64 get_record_time(struct trace *trace);
 void first_record(struct trace *trace);
 #endif

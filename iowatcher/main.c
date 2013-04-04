@@ -426,17 +426,16 @@ static void read_trace_events(void)
 		trace = tf->trace;
 
 		first_record(trace);
-		while (1) {
+		do {
+			if (SECONDS(get_record_time(trace)) > tf->max_seconds)
+				continue;
 			check_record(trace);
 			add_tput(trace, tf->tput_writes_gld, tf->tput_reads_gld);
 			add_iop(trace, tf->iop_gld);
 			add_io(trace, tf);
 			add_pending_io(trace, tf->queue_depth_gld);
 			add_completed_io(trace, tf->latency_gld);
-			ret = next_record(trace);
-			if (ret)
-				break;
-		}
+		} while (!(ret = next_record(trace)));
 	}
 	list_for_each_entry(tf, &all_traces, list) {
 		trace = tf->trace;

@@ -188,6 +188,11 @@ struct pid_map {
 #define DOUBLE_TO_NANO_ULL(d)   ((unsigned long long)((d) * 1000000000))
 #define CHECK_MAGIC(t)          (((t)->magic & 0xffffff00) == BLK_IO_TRACE_MAGIC)
 
+u64 get_record_time(struct trace *trace)
+{
+	return trace->io->time;
+}
+
 void init_io_hash_table(void)
 {
 	int i;
@@ -960,9 +965,6 @@ void add_tput(struct trace *trace, struct graph_line_data *writes_gld,
 		gld = writes_gld;
 
 	seconds = SECONDS(io->time);
-	if (seconds > gld->max_seconds)
-		return;
-
 	gld->data[seconds].sum += io->bytes;
 
 	gld->data[seconds].count = 1;
@@ -1060,10 +1062,6 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 	if (action != __BLK_TA_ISSUE)
 		return;
 
-	seconds = SECONDS(io->time);
-	if (seconds > gld->max_seconds)
-		return;
-
 	pio = hash_dispatched_io(trace->io);
 	if (!pio)
 		return;
@@ -1075,6 +1073,7 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 
 	ios_in_flight++;
 
+	seconds = SECONDS(io->time);
 	gld->data[seconds].sum += ios_in_flight;
 	gld->data[seconds].count++;
 
@@ -1138,9 +1137,6 @@ void add_iop(struct trace *trace, struct graph_line_data *gld)
 		return;
 
 	seconds = SECONDS(io->time);
-	if (seconds > gld->max_seconds)
-		return;
-
 	gld->data[seconds].sum += 1;
 	gld->data[seconds].count = 1;
 	if (gld->data[seconds].sum > gld->max)
