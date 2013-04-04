@@ -414,7 +414,7 @@ static void read_trace_events(void)
 	struct trace *trace;
 	int ret;
 	int i;
-	int time;
+	unsigned int time;
 	double user, sys, iowait, irq, soft;
 	double max_user = 0, max_sys = 0, max_iowait = 0,
 	       max_irq = 0, max_soft = 0;
@@ -445,7 +445,7 @@ static void read_trace_events(void)
 
 		first_mpstat(trace);
 
-		for (time = 0; time < tf->mpstat_stop_seconds; time ++) {
+		for (time = 0; time < tf->mpstat_stop_seconds; time++) {
 			for (i = 0; i < (trace->mpstat_num_cpus + 1) * MPSTAT_GRAPHS; i += MPSTAT_GRAPHS) {
 				ret = read_mpstat_event(trace, &user, &sys,
 							&iowait, &irq, &soft);
@@ -531,7 +531,8 @@ static void set_blktrace_outfile(char *arg)
 }
 
 
-static void compare_minmax_tf(struct trace_file *tf, int *max_seconds, u64 *min_offset, u64 *max_offset)
+static void compare_minmax_tf(struct trace_file *tf, unsigned int *max_seconds,
+			      u64 *min_offset, u64 *max_offset)
 {
 	if (tf->max_seconds > *max_seconds)
 		*max_seconds = tf->max_seconds;
@@ -541,7 +542,9 @@ static void compare_minmax_tf(struct trace_file *tf, int *max_seconds, u64 *min_
 		*min_offset = tf->min_offset;
 }
 
-static void set_all_minmax_tf(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
+static void set_all_minmax_tf(unsigned int min_seconds,
+			      unsigned int max_seconds,
+			      u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 	struct list_head *traces = &all_traces;
@@ -721,7 +724,8 @@ static int count_io_plot_types(void)
 	return total_io_types;
 }
 
-static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min_offset, u64 max_offset)
+static void plot_io(struct plot *plot, unsigned int min_seconds,
+		    unsigned int max_seconds, u64 min_offset, u64 max_offset)
 {
 	struct trace_file *tf;
 	int i;
@@ -775,8 +779,8 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 	close_plot(plot);
 }
 
-static void plot_tput(struct plot *plot, int min_seconds, int max_seconds,
-		      int with_legend)
+static void plot_tput(struct plot *plot, unsigned int min_seconds,
+		      unsigned int max_seconds, int with_legend)
 {
 	struct trace_file *tf;
 	char *units;
@@ -836,7 +840,8 @@ static void plot_tput(struct plot *plot, int min_seconds, int max_seconds,
 	total_graphs_written++;
 }
 
-static void plot_fio_tput(struct plot *plot, int min_seconds, int max_seconds)
+static void plot_fio_tput(struct plot *plot,
+			  unsigned int min_seconds, unsigned int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -887,13 +892,13 @@ static void plot_fio_tput(struct plot *plot, int min_seconds, int max_seconds)
 	total_graphs_written++;
 }
 
-static void plot_cpu(struct plot *plot, int max_seconds, char *label,
+static void plot_cpu(struct plot *plot, unsigned int max_seconds, char *label,
 		     int active_index, int gld_index)
 {
 	struct trace_file *tf;
 	int max = 0;
 	int i;
-	int gld_i;
+	unsigned int gld_i;
 	char *color;
 	double avg = 0;
 	int ymax;
@@ -930,11 +935,11 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 	list_for_each_entry(tf, &all_traces, list) {
 		if (tf->mpstat_gld == 0)
 			break;
-		for (i = tf->mpstat_gld[0]->min_seconds;
-		     i < tf->mpstat_gld[0]->stop_seconds; i++) {
-			if (tf->mpstat_gld[gld_index]->data[i].count) {
-				avg += (tf->mpstat_gld[gld_index]->data[i].sum /
-					tf->mpstat_gld[gld_index]->data[i].count);
+		for (gld_i = tf->mpstat_gld[0]->min_seconds;
+		     gld_i < tf->mpstat_gld[0]->stop_seconds; gld_i++) {
+			if (tf->mpstat_gld[gld_index]->data[gld_i].count) {
+				avg += (tf->mpstat_gld[gld_index]->data[gld_i].sum /
+					tf->mpstat_gld[gld_index]->data[gld_i].count);
 			}
 		}
 		avg /= tf->mpstat_gld[gld_index]->stop_seconds -
@@ -990,7 +995,8 @@ static void plot_cpu(struct plot *plot, int max_seconds, char *label,
 	total_graphs_written++;
 }
 
-static void plot_queue_depth(struct plot *plot, int min_seconds, int max_seconds)
+static void plot_queue_depth(struct plot *plot, unsigned int min_seconds,
+			     unsigned int max_seconds)
 {
 	struct trace_file *tf;
 
@@ -1191,7 +1197,8 @@ static void plot_io_movie(struct plot *plot)
 	free(movie_dir);
 }
 
-static void plot_latency(struct plot *plot, int min_seconds, int max_seconds)
+static void plot_latency(struct plot *plot, unsigned int min_seconds,
+			 unsigned int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -1237,7 +1244,8 @@ static void plot_latency(struct plot *plot, int min_seconds, int max_seconds)
 	total_graphs_written++;
 }
 
-static void plot_iops(struct plot *plot, int min_seconds, int max_seconds)
+static void plot_iops(struct plot *plot, unsigned int min_seconds,
+		      unsigned int max_seconds)
 {
 	struct trace_file *tf;
 	char *units;
@@ -1567,8 +1575,8 @@ static void dest_mkdir(char *dir)
 int main(int ac, char **av)
 {
 	struct plot *plot;
-	int min_seconds = 0;
-	int max_seconds = 0;
+	unsigned int min_seconds = 0;
+	unsigned int max_seconds = 0;
 	u64 max_offset = 0;
 	u64 min_offset = ~(u64)0;
 	struct trace_file *tf;

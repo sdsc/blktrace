@@ -198,7 +198,7 @@ int read_fio_event(struct trace *trace, int *time_ret, u64 *bw_ret, int *dir_ret
 	return 0;
 }
 
-int add_fio_gld(int time, u64 bw, struct graph_line_data *gld)
+int add_fio_gld(unsigned int time, u64 bw, struct graph_line_data *gld)
 {
 	double val;
 

@@ -18,7 +18,7 @@
 #define __FIO__
 
 int read_fio_event(struct trace *trace, int *time, u64 *bw, int *dir);
-int add_fio_gld(int time, u64 bw, struct graph_line_data *gld);
+int add_fio_gld(unsigned int time, u64 bw, struct graph_line_data *gld);
 int next_fio_line(struct trace *trace);
 struct trace *open_fio_trace(char *path);
 char *first_fio(struct trace *trace);

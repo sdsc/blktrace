@@ -69,12 +69,12 @@ struct graph_line_pair {
 
 struct graph_line_data {
 	/* beginning of an interval displayed by this graph */
-	int min_seconds;
+	unsigned int min_seconds;
 
 	/* end of an interval displayed by this graph */
-	int max_seconds;
+	unsigned int max_seconds;
 
-	int stop_seconds;
+	unsigned int stop_seconds;
 
 	/* Y max */
 	u64 max;
@@ -103,8 +103,8 @@ struct graph_dot_data {
 	int min_seconds;
 
 	/* end of an interval displayed by this graph */
-	int max_seconds;
-	int stop_seconds;
+	unsigned int max_seconds;
+	unsigned int stop_seconds;
 
 	/* label for the legend */
 	char *label;
@@ -138,9 +138,9 @@ char *pick_cpu_color(void);
 void reset_cpu_color(void);
 int svg_io_graph(struct plot *plot, struct graph_dot_data *gdd);
 int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2);
-struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds);
+struct graph_line_data *alloc_line_data(unsigned int min_seconds, unsigned int max_seconds, unsigned int stop_seconds);
 void free_line_data(struct graph_line_data *gld);
-struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds, char *color, char *label);
+struct graph_dot_data *alloc_dot_data(unsigned int min_seconds, unsigned int max_seconds, u64 min_offset, u64 max_offset, unsigned int stop_seconds, char *color, char *label);
 void free_dot_data(struct graph_dot_data *gdd);
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time);
 void print_gdd(struct graph_dot_data *gdd);

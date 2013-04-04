@@ -127,7 +127,9 @@ void reset_cpu_color(void)
 	cpu_color_index = 0;
 }
 
-struct graph_line_data *alloc_line_data(int min_seconds, int max_seconds, int stop_seconds)
+struct graph_line_data *alloc_line_data(unsigned int min_seconds,
+					unsigned int max_seconds,
+					unsigned int stop_seconds)
 {
 	int size = sizeof(struct graph_line_data) + (stop_seconds + 1) * sizeof(struct graph_line_pair);
 	struct graph_line_data *gld;
@@ -149,7 +151,11 @@ void free_line_data(struct graph_line_data *gld)
 	free(gld);
 }
 
-struct graph_dot_data *alloc_dot_data(int min_seconds, int max_seconds, u64 min_offset, u64 max_offset, int stop_seconds, char *color, char *label)
+struct graph_dot_data *alloc_dot_data(unsigned int min_seconds,
+				      unsigned int max_seconds,
+				      u64 min_offset, u64 max_offset,
+				      unsigned int stop_seconds,
+				      char *color, char *label)
 {
 	int size;
 	int arr_size;
@@ -809,7 +815,7 @@ void scale_line_graph_time(u64 *max, char **units)
 
 int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, int thresh1, int thresh2)
 {
-	int i;
+	unsigned int i;
 	double val;
 	double avg;
 	int rolling;

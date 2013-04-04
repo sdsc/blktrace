@@ -72,9 +72,9 @@ struct trace_file {
 	char *filename;
 	char *label;
 	struct trace *trace;
-	int stop_seconds;	/* Time when trace stops */
-	int min_seconds;	/* Beginning of the interval we should plot */
-	int max_seconds;	/* End of the interval we should plot */
+	unsigned int stop_seconds;	/* Time when trace stops */
+	unsigned int min_seconds;	/* Beginning of the interval we should plot */
+	unsigned int max_seconds;	/* End of the interval we should plot */
 	u64 min_offset;
 	u64 max_offset;
 
@@ -99,9 +99,9 @@ struct trace_file {
 	struct graph_dot_data **gdd_writes;
 	struct graph_dot_data **gdd_reads;
 
-	int mpstat_min_seconds;
-	int mpstat_max_seconds;
-	int mpstat_stop_seconds;
+	unsigned int mpstat_min_seconds;
+	unsigned int mpstat_max_seconds;
+	unsigned int mpstat_stop_seconds;
 	struct graph_line_data **mpstat_gld;
 };
 

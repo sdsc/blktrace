@@ -1038,7 +1038,7 @@ void add_io(struct trace *trace, struct trace_file *tf)
 
 void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 {
-	int seconds;
+	unsigned int seconds;
 	struct blk_io_trace *io = trace->io;
 	int action = io->action & BLK_TA_MASK;
 	double avg;
