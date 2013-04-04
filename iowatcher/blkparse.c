@@ -1052,6 +1052,11 @@ void add_pending_io(struct trace *trace, struct graph_line_data *gld)
 			hash_queued_io(trace->io);
 		return;
 	}
+	if (action == __BLK_TA_REQUEUE) {
+		if (ios_in_flight > 0)
+			ios_in_flight--;
+		return;
+	}
 	if (action != __BLK_TA_ISSUE)
 		return;
 
