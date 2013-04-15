@@ -502,6 +502,7 @@ static inline void start_iter(void)
  */
 static void get_ncpus(void)
 {
+	long last_cpu;
 	cpu_set_t cpus;
 
 	if (sched_getaffinity(getpid(), sizeof(cpus), &cpus)) {
@@ -509,12 +510,11 @@ static void get_ncpus(void)
 		/*NOTREACHED*/
 	}
 
-	/*
-	 * XXX This assumes (perhaps wrongly) that there are no /holes/ 
-	 * XXX in the mask.
-	 */
-	for (ncpus = 0; ncpus < CPU_SETSIZE && CPU_ISSET(ncpus, &cpus); ncpus++)
-		;
+	ncpus = -1;
+	for (last_cpu = 0; last_cpu < CPU_SETSIZE && CPU_ISSET(last_cpu, &cpus); last_cpu++)
+		if (CPU_ISSET( last_cpu, &cpus) ) 
+			ncpus = last_cpu;
+	ncpus++;
 	if (ncpus == 0) {
 		fatal(NULL, ERR_SYSCALL, "Insufficient number of CPUs\n");
 		/*NOTREACHED*/
