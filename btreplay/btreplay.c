@@ -502,6 +502,9 @@ static inline void start_iter(void)
  */
 static void get_ncpus(void)
 {
+#ifdef _SC_NPROCESSORS_CONF
+	ncpus = sysconf(_SC_NPROCESSORS_CONF);
+#else
 	long last_cpu;
 	cpu_set_t cpus;
 
@@ -515,6 +518,7 @@ static void get_ncpus(void)
 		if (CPU_ISSET( last_cpu, &cpus) ) 
 			ncpus = last_cpu;
 	ncpus++;
+#endif
 	if (ncpus == 0) {
 		fatal(NULL, ERR_SYSCALL, "Insufficient number of CPUs\n");
 		/*NOTREACHED*/
