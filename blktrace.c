@@ -621,13 +621,19 @@ static void dpp_free(struct devpath *dpp)
 
 static int lock_on_cpu(int cpu)
 {
-	cpu_set_t cpu_mask;
+	cpu_set_t * cpu_mask;
+	size_t size;
+	cpu_mask = CPU_ALLOC(ncpus);
+	size = CPU_ALLOC_SIZE(ncpus);
 
-	CPU_ZERO(&cpu_mask);
-	CPU_SET(cpu, &cpu_mask);
-	if (sched_setaffinity(0, sizeof(cpu_mask), &cpu_mask) < 0)
+	CPU_ZERO_S(size, cpu_mask);
+	CPU_SET_S(cpu, size, cpu_mask);
+	if (sched_setaffinity(0, size, cpu_mask) < 0) {
+		CPU_FREE(cpu_mask);		
 		return errno;
+	}
 
+	CPU_FREE(cpu_mask);		
 	return 0;
 }
 

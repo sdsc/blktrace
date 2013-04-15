@@ -505,10 +505,20 @@ static void get_ncpus(void)
 #ifdef _SC_NPROCESSORS_CONF
 	ncpus = sysconf(_SC_NPROCESSORS_CONF);
 #else
-	long last_cpu;
-	cpu_set_t cpus;
+	int nrcpus = 4096;
+	cpu_set_t * cpus;
+	
+realloc:
+	cpus = CPU_ALLOC(nrcpus);
+	size = CPU_ALLOC_SIZE(nrcpus);
+	CPU_ZERO_S(size, cpus);
 
-	if (sched_getaffinity(getpid(), sizeof(cpus), &cpus)) {
+	if (sched_getaffinity(getpid(), size, cpus)) {
+		if( errno == EINVAL && nrcpus < (4096<<4) ) {
+			CPU_FREE(cpus);
+			nrcpus <= 1;
+			goto realloc;
+		}
 		fatal("sched_getaffinity", ERR_SYSCALL, "Can't get CPU info\n");
 		/*NOTREACHED*/
 	}
@@ -518,6 +528,7 @@ static void get_ncpus(void)
 		if (CPU_ISSET( last_cpu, &cpus) ) 
 			ncpus = last_cpu;
 	ncpus++;
+	CPU_FREE(cpus);
 #endif
 	if (ncpus == 0) {
 		fatal(NULL, ERR_SYSCALL, "Insufficient number of CPUs\n");
@@ -531,25 +542,29 @@ static void get_ncpus(void)
  */
 static void pin_to_cpu(struct thr_info *tip)
 {
-	cpu_set_t cpus;
+	cpu_set_t *cpus;
+	size_t size;
+
+	cpus = CPU_ALLOC(ncpus);
+	size = CPU_ALLOC_SIZE(ncpus);	
 
 	assert(0 <= tip->cpu && tip->cpu < ncpus);
 
-	CPU_ZERO(&cpus);
-	CPU_SET(tip->cpu, &cpus);
-	if (sched_setaffinity(getpid(), sizeof(cpus), &cpus)) {
+	CPU_ZERO_S(ncpus, cpus);
+	CPU_SET_S(tip->cpu, size, cpus);
+	if (sched_setaffinity(getpid(), size, cpus)) {
 		fatal("sched_setaffinity", ERR_SYSCALL, "Failed to pin CPU\n");
 		/*NOTREACHED*/
 	}
 
 	if (verbose > 1) {
 		int i;
-		cpu_set_t now;
+		cpu_set_t *now = CPU_ALLOC(ncpus);
 
-		(void)sched_getaffinity(getpid(), sizeof(now), &now);
+		(void)sched_getaffinity(getpid(), size, now);
 		fprintf(tip->vfp, "Pinned to CPU %02d ", tip->cpu);
 		for (i = 0; i < ncpus; i++)
-			fprintf(tip->vfp, "%1d", CPU_ISSET(i, &now));
+			fprintf(tip->vfp, "%1d", CPU_ISSET_S(i, size, now));
 		fprintf(tip->vfp, "\n");
 	}
 }
