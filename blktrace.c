@@ -2656,9 +2656,9 @@ int main(int argc, char *argv[])
 
 	setlocale(LC_NUMERIC, "en_US");
 	pagesize = getpagesize();
-	ncpus = sysconf(_SC_NPROCESSORS_ONLN);
+	ncpus = sysconf(_SC_NPROCESSORS_CONF);
 	if (ncpus < 0) {
-		fprintf(stderr, "sysconf(_SC_NPROCESSORS_ONLN) failed %d/%s\n",
+		fprintf(stderr, "sysconf(_SC_NPROCESSORS_CONF) failed %d/%s\n",
 			errno, strerror(errno));
 		ret = 1;
 		goto out;
