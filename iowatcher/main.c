@@ -747,7 +747,8 @@ static void plot_io(struct plot *plot, int min_seconds, int max_seconds, u64 min
 		if (!tf->label)
 			label[0] = 0;
 		else {
-			strcpy(label, tf->label);
+			strncpy(label, tf->label, 255);
+			label[255] = 0;
 			if (io_per_process)
 				strcat(label, " ");
 		}
