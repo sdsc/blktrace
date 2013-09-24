@@ -53,7 +53,7 @@ static int opt_graph_width = 0;
 static int opt_graph_height = 0;
 
 static int columns = 1;
-static int num_xticks = 7;
+static int num_xticks = 9;
 static int num_yticks = 4;
 
 static double min_time = 0;

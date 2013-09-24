@@ -563,7 +563,7 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 	 * We don't want last two ticks to be too close together so subtract
 	 * 20% of the step from the interval
 	 */
-	num_ticks = (double)(last - first - step / 5) / step + 1;
+	num_ticks = (double)(last - first - step) / step + 1;
 	pixels_per_tick = graph_width * step / (double)(last - first);
 
 	for (i = 0; i < num_ticks; i++) {
