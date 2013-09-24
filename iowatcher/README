@@ -32,6 +32,10 @@ The basic options:
 	   If you want more than one trace in a given graph, you can specify
 	   -t more than once.
 
+	-F Add a fio bandwidth log graph.  You need to run fio --bandwidth-log
+	   to get one of these, and then pass either the read log or the write
+	   log into iowatcher.
+
 	-l Sets a label in the graph for a trace file.  The labels are added in
 	   the same order the trace files are added.
 
@@ -55,6 +59,9 @@ The basic options:
 	   current second with seconds from the past.  Longer numbers here
 	   give you flatter graphs.
 
+	-P add per-process tags to the IO.  Each process responsible for
+	   submitting the IO gets a different color.
+
 	-O add a single graph to the output.  By default all the graphs
 	   are included, but with -O you get only the graphs you ask for.
 	   -O may be used more than once.
@@ -63,7 +70,7 @@ The basic options:
 	   than once.
 
 	Choices for -O and -N are:
-	   io, tput, latency, queue_depth, iops, cpu-sys, cpu-io,
+	   io, fio, tput, latency, queue_depth, iops, cpu-sys, cpu-io,
 	   cpu-irq, cpu-user, cpu-soft
 
 Examples:
