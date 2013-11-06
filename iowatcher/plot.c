@@ -530,10 +530,12 @@ static double find_step(double first, double last, int num_ticks)
 	/* Round to power of 10 */
 	step = exp(floor(log(step) / log10) * log10);
 	/* Scale down step to provide enough ticks */
-	while ((last - first) / (step * mini_step[cur_mini_step]) > num_ticks
-	       && cur_mini_step < TICK_MINI_STEPS)
+	while (cur_mini_step < TICK_MINI_STEPS
+	       && (last - first) / (step * mini_step[cur_mini_step]) > num_ticks)
 		cur_mini_step++;
-	step *= mini_step[cur_mini_step - 1];
+
+	if (cur_mini_step > 0)
+		step *= mini_step[cur_mini_step - 1];
 
 	return step;
 }
