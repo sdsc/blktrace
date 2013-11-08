@@ -31,10 +31,13 @@
 #include <time.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <spawn.h>
 
 #include "plot.h"
 #include "blkparse.h"
 #include "list.h"
+
+extern char **environ;
 
 static int line_len = 1024;
 static char line[1024];
@@ -191,10 +194,29 @@ int wait_for_tracers(void)
 
 int blktrace_to_dump(char *trace_name)
 {
-	snprintf(line, line_len, "blkparse -O -i %s -d '%s.%s'",
-		trace_name, trace_name, "dump");
+	pid_t pid;
+	int err;
+	int i;
+	char *argv[] = {
+		"blkparse", "-O",
+		"-i", NULL,
+		"-d", NULL,
+		NULL
+	};
 
-	system(line);
+	argv[3] = trace_name;
+	snprintf(line, line_len, "%s.dump", trace_name);
+	argv[5] = line;
+
+	fprintf(stderr, "running blkparse");
+	for (i = 0; i < 6; i++)
+		fprintf(stderr, " %s", argv[i]);
+	fprintf(stderr, "\n");
+
+	err = posix_spawnp(&pid, "blkparse", NULL, NULL, argv, environ);
+	if (err != 0)
+		return err;
+	waitpid(pid, NULL, 0);
 	return 0;
 }
 
