@@ -27,9 +27,10 @@ Program to run while blktrace is run.
 \fB-K, --keep-movie-svgs\fP
 Keep the SVG files generated for movie mode.
 .TP
-\fB-t, --trace\fP <file>
+\fB-t, --trace\fP <file|directory>
 Controls the name of the blktrace file.  iowatcher uses a dump from blkparse, so -t tries to guess the name of the corresponding per CPU blktrace data files if the dump file doesn't already exist.
 If you want more than one trace in a given graph, you can specify -t more than once.
+If a directory is specified, iowatcher will use the name of the directory as the base name of the dump file and all trace files found inside the directory will be processed.
 .TP
 \fB-l, --label\fP <label>
 Sets a label in the graph for a trace file.  The labels are added in the same order the trace files are added.

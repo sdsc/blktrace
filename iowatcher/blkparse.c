@@ -707,81 +707,123 @@ int filter_outliers(struct trace *trace, u64 min_offset, u64 max_offset,
 }
 
 static char footer[] = ".blktrace.0";
-static int footer_len = sizeof(footer);
+static int footer_len = sizeof(footer) - 1;
 
-static void match_trace(char *name, char **traces)
+static int match_trace(char *name, int *len)
 {
 	int match_len;
-	char *match;
 	int footer_start;
 
 	match_len = strlen(name);
 	if (match_len <= footer_len)
-		return;
+		return 0;
 
 	footer_start = match_len - footer_len;
-	if (strcmp(name + footer_start + 1, footer) != 0)
-		return;
+	if (strcmp(name + footer_start, footer) != 0)
+		return 0;
 
-	match = strdup(name);
-	if (!match)
-		goto enomem;
-
-	match[footer_start + 1] = '\0';
-	snprintf(line, line_len, "%s -i '%s'", *traces ? *traces : "", match);
-	free(match);
-
-	match = strdup(line);
-	if (!match)
-		goto enomem;
-
-	free(*traces);
-	*traces = match;
-	return;
-
-enomem:
-	perror("memory allocation failed");
-	exit(1);
-	return;
+	if (len)
+		*len = match_len;
+	return 1;
 }
 
-static char *combine_blktrace_devs(char *dir_name)
-{
-	DIR *dir;
-	char *traces = NULL;
-	struct dirent *d;
-	int len;
-	int ret;
+struct tracelist {
+	struct tracelist *next;
+	char *name;
+};
 
-	dir = opendir(dir_name);
+static struct tracelist *traces_list(char *dir_name, int *len)
+{
+	int count = 0;
+	struct tracelist *traces = NULL;
+	DIR *dir = opendir(dir_name);
 	if (!dir)
 		return NULL;
 
 	while (1) {
-		d = readdir(dir);
+		int len;
+		struct tracelist *tl;
+		struct dirent *d = readdir(dir);
 		if (!d)
 			break;
 
-		len = strlen(d->d_name);
-		if (len > footer_len)
-			match_trace(d->d_name, &traces);
+		if (!match_trace(d->d_name, &len))
+			continue;
+
+		/* Allocate space for tracelist + filename */
+		tl = calloc(1, sizeof(struct tracelist) + (sizeof(char) * (len + 1)));
+		if (!tl)
+			return NULL;
+		tl->next = traces;
+		tl->name = (char *)(tl + 1);
+		strncpy(tl->name, d->d_name, len);
+		traces = tl;
+		count++;
 	}
 
 	closedir(dir);
 
+	if (len)
+		*len = count;
+
+	return traces;
+}
+
+static void traces_free(struct tracelist *traces)
+{
+	while (traces) {
+		struct tracelist *tl = traces;
+		traces = traces->next;
+		free(tl);
+	}
+}
+
+static char *combine_blktrace_devs(char *dir_name)
+{
+	struct tracelist *traces = NULL;
+	struct tracelist *tl;
+	char *ret = NULL;
+	char **argv = NULL;
+	char *dumpfile;
+	int argc = 0;
+	int i;
+	int err;
+
+	if (!asprintf(&dumpfile, "%s.dump", dir_name))
+		goto out;
+
+	traces = traces_list(dir_name, &argc);
 	if (!traces)
-		return NULL;
+		goto out;
 
-	snprintf(line, line_len, "blkparse -O %s -D %s -d '%s.%s'",
-		 traces, dir_name, dir_name, "dump");
+	argc *= 2; /* {"-i", trace } */
+	argc += 6; /* See below */
+	argv = calloc(argc + 1, sizeof(char *));
+	if (!argv)
+		goto out;
 
-	ret = system(line);
-	if (ret) {
-		fprintf(stderr, "blkparse failure %s\n", line);
+	i = 0;
+	argv[i++] = "blkparse";
+	argv[i++] = "-O";
+	argv[i++] = "-D";
+	argv[i++] = dir_name;
+	argv[i++] = "-d";
+	argv[i++] = dumpfile;
+	for (tl = traces; tl != NULL; tl = tl->next) {
+		argv[i++] = "-i";
+		argv[i++] = tl->name;
+	}
+
+	err = run_program2(argc, argv);
+	free(argv);
+	if (err) {
+		fprintf(stderr, "blkparse failed with exit code %d\n", err);
 		exit(1);
 	}
-	snprintf(line, line_len, "%s.%s", dir_name, "dump");
-	return strdup(line);
+	ret = dumpfile;
+out:
+	traces_free(traces);
+	return ret;
 }
 
 static char *find_trace_file(char *filename)
@@ -804,6 +846,13 @@ static char *find_trace_file(char *filename)
 
 		if (S_ISDIR(st.st_mode))
 			found_dir = 1;
+	}
+
+	if (found_dir) {
+		int i;
+		/* Eat up trailing '/'s */
+		for (i = strlen(filename) - 1; filename[i] == '/'; i--)
+			filename[i] = '\0';
 	}
 
 	/*

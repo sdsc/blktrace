@@ -178,6 +178,26 @@ int run_program(char *str)
 	return 0;
 }
 
+int run_program2(int argc, char **argv)
+{
+	int i;
+	int err;
+	pid_t pid;
+
+	fprintf(stderr, "running");
+	for (i = 0; i < argc; i++)
+		fprintf(stderr, " '%s'", argv[i]);
+	fprintf(stderr, "\n");
+
+	err = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
+	if (err != 0) {
+		fprintf(stderr, "%s failed with exit code %d\n", argv[0], err);
+		return err;
+	}
+	waitpid(pid, NULL, 0);
+	return 0;
+}
+
 int wait_for_tracers(void)
 {
 	int status = 0;
@@ -194,9 +214,6 @@ int wait_for_tracers(void)
 
 int blktrace_to_dump(char *trace_name)
 {
-	pid_t pid;
-	int err;
-	int i;
 	char *argv[] = {
 		"blkparse", "-O",
 		"-i", NULL,
@@ -208,16 +225,7 @@ int blktrace_to_dump(char *trace_name)
 	snprintf(line, line_len, "%s.dump", trace_name);
 	argv[5] = line;
 
-	fprintf(stderr, "running blkparse");
-	for (i = 0; i < 6; i++)
-		fprintf(stderr, " %s", argv[i]);
-	fprintf(stderr, "\n");
-
-	err = posix_spawnp(&pid, "blkparse", NULL, NULL, argv, environ);
-	if (err != 0)
-		return err;
-	waitpid(pid, NULL, 0);
-	return 0;
+	return run_program2(6, argv);
 }
 
 int start_mpstat(char *trace_name)
