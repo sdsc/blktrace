@@ -23,7 +23,6 @@ int stop_blktrace(void);
 int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest);
 int start_mpstat(char *trace_name);
 int wait_for_tracers(void);
-int blktrace_to_dump(char *trace_name);
 int start_mpstat(char *trace_name);
 
 

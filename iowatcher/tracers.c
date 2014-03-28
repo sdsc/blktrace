@@ -223,22 +223,6 @@ int wait_for_tracers(void)
 	return 0;
 }
 
-int blktrace_to_dump(char *trace_name)
-{
-	char *argv[] = {
-		"blkparse", "-O",
-		"-i", NULL,
-		"-d", NULL,
-		NULL
-	};
-
-	argv[3] = trace_name;
-	snprintf(line, line_len, "%s.dump", trace_name);
-	argv[5] = line;
-
-	return run_program2(6, argv);
-}
-
 int start_mpstat(char *trace_name)
 {
 	int fd;

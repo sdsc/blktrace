@@ -49,9 +49,6 @@ static struct list_head process_hash_table[PROCESS_HASH_TABLE_SIZE];
 extern int plot_io_action;
 extern int io_per_process;
 
-static const int line_len = 1024;
-static char line[1024];
-
 /*
  * Trace categories
  */
@@ -736,27 +733,29 @@ static struct tracelist *traces_list(char *dir_name, int *len)
 {
 	int count = 0;
 	struct tracelist *traces = NULL;
+	int dlen = strlen(dir_name);
 	DIR *dir = opendir(dir_name);
 	if (!dir)
 		return NULL;
 
 	while (1) {
-		int len;
+		int n = 0;
 		struct tracelist *tl;
 		struct dirent *d = readdir(dir);
 		if (!d)
 			break;
 
-		if (!match_trace(d->d_name, &len))
+		if (!match_trace(d->d_name, &n))
 			continue;
 
+		n += dlen + 1; /* dir + '/' + file */
 		/* Allocate space for tracelist + filename */
-		tl = calloc(1, sizeof(struct tracelist) + (sizeof(char) * (len + 1)));
+		tl = calloc(1, sizeof(struct tracelist) + (sizeof(char) * (n + 1)));
 		if (!tl)
 			return NULL;
 		tl->next = traces;
 		tl->name = (char *)(tl + 1);
-		strncpy(tl->name, d->d_name, len);
+		snprintf(tl->name, n, "%s/%s", dir_name, d->d_name);
 		traces = tl;
 		count++;
 	}
@@ -778,35 +777,23 @@ static void traces_free(struct tracelist *traces)
 	}
 }
 
-static char *combine_blktrace_devs(char *dir_name)
+static int dump_traces(struct tracelist *traces, int count, char *dumpfile)
 {
-	struct tracelist *traces = NULL;
 	struct tracelist *tl;
-	char *ret = NULL;
 	char **argv = NULL;
-	char *dumpfile;
 	int argc = 0;
 	int i;
-	int err;
+	int err = 0;
 
-	if (!asprintf(&dumpfile, "%s.dump", dir_name))
-		goto out;
-
-	traces = traces_list(dir_name, &argc);
-	if (!traces)
-		goto out;
-
-	argc *= 2; /* {"-i", trace } */
-	argc += 6; /* See below */
+	argc = count * 2; /* {"-i", trace } */
+	argc += 4; /* See below */
 	argv = calloc(argc + 1, sizeof(char *));
 	if (!argv)
-		goto out;
+		return -errno;
 
 	i = 0;
 	argv[i++] = "blkparse";
 	argv[i++] = "-O";
-	argv[i++] = "-D";
-	argv[i++] = dir_name;
 	argv[i++] = "-d";
 	argv[i++] = dumpfile;
 	for (tl = traces; tl != NULL; tl = tl->next) {
@@ -816,14 +803,7 @@ static char *combine_blktrace_devs(char *dir_name)
 
 	err = run_program2(argc, argv);
 	free(argv);
-	if (err) {
-		fprintf(stderr, "blkparse failed with exit code %d\n", err);
-		exit(1);
-	}
-	ret = dumpfile;
-out:
-	traces_free(traces);
-	return ret;
+	return err;
 }
 
 static char *find_trace_file(char *filename)
@@ -831,8 +811,9 @@ static char *find_trace_file(char *filename)
 	int ret;
 	struct stat st;
 	char *dot;
-	char *try;
 	int found_dir = 0;
+	char *dumpfile;
+	int len = strlen(filename);
 
 	/* look for an exact match of whatever they pass in.
 	 * If it is a file, assume it is the dump file.
@@ -851,7 +832,7 @@ static char *find_trace_file(char *filename)
 	if (found_dir) {
 		int i;
 		/* Eat up trailing '/'s */
-		for (i = strlen(filename) - 1; filename[i] == '/'; i--)
+		for (i = len - 1; filename[i] == '/'; i--)
 			filename[i] = '\0';
 	}
 
@@ -859,43 +840,58 @@ static char *find_trace_file(char *filename)
 	 * try tacking .dump onto the end and see if that already
 	 * has been generated
 	 */
-	snprintf(line, line_len, "%s.%s", filename, "dump");
-	ret = stat(line, &st);
+	ret = asprintf(&dumpfile, "%s.dump", filename);
+	if (ret == -1) {
+		perror("Error building dump file name");
+		return NULL;
+	}
+	ret = stat(dumpfile, &st);
 	if (ret == 0)
-		return strdup(line);
+		return dumpfile;
 
 	/*
 	 * try to generate the .dump from all the traces in
 	 * a single dir.
 	 */
 	if (found_dir) {
-		try = combine_blktrace_devs(filename);
-		if (try)
-			return try;
+		int count;
+		struct tracelist *traces = traces_list(filename, &count);
+		if (traces) {
+			ret = dump_traces(traces, count, dumpfile);
+			traces_free(traces);
+			if (ret == 0)
+				return dumpfile;
+		}
 	}
+	free(dumpfile);
 
 	/*
 	 * try to generate the .dump from all the blktrace
 	 * files for a named trace
 	 */
-	try = strdup(filename);
-	dot = strrchr(try, '.');
+	dot = strrchr(filename, '.');
 	if (!dot || strcmp(".dump", dot) != 0) {
-		if (dot && dot != try)
-			*dot = '\0';
-		snprintf(line, line_len, "%s%s", try, ".blktrace.0");
-		ret = stat(line, &st);
-		if (ret == 0) {
-			blktrace_to_dump(try);
-			snprintf(line, line_len, "%s.%s", try, "dump");
-			ret = stat(line, &st);
-			if (ret == 0) {
-				free(try);
-				return strdup(line);
-			}
+		struct tracelist trace = {0};
+		if (dot && dot != filename)
+			len = dot - filename;
+
+		ret = asprintf(&trace.name, "%*s.blktrace.0", len, filename);
+		if (ret == -1)
+			return NULL;
+		ret = asprintf(&dumpfile, "%*s.dump", len, filename);
+		if (ret == -1) {
+			free(trace.name);
+			return NULL;
 		}
+
+		ret = dump_traces(&trace, 1, dumpfile);
+		if (ret == 0) {
+			free(trace.name);
+			return dumpfile;
+		}
+		free(trace.name);
+		free(dumpfile);
 	}
-	free(try);
 	return NULL;
 }
 struct trace *open_trace(char *filename)
