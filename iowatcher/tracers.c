@@ -182,6 +182,7 @@ int run_program2(int argc, char **argv)
 {
 	int i;
 	int err;
+	int status;
 	pid_t pid;
 
 	fprintf(stderr, "running");
@@ -191,11 +192,21 @@ int run_program2(int argc, char **argv)
 
 	err = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
 	if (err != 0) {
-		fprintf(stderr, "%s failed with exit code %d\n", argv[0], err);
-		return err;
+		fprintf(stderr, "Could not run '%s': %s\n", argv[0], strerror(err));
+		return -err;
 	}
-	waitpid(pid, NULL, 0);
-	return 0;
+	waitpid(pid, &status, 0);
+	if (WIFEXITED(status)) {
+		err = WEXITSTATUS(status);
+		if (err == 127) /* spawnp failed after forking */
+			fprintf(stderr, "Failed to run '%s'\n", argv[0]);
+		else if (err)
+			fprintf(stderr, "'%s' failed with exit status %d\n", argv[0], err);
+	} else if (WIFSIGNALED(status)) {
+		fprintf(stderr, "'%s' killed by signal %d\n", argv[0], WTERMSIG(status));
+		return 1;
+	}
+	return err;
 }
 
 int wait_for_tracers(void)
