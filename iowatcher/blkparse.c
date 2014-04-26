@@ -801,7 +801,7 @@ static int dump_traces(struct tracelist *traces, int count, char *dumpfile)
 		argv[i++] = tl->name;
 	}
 
-	err = run_program2(argc, argv);
+	err = run_program2(argc, argv, 0, NULL);
 	free(argv);
 	return err;
 }

@@ -36,6 +36,7 @@
 #include "plot.h"
 #include "blkparse.h"
 #include "list.h"
+#include "tracers.h"
 
 extern char **environ;
 
@@ -178,33 +179,47 @@ int run_program(char *str)
 	return 0;
 }
 
-int run_program2(int argc, char **argv)
+int wait_program(pid_t pid, const char *pname, int expexit)
+{
+	int status;
+	int ret = 0;
+
+	waitpid(pid, &status, 0);
+	if (WIFEXITED(status)) {
+		ret = WEXITSTATUS(status);
+		if (ret == 127) /* spawnp failed after forking */
+			fprintf(stderr, "Failed to run '%s'\n", pname);
+		else if (ret != expexit)
+			fprintf(stderr, "'%s' exit status %d, expected %d\n",
+			        pname, ret, expexit);
+	} else if (WIFSIGNALED(status)) {
+		fprintf(stderr, "'%s' killed by signal %d\n", pname, WTERMSIG(status));
+		ret = -1;
+	}
+	return ret;
+}
+
+int run_program2(int argc, char **argv, int expexit, pid_t *pid)
 {
 	int i;
 	int err;
-	int status;
-	pid_t pid;
+	pid_t _pid;
 
 	fprintf(stderr, "running");
 	for (i = 0; i < argc; i++)
 		fprintf(stderr, " '%s'", argv[i]);
 	fprintf(stderr, "\n");
 
-	err = posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ);
+	err = posix_spawnp(&_pid, argv[0], NULL, NULL, argv, environ);
 	if (err != 0) {
 		fprintf(stderr, "Could not run '%s': %s\n", argv[0], strerror(err));
-		return -err;
-	}
-	waitpid(pid, &status, 0);
-	if (WIFEXITED(status)) {
-		err = WEXITSTATUS(status);
-		if (err == 127) /* spawnp failed after forking */
-			fprintf(stderr, "Failed to run '%s'\n", argv[0]);
-		else if (err)
-			fprintf(stderr, "'%s' failed with exit status %d\n", argv[0], err);
-	} else if (WIFSIGNALED(status)) {
-		fprintf(stderr, "'%s' killed by signal %d\n", argv[0], WTERMSIG(status));
-		return 1;
+	} else if (expexit >= 0) {
+		err = wait_program(_pid, argv[0], expexit);
+	} else if (!pid) {
+		fprintf(stderr, "Warning: %s (%ld): Not saving pid and not waiting for it.\n",
+		        argv[0], (long)_pid);
+	} else {
+		*pid = _pid;
 	}
 	return err;
 }
