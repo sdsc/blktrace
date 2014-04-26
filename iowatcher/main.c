@@ -569,19 +569,6 @@ again:
 	}
 }
 
-static char *create_movie_temp_dir(void)
-{
-	char *ret;
-	char *pattern = strdup("io-movie-XXXXXX");;
-
-	ret = mkdtemp(pattern);
-	if (!ret) {
-		perror("Unable to create temp directory for movie files");
-		exit(1);
-	}
-	return ret;
-}
-
 static struct pid_plot_history *alloc_pid_plot_history(char *color)
 {
 	struct pid_plot_history *pph;
@@ -1080,7 +1067,6 @@ static void cleanup_movie(char *movie_dir)
 static void plot_io_movie(struct plot *plot)
 {
 	struct trace_file *tf;
-	char *movie_dir = create_movie_temp_dir();
 	int i, pid;
 	struct plot_history *history;
 	int batch_i;
@@ -1091,6 +1077,12 @@ static void plot_io_movie(struct plot *plot)
 	int batch_count;
 	int graph_width_factor = 5;
 	int orig_y_offset;
+	char movie_dir[] = "io-movie-XXXXXX";
+
+	if (mkdtemp(movie_dir) == NULL) {
+		perror("Unable to create temp directory for movie files");
+		exit(1);
+	}
 
 	get_graph_size(&cols, &rows);
 	batch_count = cols / total_frames;
@@ -1194,7 +1186,6 @@ static void plot_io_movie(struct plot *plot)
 	convert_movie_files(movie_dir);
 	encode_movie(movie_dir);
 	cleanup_movie(movie_dir);
-	free(movie_dir);
 }
 
 static void plot_latency(struct plot *plot, unsigned int min_seconds,
