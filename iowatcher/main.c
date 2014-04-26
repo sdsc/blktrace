@@ -287,8 +287,8 @@ static void setup_trace_file_graphs(void)
 		tf->queue_depth_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
 
 		tf->iop_gld = alloc_line_data(tf->min_seconds, tf->max_seconds, tf->stop_seconds);
-		tf->gdd_writes = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
-		tf->gdd_reads = calloc(alloc_ptrs, sizeof(struct graph_dot_data));
+		tf->gdd_writes = calloc(alloc_ptrs, sizeof(struct graph_dot_data *));
+		tf->gdd_reads = calloc(alloc_ptrs, sizeof(struct graph_dot_data *));
 		tf->io_plots_allocated = alloc_ptrs;
 
 		if (tf->trace->mpstat_num_cpus == 0)
