@@ -164,22 +164,7 @@ int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest
 	return 0;
 }
 
-int run_program(char *str)
-{
-	int ret;
-
-	fprintf(stderr, "running program %s\n", str);
-	ret = system(str);
-	if (ret == -1) {
-		fprintf(stderr, "failed to run program %s error %s\n", str, strerror(errno));
-		stop_all_tracers();
-		return -errno;
-	}
-	stop_all_tracers();
-	return 0;
-}
-
-int wait_program(pid_t pid, const char *pname, int expexit)
+int wait_program(pid_t pid, const char *pname)
 {
 	int status;
 	int ret = 0;
@@ -189,9 +174,6 @@ int wait_program(pid_t pid, const char *pname, int expexit)
 		ret = WEXITSTATUS(status);
 		if (ret == 127) /* spawnp failed after forking */
 			fprintf(stderr, "Failed to run '%s'\n", pname);
-		else if (ret != expexit)
-			fprintf(stderr, "'%s' exit status %d, expected %d\n",
-			        pname, ret, expexit);
 	} else if (WIFSIGNALED(status)) {
 		fprintf(stderr, "'%s' killed by signal %d\n", pname, WTERMSIG(status));
 		ret = -1;
@@ -199,7 +181,7 @@ int wait_program(pid_t pid, const char *pname, int expexit)
 	return ret;
 }
 
-int run_program2(int argc, char **argv, int expexit, pid_t *pid)
+int run_program(int argc, char **argv, int wait, pid_t *pid)
 {
 	int i;
 	int err;
@@ -213,8 +195,8 @@ int run_program2(int argc, char **argv, int expexit, pid_t *pid)
 	err = posix_spawnp(&_pid, argv[0], NULL, NULL, argv, environ);
 	if (err != 0) {
 		fprintf(stderr, "Could not run '%s': %s\n", argv[0], strerror(err));
-	} else if (expexit >= 0) {
-		err = wait_program(_pid, argv[0], expexit);
+	} else if (wait) {
+		err = wait_program(_pid, argv[0]);
 	} else if (!pid) {
 		fprintf(stderr, "Warning: %s (%ld): Not saving pid and not waiting for it.\n",
 		        argv[0], (long)_pid);
@@ -227,6 +209,7 @@ int run_program2(int argc, char **argv, int expexit, pid_t *pid)
 int wait_for_tracers(void)
 {
 	int status = 0;
+	stop_all_tracers();
 	if (blktrace_pid != 0) {
 		waitpid(blktrace_pid, &status, WUNTRACED);
 		blktrace_pid = 0;

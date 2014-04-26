@@ -148,7 +148,8 @@ static char *blktrace_devices[MAX_DEVICES_PER_TRACE];
 static int num_blktrace_devices = 0;
 static char *blktrace_outfile = "trace";
 static char *blktrace_dest_dir = ".";
-static char *program_to_run = NULL;
+static char **prog_argv = NULL;
+static int prog_argc = 0;
 static char *ffmpeg_codec = "libx264";
 
 static void alloc_mpstat_gld(struct trace_file *tf)
@@ -1307,7 +1308,7 @@ enum {
 	HELP_LONG_OPT = 1,
 };
 
-char *option_string = "F:T:t:o:l:r:O:N:d:D:p:m::h:w:c:x:y:a:C:PK";
+char *option_string = "+F:T:t:o:l:r:O:N:d:D:pm::h:w:c:x:y:a:C:PK";
 static struct option long_options[] = {
 	{"columns", required_argument, 0, 'c'},
 	{"fio-trace", required_argument, 0, 'F'},
@@ -1320,7 +1321,7 @@ static struct option long_options[] = {
 	{"only-graph", required_argument, 0, 'O'},
 	{"device", required_argument, 0, 'd'},
 	{"blktrace-destination", required_argument, 0, 'D'},
-	{"prog", required_argument, 0, 'p'},
+	{"prog", no_argument, 0, 'p'},
 	{"movie", optional_argument, 0, 'm'},
 	{"codec", optional_argument, 0, 'C'},
 	{"keep-movie-svgs", no_argument, 0, 'K'},
@@ -1343,7 +1344,7 @@ static void print_usage(void)
 		"\t-F (--fio-trace): fio bandwidth trace (more than one allowed)\n"
 		"\t-l (--label): trace label in the graph\n"
 		"\t-o (--output): output file name (SVG only)\n"
-		"\t-p (--prog): program to run while blktrace is run\n"
+		"\t-p (--prog): run a program while blktrace is run\n"
 		"\t-K (--keep-movie-svgs keep svgs generated for movie mode\n"
 		"\t-m (--movie [=spindle|rect]): create IO animations\n"
 		"\t-C (--codec): ffmpeg codec. Use ffmpeg -codecs to list\n"
@@ -1420,9 +1421,9 @@ static int parse_options(int ac, char **av)
 {
 	int c;
 	int disabled = 0;
+	int p_flagged = 0;
 
 	while (1) {
-		// int this_option_optind = optind ? optind : 1;
 		int option_index = 0;
 
 		c = getopt_long(ac, av, option_string,
@@ -1476,7 +1477,7 @@ static int parse_options(int ac, char **av)
 			}
 			break;
 		case 'p':
-			program_to_run = strdup(optarg);
+			p_flagged = 1;
 			break;
 		case 'K':
 			keep_movie_svgs = 1;
@@ -1549,6 +1550,18 @@ action_err:
 			break;
 		}
 	}
+
+	if (optind < ac && p_flagged) {
+		prog_argv = &av[optind];
+		prog_argc = ac - optind;
+	} else if (p_flagged) {
+		fprintf(stderr, "--prog or -p given but no program specified\n");
+		exit(1);
+	} else if (optind < ac) {
+		fprintf(stderr, "Extra arguments '%s'... (and --prog not specified)\n", av[optind]);
+		exit(1);
+	}
+
 	return 0;
 }
 
@@ -1629,20 +1642,14 @@ int main(int ac, char **av)
 		}
 
 		start_mpstat(path);
-		if (program_to_run) {
-			ret = run_program(program_to_run);
-			if (ret) {
-				fprintf(stderr, "failed to run %s\n",
-					program_to_run);
-				exit(1);
-			}
-			wait_for_tracers();
-		} else {
-			/* no program specified, just wait for
-			 * blktrace to exit
-			 */
-			wait_for_tracers();
+
+		if (prog_argv && prog_argc) {
+			ret = run_program(prog_argc, prog_argv, 1, NULL);
+			if (ret != 127)
+				printf("%s exited with %d\n", prog_argv[0], ret);
 		}
+
+		wait_for_tracers();
 		free(path);
 	}
 

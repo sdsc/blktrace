@@ -5,7 +5,7 @@ iowatcher - Create visualizations from blktrace results
 
 .SH SYNOPSIS
 .B iowatcher
-\fIOPTIONS...\fR
+\fI[options]\fR [--] \fI[program arguments ...]\fR
 
 .SH DESCRIPTION
 iowatcher graphs the results of a blktrace run.  It can graph the result of an existing blktrace, start a new blktrace, or start a new blktrace and a benchmark run.  It can then create an image or movie of the IO from a given trace.  iowatcher can produce either SVG files or movies in mp4 format (with ffmpeg) or ogg format (with png2theora).
@@ -21,8 +21,16 @@ Controls which device you are tracing.  You can only trace one device at a time 
 \fB-D, --blktrace-destination\fP <destination>
 Destination for blktrace.
 .TP
-\fB-p, --prog\fP <program>
-Program to run while blktrace is run.
+\fB-p, --prog\fP
+Run a program while blktrace is run. The program and its arguments must be
+specified after all other options.  Note that this option previously required
+the program to be given as a single argument but it now flags that iowatcher
+should expect extra arguments to be run during the trace.
+.TP
+\fB--\fP
+End option parsing. If \fB--prog\fP is specified, everything after \fB--\fP is
+the program to be run. This can be useful if the program name could otherwise
+be mistaken for an option.
 .TP
 \fB-K, --keep-movie-svgs\fP
 Keep the SVG files generated for movie mode.

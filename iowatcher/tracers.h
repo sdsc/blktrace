@@ -17,9 +17,8 @@
  */
 #ifndef __IOWATCH_TRACERS
 #define __IOWATCH_TRACERS
-int run_program(char *str);
-int run_program2(int argc, char **argv, int expexit, pid_t *pid);
-int wait_program(pid_t pid, const char *pname, int expexit);
+int run_program(int argc, char **argv, int wait, pid_t *pid);
+int wait_program(pid_t pid, const char *pname);
 int stop_blktrace(void);
 int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest);
 int start_mpstat(char *trace_name);
