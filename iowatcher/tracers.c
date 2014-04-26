@@ -46,25 +46,11 @@ static char line[1024];
 static pid_t blktrace_pid = 0;
 static pid_t mpstat_pid = 0;
 
-char *blktrace_args[17 + MAX_DEVICES_PER_TRACE * 2] = {
-	"blktrace",
-	"-b", "8192",
-	"-a", "queue",
-	"-a", "complete",
-	"-a", "issue",
-	"-a", "notify",
-	"-D", ".",
-	NULL,
-};
-
 char *mpstat_args[] = {
 	"mpstat",
 	"-P", "ALL", "1",
 	NULL,
 };
-
-#define DEST_DIR_INDEX 12
-#define LAST_ARG 13
 
 int stop_tracer(pid_t *tracer_pid)
 {
@@ -90,91 +76,82 @@ int stop_tracer(pid_t *tracer_pid)
 	return 0;
 }
 
-
-void stop_all_tracers(void)
+static void sig_handler_for_quit(int val)
 {
-	stop_tracer(&blktrace_pid);
+	fprintf(stderr, "Received signal %d. Terminating tracers.\n", val);
+	if (blktrace_pid) {
+		wait_program(blktrace_pid, "blktrace", SIGTERM);
+		blktrace_pid = 0;
+	}
 	stop_tracer(&mpstat_pid);
 }
 
-void sig_handler_for_quit(int val)
-{
-	fprintf(stderr, "iowatcher exiting with %d, stopping tracers\n", val);
-	stop_all_tracers();
-}
-
-
 int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest)
 {
-	pid_t pid;
 	int ret;
-	char **arg = blktrace_args;
 	int i;
-	int arg_index;
+	char *argv[15 + MAX_DEVICES_PER_TRACE * 2];
+	int argc = 0;
 
-	fprintf(stderr, "running blktrace");
 	if (!trace_name)
 		trace_name = "trace";
+	if (!dest)
+		dest = ".";
 
-	arg_index = LAST_ARG;
-	for (i = 0; i < num_devices; i++) {
-		blktrace_args[arg_index++] = "-d";
-		blktrace_args[arg_index++] = devices[i];
-	}
+	argv[argc++] = "blktrace";
+	argv[argc++] = "-b";
+	argv[argc++] = "8192";
+	argv[argc++] = "-a";
+	argv[argc++] = "queue";
+	argv[argc++] = "-a";
+	argv[argc++] = "complete";
+	argv[argc++] = "-a";
+	argv[argc++] = "issue";
+	argv[argc++] = "-a";
+	argv[argc++] = "notify";
 
-	/*
-	 * single device traces use -o and are put into
-	 * the dest dir if provided
-	 */
 	if (num_devices == 1) {
-		blktrace_args[arg_index++] = "-o";
-		blktrace_args[arg_index++] = trace_name;
-		if (dest)
-			blktrace_args[DEST_DIR_INDEX] = dest;
+		argv[argc++] = "-o";
+		argv[argc++] = trace_name;
 	} else {
-		/*
-		 * multi device traces are put into a dest
-		 * dir based on the trace name
-		 */
-		blktrace_args[DEST_DIR_INDEX] = trace_name;
+		/* Multiple devices output to a directory named trace_name */
+		dest = trace_name;
 	}
+	argv[argc++] = "-D";
+	argv[argc++] = dest;
 
-	blktrace_args[arg_index] = NULL;
-
-	while(*arg) {
-		fprintf(stderr, " %s", *arg);
-		arg++;
+	for (i = 0; i < num_devices; i++) {
+		argv[argc++] = "-d";
+		argv[argc++] = devices[i];
 	}
-	fprintf(stderr, "\n");
-
-
-	pid = fork();
-	if (pid == 0) {
-		ret = execvp("blktrace", blktrace_args);
-		if (ret) {
-			fprintf(stderr, "failed to exec blktrace error %s\n", strerror(errno));
-			exit(errno);
-		}
-
-	} else {
-		blktrace_pid = pid;
-		signal(SIGTERM, sig_handler_for_quit);
-		signal(SIGINT, sig_handler_for_quit);
-	}
-	return 0;
+	argv[argc] = NULL;
+	signal(SIGTERM, sig_handler_for_quit);
+	signal(SIGINT, sig_handler_for_quit);
+	ret = run_program(argc, argv, 0, &blktrace_pid);
+	return ret;
 }
 
-int wait_program(pid_t pid, const char *pname)
+int wait_program(pid_t pid, const char *pname, int sig)
 {
 	int status;
 	int ret = 0;
+
+	if (sig) {
+		ret = kill(pid, sig);
+		if (ret) {
+			fprintf(stderr, "Failed to send signal %d to %s (%lu): %s\n",
+			        sig, pname, (long)pid, strerror(errno));
+			return ret;
+		}
+		fprintf(stderr, "Kill (%d): %s (%ld)\n", sig, pname, (long)pid);
+	}
 
 	waitpid(pid, &status, 0);
 	if (WIFEXITED(status)) {
 		ret = WEXITSTATUS(status);
 		if (ret == 127) /* spawnp failed after forking */
 			fprintf(stderr, "Failed to run '%s'\n", pname);
-	} else if (WIFSIGNALED(status)) {
+	} else if (WIFSIGNALED(status) && sig && WTERMSIG(status) != sig) {
 		fprintf(stderr, "'%s' killed by signal %d\n", pname, WTERMSIG(status));
 		ret = -1;
 	}
@@ -196,7 +173,7 @@ int run_program(int argc, char **argv, int wait, pid_t *pid)
 	if (err != 0) {
 		fprintf(stderr, "Could not run '%s': %s\n", argv[0], strerror(err));
 	} else if (wait) {
-		err = wait_program(_pid, argv[0]);
+		err = wait_program(_pid, argv[0], 0);
 	} else if (!pid) {
 		fprintf(stderr, "Warning: %s (%ld): Not saving pid and not waiting for it.\n",
 		        argv[0], (long)_pid);
@@ -208,13 +185,15 @@ int run_program(int argc, char **argv, int wait, pid_t *pid)
 
 int wait_for_tracers(void)
 {
-	int status = 0;
-	stop_all_tracers();
 	if (blktrace_pid != 0) {
-		waitpid(blktrace_pid, &status, WUNTRACED);
+		int err = wait_program(blktrace_pid, "blktrace", SIGINT);
+		if (err)
+			exit(1);
 		blktrace_pid = 0;
 	}
 	if (mpstat_pid != 0) {
+		int status = 0;
+		stop_tracer(&mpstat_pid);
 		waitpid(mpstat_pid, &status, WUNTRACED);
 		mpstat_pid = 0;
 	}
