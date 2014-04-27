@@ -1344,7 +1344,7 @@ static void print_usage(void)
 		"\t-t (--trace): trace file name (more than one allowed)\n"
 		"\t-F (--fio-trace): fio bandwidth trace (more than one allowed)\n"
 		"\t-l (--label): trace label in the graph\n"
-		"\t-o (--output): output file name (SVG only)\n"
+		"\t-o (--output): output file name for the SVG image or video\n"
 		"\t-p (--prog): run a program while blktrace is run\n"
 		"\t-K (--keep-movie-svgs keep svgs generated for movie mode\n"
 		"\t-m (--movie [=spindle|rect]): create IO animations\n"
