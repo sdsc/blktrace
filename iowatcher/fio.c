@@ -121,7 +121,7 @@ static void find_last_fio_time(struct trace *trace)
 	return;
 }
 
-int read_fio(struct trace *trace, char *trace_name)
+static int read_fio(struct trace *trace, char *trace_name)
 {
 	int fd;
 	struct stat st;

@@ -145,12 +145,6 @@ struct graph_line_data *alloc_line_data(unsigned int min_seconds,
 	return gld;
 }
 
-void free_line_data(struct graph_line_data *gld)
-{
-	free(gld->label);
-	free(gld);
-}
-
 struct graph_dot_data *alloc_dot_data(unsigned int min_seconds,
 				      unsigned int max_seconds,
 				      u64 min_offset, u64 max_offset,
@@ -192,11 +186,6 @@ struct graph_dot_data *alloc_dot_data(unsigned int min_seconds,
 	return gdd;
 }
 
-void free_dot_data(struct graph_dot_data *gdd)
-{
-	free(gdd);
-}
-
 void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double time)
 {
 	double bytes_per_row = (double)(gdd->max_offset - gdd->min_offset + 1) / gdd->rows;
@@ -229,31 +218,6 @@ void set_gdd_bit(struct graph_dot_data *gdd, u64 offset, double bytes, double ti
 		gdd->data[arr_index] |= 1 << bit_mod;
 		offset += mod;
 		bytes -= mod;
-	}
-}
-
-void print_gdd(struct graph_dot_data *gdd)
-{
-	int col = 0;
-	int row = 0;
-	int arr_index;
-	u64 val;
-	int bit_index;
-	int bit_mod;
-
-	for (row = gdd->rows - 1; row >= 0; row--) {
-		for (col = 0; col < gdd->cols; col++) {
-			bit_index = row * gdd->cols + col;
-			arr_index = bit_index / sizeof(unsigned long);
-			bit_mod = bit_index % sizeof(unsigned long);
-
-			val = gdd->data[arr_index];
-			if (val & (1 << bit_mod))
-				printf("*");
-			else
-				printf(" ");
-		}
-		printf("\n");
 	}
 }
 
@@ -322,33 +286,6 @@ void write_svg_header(int fd)
 	write(fd, filter2, strlen(filter2));
 	write(fd, filter3, strlen(filter3));
 	write(fd, defs_close, strlen(defs_close));
-}
-
-void write_drop_shadow(struct plot *plot)
-{
-	snprintf(line, line_len, "<rect x=\"0\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"white\"/>\n",
-		 plot->start_y_offset, plot->total_width, 45);
-	write(plot->fd, line, strlen(line));
-
-	snprintf(line, line_len, "<path d=\"M %d %d h %d v %d h %d t %d %d V %d H %d Z\" "
-		 "fill=\"white\" filter=\"url(#shadow)\"/>",
-		0, plot->start_y_offset,
-		plot->total_width - graph_left_pad / 2,
-		-plot->total_height, 24, 1, 1,
-		plot->start_y_offset + 10, 0);
-	write(plot->fd, line, strlen(line));
-
-	snprintf(line, line_len, "<path d=\"M %d %d H %d V %d h %d V %d H %d Z\" "
-		 "fill=\"white\"/>",
-		0, plot->start_y_offset - 15, /* start */
-		plot->total_width - graph_left_pad / 2 - 10, /* hline over */
-		plot->start_y_offset - plot->total_height, /* vline up */
-		15, /*hline over */
-		plot->start_y_offset, /* vline back down */
-		0);
-	write(plot->fd, line, strlen(line));
-
-	plot->start_y_offset += 45;
 }
 
 /* svg y offset for the traditional 0,0 (bottom left corner) of the plot */

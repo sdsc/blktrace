@@ -406,7 +406,7 @@ void first_record(struct trace *trace)
 	trace->io = (struct blk_io_trace *)trace->cur;
 }
 
-int is_io_event(struct blk_io_trace *test)
+static int is_io_event(struct blk_io_trace *test)
 {
 	char *message;
 	if (!(test->action & BLK_TC_ACT(BLK_TC_NOTIFY)))
@@ -460,7 +460,7 @@ u64 find_last_time(struct trace *trace)
 	return found;
 }
 
-int parse_fio_bank_message(struct trace *trace, u64 *bank_ret, u64 *offset_ret,
+static int parse_fio_bank_message(struct trace *trace, u64 *bank_ret, u64 *offset_ret,
 			   u64 *num_banks_ret)
 {
 	char *s;
@@ -570,7 +570,7 @@ static void map_devices(struct trace *trace)
 	}
 }
 
-u64 map_io(struct trace *trace, struct blk_io_trace *io)
+static u64 map_io(struct trace *trace, struct blk_io_trace *io)
 {
 	struct dev_info *di = lookup_dev(trace, io);
 	u64 val = trace->io->sector << 9;
