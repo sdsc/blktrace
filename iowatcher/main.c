@@ -33,6 +33,7 @@
 #include <getopt.h>
 #include <limits.h>
 #include <float.h>
+#include <signal.h>
 
 #include "plot.h"
 #include "blkparse.h"
@@ -1620,16 +1621,9 @@ int main(int ac, char **av)
 	}
 
 	if (num_blktrace_devices) {
-		char *path;
-
+		char *path = join_path(blktrace_dest_dir, blktrace_outfile);
 		dest_mkdir(blktrace_dest_dir);
-		if (num_blktrace_devices > 1) {
-			snprintf(line, line_len, "%s/%s", blktrace_dest_dir,
-				 blktrace_outfile);
-			dest_mkdir(line);
-		}
-
-		path = join_path(blktrace_dest_dir, blktrace_outfile);
+		dest_mkdir(path);
 
 		snprintf(line, line_len, "%s.dump", path);
 		unlink(line);
@@ -1637,19 +1631,24 @@ int main(int ac, char **av)
 		ret = start_blktrace(blktrace_devices, num_blktrace_devices,
 				     blktrace_outfile, blktrace_dest_dir);
 		if (ret) {
-			fprintf(stderr, "exiting due to blktrace failure\n");
-			exit(1);
+			perror("Exiting due to blktrace failure");
+			exit(ret);
 		}
 
-		start_mpstat(path);
+		snprintf(line, line_len, "%s.mpstat", path);
+		ret = start_mpstat(line);
+		if (ret) {
+			perror("Exiting due to mpstat failure");
+			exit(ret);
+		}
 
 		if (prog_argv && prog_argc) {
-			ret = run_program(prog_argc, prog_argv, 1, NULL);
-			if (ret != 127)
-				printf("%s exited with %d\n", prog_argv[0], ret);
+			run_program(prog_argc, prog_argv, 1, NULL, NULL);
+			wait_for_tracers(SIGINT);
+		} else {
+			printf("Tracing until interrupted...\n");
+			wait_for_tracers(0);
 		}
-
-		wait_for_tracers();
 		free(path);
 	}
 

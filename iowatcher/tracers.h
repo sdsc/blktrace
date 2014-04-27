@@ -17,12 +17,12 @@
  */
 #ifndef __IOWATCH_TRACERS
 #define __IOWATCH_TRACERS
-int run_program(int argc, char **argv, int wait, pid_t *pid);
+int run_program(int argc, char **argv, int wait, pid_t *pid, char *stdoutpath);
 int wait_program(pid_t pid, const char *pname, int signal);
 int stop_blktrace(void);
 int start_blktrace(char **devices, int num_devices, char *trace_name, char *dest);
 int start_mpstat(char *trace_name);
-int wait_for_tracers(void);
+int wait_for_tracers(int sig);
 
 
 #endif

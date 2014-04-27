@@ -801,7 +801,7 @@ static int dump_traces(struct tracelist *traces, int count, char *dumpfile)
 		argv[i++] = tl->name;
 	}
 
-	err = run_program(argc, argv, 1, NULL);
+	err = run_program(argc, argv, 1, NULL, NULL);
 	if (err)
 		fprintf(stderr, "%s exited with %d, expected 0\n", argv[0], err);
 	free(argv);
