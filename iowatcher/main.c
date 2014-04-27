@@ -713,6 +713,22 @@ static int count_io_plot_types(void)
 	return total_io_types;
 }
 
+static void plot_io_legend(struct plot *plot, struct graph_dot_data *gdd, char *prefix, char *rw)
+{
+	int ret = 0;
+	char *label = NULL;
+	if (io_per_process)
+		ret = asprintf(&label, "%s %s", prefix, gdd->label);
+	else
+		ret = asprintf(&label, "%s", prefix);
+	if (ret < 0) {
+		perror("Failed to process labels");
+		exit(1);
+	}
+	svg_add_legend(plot, label, rw, gdd->color);
+	free(label);
+}
+
 static void plot_io(struct plot *plot, unsigned int min_seconds,
 		    unsigned int max_seconds, u64 min_offset, u64 max_offset)
 {
@@ -733,33 +749,17 @@ static void plot_io(struct plot *plot, unsigned int min_seconds,
 	set_xticks(plot, num_xticks, min_seconds, max_seconds);
 
 	list_for_each_entry(tf, &all_traces, list) {
-		char label[256];
-		char *pos;
-
-		if (!tf->label)
-			label[0] = 0;
-		else {
-			strncpy(label, tf->label, 255);
-			label[255] = 0;
-			if (io_per_process)
-				strcat(label, " ");
-		}
-		pos = label + strlen(label);
+		char *prefix = tf->label ? tf->label : "";
 
 		for (i = 0; i < tf->io_plots; i++) {
 			if (tf->gdd_writes[i]) {
 				svg_io_graph(plot, tf->gdd_writes[i]);
-				if (io_per_process)
-					strcpy(pos, tf->gdd_writes[i]->label);
-				svg_add_legend(plot, label, " Writes", tf->gdd_writes[i]->color);
+				plot_io_legend(plot, tf->gdd_writes[i], prefix, " Writes");
 			}
 			if (tf->gdd_reads[i]) {
 				svg_io_graph(plot, tf->gdd_reads[i]);
-				if (io_per_process)
-					strcpy(pos, tf->gdd_reads[i]->label);
-				svg_add_legend(plot, label, " Reads", tf->gdd_reads[i]->color);
+				plot_io_legend(plot, tf->gdd_reads[i], prefix, " Reads");
 			}
-
 		}
 	}
 	if (plot->add_xlabel)
@@ -1093,17 +1093,7 @@ static void plot_io_movie(struct plot *plot)
 		batch_count = 1;
 
 	list_for_each_entry(tf, &all_traces, list) {
-		char label[256];
-		char *pos;
-
-		if (!tf->label)
-			label[0] = 0;
-		else {
-			strcpy(label, tf->label);
-			if (io_per_process)
-				strcat(label, " ");
-		}
-		pos = label + strlen(label);
+		char *prefix = tf->label ? tf->label : "";
 
 		i = 0;
 		while (i < cols) {
@@ -1143,16 +1133,10 @@ static void plot_io_movie(struct plot *plot)
 			history->col = i;
 
 			for (pid = 0; pid < tf->io_plots; pid++) {
-				if (tf->gdd_reads[pid]) {
-					if (io_per_process)
-						strcpy(pos, tf->gdd_reads[pid]->label);
-					svg_add_legend(plot, label, " Reads", tf->gdd_reads[pid]->color);
-				}
-				if (tf->gdd_writes[pid]) {
-					if (io_per_process)
-						strcpy(pos, tf->gdd_writes[pid]->label);
-					svg_add_legend(plot, label, " Writes", tf->gdd_writes[pid]->color);
-				}
+				if (tf->gdd_reads[pid])
+					plot_io_legend(plot, tf->gdd_reads[pid], prefix, " Reads");
+				if (tf->gdd_writes[pid])
+					plot_io_legend(plot, tf->gdd_writes[pid], prefix, " Writes");
 			}
 
 			batch_i = 0;

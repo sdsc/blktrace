@@ -751,8 +751,10 @@ static struct tracelist *traces_list(char *dir_name, int *len)
 		n += dlen + 1; /* dir + '/' + file */
 		/* Allocate space for tracelist + filename */
 		tl = calloc(1, sizeof(struct tracelist) + (sizeof(char) * (n + 1)));
-		if (!tl)
+		if (!tl) {
+			closedir(dir);
 			return NULL;
+		}
 		tl->next = traces;
 		tl->name = (char *)(tl + 1);
 		snprintf(tl->name, n, "%s/%s", dir_name, d->d_name);
