@@ -1913,6 +1913,7 @@ static void stop_tracers(void)
 		struct tracer *tp = list_entry(p, struct tracer, head);
 		tp->is_done = 1;
 	}
+	pthread_cond_broadcast(&mt_cond);
 }
 
 static void del_tracers(void)
