@@ -1,0 +1,97 @@
+iowatcher graphs the results of a blktrace run.  It has a few different modes:
+
+	* Graph the result of an existing blktrace
+
+	* Start a new blktrace
+
+	* Start a new blktrace and a benchmark run
+
+	* Make a movie of the IO from a given trace (only mp4 for now)
+
+Output:
+
+	iowatcher can produce either svg files or mp4 movies.  Most browsers
+	can view the svg files, or you can use rsvg-view-3 from librsvg.
+	rsvg-convert can turn the svgs into many other formats.
+
+Building:
+
+	Type make and make install.  We need ffmpeg or png2theora, and
+	librsvg to make movies, otherwise there are no dependencies.
+
+The basic options:
+
+	-d controls which device you are tracing.  You can only trace one device
+	   at a time for now.  It is sent directly to blktrace, and only
+	   needed when you are making a new trace.
+
+	-t controls the name of the blktrace file.  iowatcher uses a dump from
+	   blkparse, so -t tries to guess the name of the corresponding
+	   per CPU blktrace data files if the dump file doesn't already exist.
+
+	   If you want more than one trace in a given graph, you can specify
+	   -t more than once.
+
+	-F Add a fio bandwidth log graph.  You need to run fio --bandwidth-log
+	   to get one of these, and then pass either the read log or the write
+	   log into iowatcher.
+
+	-l Sets a label in the graph for a trace file.  The labels are added in
+	   the same order the trace files are added.
+
+	-m Create a movie.  The file format depends on the extension used in the
+	   -o filename.* option.  If you specify an .ogv or .ogg extension, the
+	   result will be Ogg Theora video, if png2theora is available.
+	   If you use an .mp4 extension, the result will be an mp4 video if
+	   ffmpeg is avilable.  You can use any other extension, but the end
+	   result will be an mp4.
+
+	   You can use --movie=spindle or --movie=rect, which changes the
+	   style of the IO mapping.
+
+	-T Set a title for the graph.  This goes at the top of the image.
+
+	-o output filename.  The default is trace.svg.  iowatcher is
+	   only able to create svg for now.
+
+	-r control the duration in seconds for the rolling average.
+	   iowatcher tries to smooth out bumpy graphs by averaging the
+	   current second with seconds from the past.  Longer numbers here
+	   give you flatter graphs.
+
+	-P add per-process tags to the IO.  Each process responsible for
+	   submitting the IO gets a different color.
+
+	-O add a single graph to the output.  By default all the graphs
+	   are included, but with -O you get only the graphs you ask for.
+	   -O may be used more than once.
+
+	-N remove a single graph from the output.  This may also be used more
+	   than once.
+
+	Choices for -O and -N are:
+	   io, fio, tput, latency, queue_depth, iops, cpu-sys, cpu-io,
+	   cpu-irq, cpu-user, cpu-soft
+
+Examples:
+	
+	# generate graph from the existing trace.dump
+	iowatcher -t trace.dump -o trace.svg
+	
+	# skip the IO graph
+	iowatcher -t trace.dump -o trace.svg -N io
+
+	# only graph tput and latency
+	iowatcher -t trace.dump -o trace.svg -O tput -O latency
+
+	# generate a graph from two runs, and label them
+	iowatcher -t ext4.dump -t xfs.dump -l Ext4 -l XFS -o trace.svg
+
+	# Run a fio benchmark and store the trace in trace.dump
+	# add a title to the top.  Use /dev/sda for blktrace
+	iowatcher -d /dev/sda -t trace.dump -T 'Fio Benchmark' -p 'fio some_job_file'
+
+	# Make a movie from an existing trace
+	iowatcher -t trace --movie -o trace.mp4
+
+Please email chris.mason@fusionio.com with any questions
