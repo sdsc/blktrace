@@ -875,7 +875,7 @@ static char *find_trace_file(char *filename)
 	 */
 	dot = strrchr(filename, '.');
 	if (!dot || strcmp(".dump", dot) != 0) {
-		struct tracelist trace = {0};
+		struct tracelist trace = {0 ,NULL};
 		if (dot && dot != filename)
 			len = dot - filename;
 
