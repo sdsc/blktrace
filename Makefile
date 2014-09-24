@@ -6,12 +6,15 @@ LIBS	= -lpthread
 SCRIPTS	= btrace
 
 ALL = $(PROGS) $(SCRIPTS) btt/btt btreplay/btrecord btreplay/btreplay \
-      btt/bno_plot.py
+      btt/bno_plot.py iowatcher/iowatcher
 
 all: $(ALL)
 
 btt/btt:
 	$(MAKE) -C btt
+
+iowatcher/iowatcher:
+	$(MAKE) -C iowatcher
 
 btreplay/btrecord:
 	$(MAKE) -C btreplay
