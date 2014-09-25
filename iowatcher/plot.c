@@ -249,6 +249,20 @@ static double rolling_avg(struct graph_line_pair *data, int index, int distance)
 	return sum / distance;
 }
 
+static void write_check(int fd, char *buf, size_t size)
+{
+	ssize_t ret;
+
+	ret = write(fd, buf, size);
+	if (ret != (ssize_t)size) {
+		if (ret < 0)
+			perror("write failed");
+		else
+			fprintf(stderr, "error: short write\n");
+		exit(1);
+	}
+}
+
 void write_svg_header(int fd)
 {
 	char *spaces = "                                                    \n";
@@ -275,17 +289,17 @@ void write_svg_header(int fd)
 	final_width = 0;
 	final_height = 0;
 
-	write(fd, header, strlen(header));
+	write_check(fd, header, strlen(header));
 	/* write a bunch of spaces so we can stuff in the width and height later */
-	write(fd, spaces, strlen(spaces));
-	write(fd, spaces, strlen(spaces));
-	write(fd, spaces, strlen(spaces));
+	write_check(fd, spaces, strlen(spaces));
+	write_check(fd, spaces, strlen(spaces));
+	write_check(fd, spaces, strlen(spaces));
 
-	write(fd, defs_start, strlen(defs_start));
-	write(fd, filter1, strlen(filter1));
-	write(fd, filter2, strlen(filter2));
-	write(fd, filter3, strlen(filter3));
-	write(fd, defs_close, strlen(defs_close));
+	write_check(fd, defs_start, strlen(defs_start));
+	write_check(fd, filter1, strlen(filter1));
+	write_check(fd, filter2, strlen(filter2));
+	write_check(fd, filter3, strlen(filter3));
+	write_check(fd, defs_close, strlen(defs_close));
 }
 
 /* svg y offset for the traditional 0,0 (bottom left corner) of the plot */
@@ -329,7 +343,6 @@ static int axis_x_off(int x)
  */
 void setup_axis(struct plot *plot)
 {
-	int ret;
 	int len;
 	int fd = plot->fd;
 	int bump_height = tick_font_size * 3 + axis_label_font_size;
@@ -351,7 +364,7 @@ void setup_axis(struct plot *plot)
 		plot->start_y_offset, plot->total_width + 40,
 		plot->total_height + 20);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 
 	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "filter=\"url(#shadow)\" "
@@ -359,7 +372,7 @@ void setup_axis(struct plot *plot)
 		 plot->start_x_offset + 15,
 		plot->start_y_offset, plot->total_width, plot->total_height);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 	plot->total_height += 20;
 	plot->total_width += 20;
 
@@ -370,18 +383,14 @@ void setup_axis(struct plot *plot)
 
 	/* create an svg object for all our coords to be relative against */
 	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
-	write(fd, line, strlen(line));
+	write_check(fd, line, strlen(line));
 
 	snprintf(line, 1024, "<path d=\"M%d %d h %d V %d H %d Z\" stroke=\"black\" stroke-width=\"2\" fill=\"none\"/>\n",
 		 axis_x(), axis_y(),
 		 graph_width + graph_inner_x_margin * 2, axis_y_off(graph_height) - graph_inner_y_margin,
 		 axis_x());
 	len = strlen(line);
-	ret = write(fd, line, len);
-	if (ret != len) {
-		fprintf(stderr, "failed to write svg axis\n");
-		exit(1);
-	}
+	write_check(fd, line, len);
 }
 
 /*
@@ -410,7 +419,7 @@ void setup_axis_spindle(struct plot *plot)
 		plot->start_y_offset, plot->total_width + 10,
 		plot->total_height + 20);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 
 	snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"%d\" "
 		 "filter=\"url(#shadow)\" "
@@ -419,7 +428,7 @@ void setup_axis_spindle(struct plot *plot)
 		plot->start_y_offset, plot->total_width - 30,
 		plot->total_height);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 	plot->total_height += 20;
 
 	if (plot->total_height + plot->start_y_offset > final_height)
@@ -429,7 +438,7 @@ void setup_axis_spindle(struct plot *plot)
 
 	/* create an svg object for all our coords to be relative against */
 	snprintf(line, line_len, "<svg x=\"%d\" y=\"%d\">\n", plot->start_x_offset, plot->start_y_offset);
-	write(fd, line, strlen(line));
+	write_check(fd, line, strlen(line));
 
 }
 
@@ -451,7 +460,7 @@ void set_plot_title(struct plot *plot, char *title)
 	snprintf(line, line_len, "<rect x=\"0\" y=\"%d\" width=\"%d\" height=\"%d\" fill=\"white\" stroke=\"none\"/>",
 		plot->start_y_offset, plot->total_width + 40, plot_title_height + 20);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 
 	snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
 		 "font-weight=\"bold\" fill=\"black\" style=\"text-anchor: %s\">%s</text>\n",
@@ -460,7 +469,7 @@ void set_plot_title(struct plot *plot, char *title)
 		font_family, plot_title_font_size, "middle", title);
 	plot->start_y_offset += plot_title_height;
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 }
 
 #define TICK_MINI_STEPS 3
@@ -516,7 +525,7 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 		if (i != 0) {
 			snprintf(line, line_len, "<rect x=\"%d\" y=\"%d\" width=\"2\" height=\"%d\" style=\"stroke:none;fill:black;\"/>\n",
 				tick_x, tick_y, graph_tick_len);
-			write(plot->fd, line, strlen(line));
+			write_check(plot->fd, line, strlen(line));
 			anchor = middle;
 		} else {
 			anchor = start;
@@ -533,7 +542,7 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 					"fill=\"black\" style=\"text-anchor: %s\">%.2f</text>\n",
 					tick_x, text_y, font_family, tick_font_size, anchor,
 					first + step * i);
-			write(plot->fd, line, strlen(line));
+			write_check(plot->fd, line, strlen(line));
 		}
 		tick_x += pixels_per_tick;
 	}
@@ -549,7 +558,7 @@ void set_xticks(struct plot *plot, int num_ticks, int first, int last)
 				"fill=\"black\" style=\"text-anchor: middle\">%.2f</text>\n",
 				axis_x_off(graph_width - 2),
 				text_y, font_family, tick_font_size, (double)last);
-		write(plot->fd, line, strlen(line));
+		write_check(plot->fd, line, strlen(line));
 	}
 }
 
@@ -568,7 +577,7 @@ void set_ylabel(struct plot *plot, char *label)
 		 (int)axis_y_off(graph_height / 2),
 		 axis_label_font_size, "middle", label);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 }
 
 void set_xlabel(struct plot *plot, char *label)
@@ -583,7 +592,7 @@ void set_xlabel(struct plot *plot, char *label)
 		 font_family,
 		 axis_label_font_size, "middle", label);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 
 }
 
@@ -607,7 +616,7 @@ void set_yticks(struct plot *plot, int num_ticks, int first, int last, char *uni
 				 "style=\"stroke:lightgray;stroke-width:2;stroke-dasharray:9,12;\"/>\n",
 				tick_x, axis_y_off(tick_y),
 				axis_x_off(graph_width), axis_y_off(tick_y));
-			write(plot->fd, line, strlen(line));
+			write_check(plot->fd, line, strlen(line));
 		}
 
 		snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
@@ -615,13 +624,13 @@ void set_yticks(struct plot *plot, int num_ticks, int first, int last, char *uni
 			text_x,
 			axis_y_off(tick_y - tick_font_size / 2),
 			font_family, tick_font_size, anchor, first + step * i, units);
-		write(plot->fd, line, strlen(line));
+		write_check(plot->fd, line, strlen(line));
 		tick_y += pixels_per_tick;
 	}
 	snprintf(line, line_len, "<text x=\"%d\" y=\"%d\" font-family=\"%s\" font-size=\"%d\" "
 		 "fill=\"black\" style=\"text-anchor: %s\">%d%s</text>\n",
 		 text_x, axis_y_off(graph_height), font_family, tick_font_size, anchor, last, units);
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 }
 
 void set_plot_label(struct plot *plot, char *label)
@@ -635,14 +644,14 @@ void set_plot_label(struct plot *plot, char *label)
 		 plot_label_height / 2,
 		font_family, plot_label_font_size, "middle", label);
 	len = strlen(line);
-	write(fd, line, len);
+	write_check(fd, line, len);
 }
 
 static void close_svg(int fd)
 {
 	char *close_line = "</svg>\n";
 
-	write(fd, close_line, strlen(close_line));
+	write_check(fd, close_line, strlen(close_line));
 }
 
 int close_plot(struct plot *plot)
@@ -680,10 +689,10 @@ int close_plot_file(struct plot *plot)
 	snprintf(line, line_len, "<svg  xmlns=\"http://www.w3.org/2000/svg\" "
 		 "width=\"%d\" height=\"%d\">\n",
 		 final_width, final_height);
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 	snprintf(line, line_len, "<rect x=\"0\" y=\"0\" width=\"%d\" "
 		 "height=\"%d\" fill=\"white\"/>\n", final_width, final_height);
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 	close(plot->fd);
 	plot->fd = 0;
 	return 0;
@@ -788,19 +797,19 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 		if (!thresh1 && !thresh2) {
 
 			if (!printed_header) {
-				write(fd, start, strlen(start));
+				write_check(fd, start, strlen(start));
 				printed_header = 1;
 			}
 
 			/* in full line mode, everything in the graph is connected */
 			snprintf(line, line_len, "%c %d %d ", c, axis_x_off(x), axis_y_off(val));
 			c = 'L';
-			write(fd, line, strlen(line));
+			write_check(fd, line, strlen(line));
 			printed_lines = 1;
 		} else if (avg > thresh1 || avg > thresh2) {
 			int len = 10;
 			if (!printed_header) {
-				write(fd, start, strlen(start));
+				write_check(fd, start, strlen(start));
 				printed_header = 1;
 			}
 
@@ -814,14 +823,14 @@ int svg_line_graph(struct plot *plot, struct graph_line_data *gld, char *color, 
 			 */
 			snprintf(line, line_len, "M %d %d h %d ", axis_x_off(x),
 				 axis_y_off(val), len);
-			write(fd, line, strlen(line));
+			write_check(fd, line, strlen(line));
 			printed_lines = 1;
 		}
 
 	}
 	if (printed_lines) {
 		snprintf(line, line_len, "\" fill=\"none\" stroke=\"%s\" stroke-width=\"2\"/>\n", color);
-		write(fd, line, strlen(line));
+		write_check(fd, line, strlen(line));
 	}
 	if (plot->timeline)
 		svg_write_time_line(plot, plot->timeline);
@@ -835,17 +844,17 @@ void svg_write_time_line(struct plot *plot, int col)
 				 "style=\"stroke:black;stroke-width:2;\"/>\n",
 				 axis_x_off(col), axis_y_off(0),
 				 axis_x_off(col), axis_y_off(graph_height));
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 }
 
-static int svg_add_io(int fd, double row, double col, double width, double height, char *color)
+static void svg_add_io(int fd, double row, double col, double width, double height, char *color)
 {
 	float rx = 0;
 
 	snprintf(line, line_len, "<rect x=\"%.2f\" y=\"%.2f\" width=\"%.1f\" height=\"%.1f\" "
 		 "rx=\"%.2f\" style=\"stroke:none;fill:%s;stroke-width:0\"/>\n",
 		 axis_x_off_double(col), axis_y_off_double(row), width, height, rx, color);
-	return write(fd, line, strlen(line));
+	write_check(fd, line, strlen(line));
 }
 
 int svg_io_graph_movie_array(struct plot *plot, struct pid_plot_history *pph)
@@ -902,11 +911,11 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history 
 		 "stroke=\"black\" stroke-width=\"6\" "
 		 "r=\"%.2f\" fill=\"none\"/>\n",
 		 spindle_steps * 1.2, center_x, center_y, center_x, center_y, graph_width_extra / 2);
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 	snprintf(line, line_len, "<circle cx=\"%.2f\" cy=\"%.2f\" "
 		"stroke=\"none\" fill=\"red\" r=\"%.2f\"/>\n</g>\n",
 		axis_x_off_double(graph_width_extra), center_y, 4.5);
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 	spindle_steps += 0.01;
 
 	radius = floor(radius / 2);
@@ -930,7 +939,7 @@ int svg_io_graph_movie_array_spindle(struct plot *plot, struct pid_plot_history 
 			 axis_x_off_double(graph_width_extra / 2 + radius) + 8, center_y,
 			 radius, radius, pph->color);
 
-		write(plot->fd, line, strlen(line));
+		write_check(plot->fd, line, strlen(line));
 	}
 	return 0;
 }
@@ -1047,9 +1056,9 @@ void svg_write_legend(struct plot *plot)
 		 legend_width,
 		 plot->legend_index * legend_font_size + legend_font_size / 2 + 12);
 
-	write(plot->fd, line, strlen(line));
+	write_check(plot->fd, line, strlen(line));
 	for (i = 0; i < plot->legend_index; i++) {
-		write(plot->fd, plot->legend_lines[i],
+		write_check(plot->fd, plot->legend_lines[i],
 		      strlen(plot->legend_lines[i]));
 		free(plot->legend_lines[i]);
 	}
