@@ -1,5 +1,5 @@
-C      = gcc
-CFLAGS  = -Wall -O0 -g -W
+CC      = gcc
+CFLAGS  = -Wall -O2 -g -W -Wunused-result
 ALL_CFLAGS = $(CFLAGS) -D_GNU_SOURCE -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
 
 PROGS = iowatcher
