@@ -1016,12 +1016,22 @@ static void plot_queue_depth(struct plot *plot, unsigned int min_seconds,
 	total_graphs_written++;
 }
 
+static void system_check(const char *cmd)
+{
+	if (system(cmd) < 0) {
+		int err = errno;
+
+		fprintf(stderr, "system exec failed (%d): %s\n", err, cmd);
+		exit(1);
+	}
+}
+
 static void convert_movie_files(char *movie_dir)
 {
 	fprintf(stderr, "Converting svg files in %s\n", movie_dir);
 	snprintf(line, line_len, "find %s -name \\*.svg | xargs -I{} -n 1 -P 8 rsvg-convert -o {}.png {}",
 		 movie_dir);
-	system(line);
+	system_check(line);
 }
 
 static void mencode_movie(char *movie_dir)
@@ -1030,7 +1040,7 @@ static void mencode_movie(char *movie_dir)
 	snprintf(line, line_len, "ffmpeg -r 20 -y -i %s/%%10d-%s.svg.png -b:v 250k "
 		 "-vcodec %s %s", movie_dir, output_filename, ffmpeg_codec,
 		 output_filename);
-	system(line);
+	system_check(line);
 }
 
 static void tencode_movie(char *movie_dir)
@@ -1038,7 +1048,7 @@ static void tencode_movie(char *movie_dir)
 	fprintf(stderr, "Creating movie %s with png2theora\n", movie_dir);
 	snprintf(line, line_len, "png2theora -o %s %s/%%010d-%s.svg.png",
 			output_filename, movie_dir, output_filename);
-	system(line);
+	system_check(line);
 }
 
 static void encode_movie(char *movie_dir)
@@ -1060,10 +1070,10 @@ static void cleanup_movie(char *movie_dir)
 	}
 	fprintf(stderr, "Removing movie dir %s\n", movie_dir);
 	snprintf(line, line_len, "rm %s/*", movie_dir);
-	system(line);
+	system_check(line);
 
 	snprintf(line, line_len, "rmdir %s", movie_dir);
-	system(line);
+	system_check(line);
 }
 
 static void plot_io_movie(struct plot *plot)
