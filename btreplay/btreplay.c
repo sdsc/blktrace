@@ -516,7 +516,7 @@ realloc:
 	if (sched_getaffinity(getpid(), size, cpus)) {
 		if( errno == EINVAL && nrcpus < (4096<<4) ) {
 			CPU_FREE(cpus);
-			nrcpus <= 1;
+			nrcpus <<= 1;
 			goto realloc;
 		}
 		fatal("sched_getaffinity", ERR_SYSCALL, "Can't get CPU info\n");
