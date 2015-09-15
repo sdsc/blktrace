@@ -646,7 +646,7 @@ static void find_input_devs(char *idir)
 static void read_map_devs(char *file_name)
 {
 	FILE *fp;
-	char *from_dev, *to_dev;
+	char from_dev[256], to_dev[256];
 
 	fp = fopen(file_name, "r");
 	if (!fp) {
@@ -654,7 +654,7 @@ static void read_map_devs(char *file_name)
 		/*NOTREACHED*/
 	}
 
-	while (fscanf(fp, "%as %as", &from_dev, &to_dev) == 2) {
+	while (fscanf(fp, "%s %s", from_dev, to_dev) == 2) {
 		struct map_dev *mdp = malloc(sizeof(*mdp));
 
 		mdp->from_dev = from_dev;

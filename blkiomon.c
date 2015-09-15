@@ -198,7 +198,7 @@ static struct dstat *blkiomon_find_dstat(struct rb_search *search, __u32 device)
 static struct dstat *blkiomon_get_dstat(__u32 device)
 {
 	struct dstat *dstat;
-	struct rb_search search;
+	struct rb_search search = { 0, };
 
 	pthread_mutex_lock(&dstat_mutex);
 
