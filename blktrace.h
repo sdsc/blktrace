@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <byteswap.h>
 #include <endian.h>
+#include <sys/types.h>
 
 #include "blktrace_api.h"
 #include "rbtree.h"
