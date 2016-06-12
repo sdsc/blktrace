@@ -221,7 +221,7 @@ struct cl_conn {
 
 /*
  * The network server requires some poll structures to be maintained -
- * one per conection currently on conn_list. The nchs/ch_list values
+ * one per connection currently on conn_list. The nchs/ch_list values
  * are for each host connected to this server. The addr field is used
  * for scratch as new connections are established.
  */
